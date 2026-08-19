@@ -11,3 +11,4 @@ __pycache__/
 # spike run artifacts — regenerable, and contain Google Places-derived content
 spikes/**/*.json
 spikes/**/ids.txt
+spikes/**/*.out

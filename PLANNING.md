@@ -13,8 +13,8 @@ they want. We then route that exact sequence and warn about anything that doesn'
 | Collaboration | One owner; others propose edits; owner approves |
 | Flights | Input only in v1 |
 | Cities | Any city on demand — async ingestion, client polls |
-| Stack | Next.js + Postgres, TypeScript, separate worker |
-| Queue | Postgres (`pg-boss` or `SKIP LOCKED`) |
+| Stack | Next.js + Postgres, TypeScript web, **Python worker** (keeps the spike scripts) |
+| Queue | Postgres — `procrastinate` or `SKIP LOCKED`. Not `pg-boss`: Node-only |
 | Deploy | Railway/Render/Fly first, EKS later |
 
 ## Sources
@@ -22,16 +22,34 @@ they want. We then route that exact sequence and warn about anything that doesn'
 | Role | Source |
 |---|---|
 | Discovery | **YouTube** — transcripts primary, chapters as spelling anchor, comments |
+| Food + POI | **RedNote/Xiaohongshu** — private web API, confirmed usable |
 | Identity + facts | **Google Places** `searchText` → `place_id`, then Place Details for hours |
 | Routing + map | **Routes API `computeRoutes`** — polyline, per-leg times, transit steps |
 | Daylight | Computed locally (NOAA), no API |
 | Thin-city fallback | **Wikivoyage**, labelled guidebook-grade |
 | Later | Reddit, behind a disabled flag |
 
-Ruled out: Reddit (blocked), Xiaohongshu (no API), OSM/Overture/Wikidata (inventories, no curation
+Ruled out: Reddit (blocked), OSM/Overture/Wikidata (inventories, no curation
 signal), Foursquare open data (doesn't exist), **Google Route Optimization** (no TRANSIT mode; its
 time windows constrain arrival only; its skip reasons can't distinguish "closed" from "unreachable"),
 Tokyo/Bangkok/Singapore open data (stale or geo-blocked).
+
+## RedNote
+
+Confirmed as a data source, strongest for food. `webapi.rednote.com`, endpoints
+`/api/sns/web/v1/search/notes` and `/api/sns/web/v1/feed`.
+
+- **Auth needs a cookie AND a signature**, and the signature is **bound to the URL path** — one
+  capture per endpoint, kept in `.env`. The signature does not expire; the cookie does, so the only
+  maintenance is **cookie rotation**.
+- **Rate limit hard** — it is a real logged-in account. Never on a request's critical path: build a
+  background city pool, not per-plan ingestion.
+- **Extract from the note `desc` first**; OCR the image cards only when `desc` names nothing (~38% of
+  notes, ~10x the tokens). Take search results in returned relevance order, not by likes.
+- **Geofence results** on the searched area — names resolve to the wrong side of a city otherwise.
+- **Gate on what the note says, never on the Google rating.** Drop `not_recommended`, filter chains,
+  and treat a Chinese name resolving to an English Places result as unconfirmed identity.
+- Persist notes by `note_id` and never re-fetch; key extractions on `(note_id, prompt_version, model)`.
 
 ## Working pipeline
 
@@ -123,4 +141,5 @@ The two findings I'd call load-bearing for your roadmap are the transit 100-day 
 
 `spikes/videos_transcribing/` — `youtube_search.py`, `youtube_llm_pipeline.py`, `resolve_places.py`
 `spikes/routes_planning/` — `route_day.py`
+`spikes/xhs/` — `recommend.py` (city → restaurants), `food_spike.py`, `image_ocr.py`, `call.py`
 `spikes/flights/` — earlier Google Flights price-tracking spikes
