@@ -1,0 +1,7 @@
+{
+  "venvPath": "tp_backend",
+  "venv": ".venv",
+  "pythonVersion": "3.11",
+  "extraPaths": ["tp_backend"],
+  "include": ["tp_backend"]
+}
