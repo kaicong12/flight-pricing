@@ -1,0 +1,54 @@
+# CI for tp_backend. spikes/ is throwaway and has no dependency manifest, so it is not covered.
+name: backend
+
+on: [push, pull_request]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: tp_backend
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.11"
+          enable-cache: true
+          cache-dependency-glob: tp_backend/uv.lock
+      - run: uv sync --locked
+      - run: uv run ruff check .
+
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: trip_planner
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      # No .env exists in CI, so settings come from here. Deliberately no API keys: the suite stubs
+      # every outbound call, and a test that needs a real key is a test that should not exist.
+      DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:5432/trip_planner
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.11"
+          enable-cache: true
+          cache-dependency-glob: tp_backend/uv.lock
+      - run: uv sync --locked
+
+      # conftest creates <DATABASE_URL>_test and runs the migrations against it itself.
+      - run: uv run pytest -q
