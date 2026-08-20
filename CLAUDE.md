@@ -17,8 +17,14 @@ route that exact sequence and warn about anything that doesn't work.
 | Queue | Postgres `SKIP LOCKED`. Not `pg-boss` (Node-only). No Redis — the work is quota-bound |
 | Deploy | Railway/Render/Fly first, EKS later |
 
-Built so far: `tp_backend/libs/db` (schema + migrations) and `tp_backend/tp_api`. No worker yet;
-ingestion logic still lives in `spikes/`.
+Built so far: `tp_backend/libs/db` (schema + migrations), `tp_backend/tp_api`, the
+`tp_backend/tp_ingestions` worker through extraction, and `tp_client` (the "plan a city trip"
+screen). `places.resolve` is the next step — extractions land in `extractions.result` as JSON and
+nothing writes `places`/`place_mentions` yet.
+
+`docker-compose.yml` runs migrate + api + **one** worker + web on a single t4g.micro against RDS.
+One worker, not one per source: `queue.claim` has no `kind` filter and the RedNote throttle hands
+long waits back to the queue, so nothing starves. See `docs/deploy.md`.
 
 # Conventions
 
@@ -77,10 +83,30 @@ only; skip reasons can't distinguish "closed" from "unreachable"), Tokyo/Bangkok
 - **Gate on what the note says, never on the Google rating.** Drop `not_recommended`, filter chains,
   and treat a Chinese name resolving to an English Places result as unconfirmed identity.
 - Persist notes by `note_id` and never re-fetch; key extractions on `(note_id, prompt_version, model)`.
+- **Searching with the English city name works.** `"Tromsø 美食"` returned 20 usable notes, titled
+  with the Chinese exonym 特罗姆瑟. No need to translate the city name before searching.
+- **Some `desc` values interleave zero-width characters between the letters of a venue name**
+  (`T​a​n​g's`), which wrecks extraction. Strip Unicode category `Cf` before
+  extracting; keep `Cc`, since newlines are the post's paragraph structure.
+- On `/feed`, the English body is `note_translation.desc_trans` (not `desc_en`), `time` is epoch
+  **milliseconds**, tags are `tag_list[].name`, and there is **no `ip_location`**.
+- Cap the fetch fan-out (`rednote_max_fetch_per_search`, default 8): a search returns 20 and
+  `MAX_PER_HOUR` is 20, so an uncapped fan-out spends a whole hour's budget on one city.
 
 # Working pipeline
 
-Spike scripts joined by JSON files on disk:
+The real path is now the worker: `POST /initiate-plan` seeds `youtube.search` (one per language) and
+`rednote.search`, whose handlers fan out per video and per note. `rednote.fetch` calls extraction
+**inline as a child call**, so a note's body and its extraction commit together; OCR is a separate
+task, queued only when the `desc` named nothing. `python -m tp_ingestions --report <run_id>` prints
+what a run actually extracted.
+
+Proven live end-to-end on Tromsø: 22 tasks, 0 failed, 122 candidate places (11 RedNote, 111 YouTube)
+for 19 Gemini calls and about a cent. Run the worker with `python -m tp_ingestions`, **not `--once`**
+— RedNote waits are handed back to the queue via `run_after`, and `drain()` exits as soon as nothing
+is due.
+
+The original spike scripts, joined by JSON files on disk:
 
 ```bash
 python youtube_search.py Helsinki --lang en --region FI --out videos.json
@@ -109,7 +135,27 @@ daylight — e.g. *"Uspenski: arrive 15:43, need 75 min, closes 16:00"*.
 - **Confidence from `userRatingCount`, not name similarity.** Zero ratings → reject. Deaccent before
   comparing names.
 
+**Queue**
+- **A throttle wait must not spend an attempt.** `queue.claim` increments `attempts` on every claim,
+  so deferring a task because *our own* budget said "not yet" burned its retries: a live Tromsø run
+  lost 3 of 8 RedNote fetches to `max_attempts` with nothing actually wrong. Hence
+  `errors.Throttled` + `queue.reschedule`, which decrements `attempts` back. A RATE_LIMITED
+  `TaskError` still means the *remote* pushed back and still counts.
+- Reviving tasks in an already-settled run leaves the run stuck: `finish_run_if_done` only settles a
+  run that is still `pending`/`running`. Reset the run's status too.
+
 **Extraction**
+- **Gemini `responseSchema` takes only an OpenAPI-3.0 subset** — no `$ref`, `oneOf`,
+  `additionalProperties`, or string `format`. A violation is a 400, which is terminal, so a schema
+  edit that breaks it kills the task rather than retrying. Image MIME must be sniffed from magic
+  bytes: RedNote CDN URLs end `.jpg` while serving WebP.
+- The model is `GEMINI_MODEL`, resolved per call via `Prompt.model`, so it can be swapped when a free
+  tier runs out. It lands in `extractions.model`, which is part of the uniqueness key — **swapping
+  the model re-extracts everything.**
+- **`youtube-transcript-api` 1.x is instance-only.** `YouTubeTranscriptApi.get_transcript` and
+  `TooManyRequests` are both gone; it is `YouTubeTranscriptApi().fetch()`, `RequestBlocked` and
+  `IpBlocked`. `PoTokenRequired` is what a **datacenter IP** gets, so it maps to RATE_LIMITED, not
+  PERMANENT — it is an environment problem, not a bad video.
 - **`is_travel_content` gate is mandatory.** Without it a tennis vlog returned 7-Eleven and Haneda
   Airport as recommendations. Also exclude chains, transport hubs and cities-as-places.
 - **Never take facts from ASR.** A €3.20 fare came through as "320 euros". Prices and hours come from
@@ -143,6 +189,19 @@ daylight — e.g. *"Uspenski: arrive 15:43, need 75 min, closes 16:00"*.
   when the hours are identical. Don't diff them naively.
 - Outdoor blocks need a daylight check. Helsinki in early December has ~6h10m of light.
 
+**Client**
+- The browser never calls `tp_api`. Next route handlers proxy it, so there is no CORS middleware to
+  maintain and no Google key in client JS. `TP_API_URL` is the only knob.
+- **`shadcn` defaults to Base UI now, not Radix.** `components.json` says `base-nova`; `Popover` is
+  `@base-ui/react` and only `Command` is still `cmdk`. Size a popup to its trigger with
+  `w-(--anchor-width)`, not Radix's variable.
+- **`shadcn init`/`add` need `NODE_EXTRA_CA_CERTS` and exit 0 when TLS interception blocks them**, so
+  a chained `&&` sails past the failure. Check the files actually landed.
+- `create-next-app` names its Geist variable `--font-geist-sans` but shadcn's `globals.css` expects
+  `--font-sans`, so every page silently renders in the browser serif until you rename it.
+- The React Compiler lint rule bans synchronous `setState` in an effect body, which rules out the
+  obvious debounce shape. Derive state from a stamped result instead.
+
 **Environment**
 - **Corporate TLS interception breaks Python but not curl.** The intercepting root is in the OS store,
   which curl uses and certifi does not — `webapi.rednote.com` fails with `CERTIFICATE_VERIFY_FAILED`
@@ -155,6 +214,15 @@ daylight — e.g. *"Uspenski: arrive 15:43, need 75 min, closes 16:00"*.
 - Rate limits are often *silent* — one API returned "0 results" while throttling. Always distinguish
   throttled from empty.
 - `place_id` may be cached indefinitely; almost nothing else from Places may be.
+- Tests must never reach the network — an autouse fixture in `tests/conftest.py` blocks
+  `httpx.HTTPTransport` and `requests`' adapter, so a stub that misses fails loudly instead of
+  quietly spending quota. TestClient rides ASGITransport and is unaffected.
+- `conftest` derives one fixed `<database_url>_test` and truncates at every test start, so two
+  concurrent `pytest` runs wipe each other's rows mid-test.
+- Alembic's `env.py` calls `fileConfig()` without `disable_existing_loggers=False`, so running
+  migrations in-process silences every logger imported before it.
+- `import libs.db.session` binds the re-exported `session` **function**, not the submodule. Reach it
+  with `importlib.import_module`.
 
 The two load-bearing findings for the roadmap are the transit 100-day horizon and holiday hours being
 unfetchable for future dates. A trip planned in August genuinely cannot be fully accurate for
@@ -163,6 +231,11 @@ as final.
 
 # Open items
 
-1. **Enable Routes API** on the existing key, and restrict the key to Places + Routes + YouTube + Gemini.
-2. **Confirm Places and Routes pricing** and whether caching lat/lon is permitted.
-3. **Test transcript fetching from cloud egress**, not just a laptop.
+1. **`places.resolve`** — turn `extractions.result` candidates into `places` + `place_mentions`. The
+   live run shows why it matters: `Raketten Bar & Pølse` (RedNote) and `Raken Bar and Pulse`
+   (YouTube ASR) are one venue, and `Pastafabrikken` was recommended by two separate notes.
+2. **Enable Routes API** on the existing key, and restrict the key to Places + Routes + YouTube + Gemini.
+3. **Confirm Places and Routes pricing** and whether caching lat/lon is permitted.
+4. **Test transcript fetching from cloud egress**, not just a laptop. Confirmed working from a laptop;
+   the failure mode to watch for on EC2 is `PoTokenRequired`.
+5. A real `GET /health` for the container healthcheck, which currently probes `/openapi.json`.
