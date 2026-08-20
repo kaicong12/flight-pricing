@@ -1,0 +1,91 @@
+# Single-host stack for a t4g.micro. Postgres is RDS, so there is no db service — DATABASE_URL
+# arrives from the environment. Images are built elsewhere; see docs/deploy.md.
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+# libs/settings.py finds a repo-root .env by walking up the tree. There is no repo root in a
+# container, so real environment variables are the only mechanism.
+x-backend-env: &backend-env
+  DATABASE_URL: ${DATABASE_URL}
+  GOOGLE_API_KEY: ${GOOGLE_API_KEY}
+  GEMINI_API_KEY: ${GEMINI_API_KEY}
+  GEMINI_MODEL: ${GEMINI_MODEL:-gemini-3.5-flash-lite}
+  XHS_COOKIE: ${XHS_COOKIE}
+  XHS_SEARCH_XS: ${XHS_SEARCH_XS}
+  XHS_SEARCH_XT: ${XHS_SEARCH_XT}
+  XHS_SEARCH_XS_COMMON: ${XHS_SEARCH_XS_COMMON}
+  XHS_SEARCH_XRAP: ${XHS_SEARCH_XRAP}
+  XHS_FEED_XS: ${XHS_FEED_XS}
+  XHS_FEED_XT: ${XHS_FEED_XT}
+  XHS_FEED_XS_COMMON: ${XHS_FEED_XS_COMMON}
+  XHS_FEED_XRAP: ${XHS_FEED_XRAP}
+
+services:
+  migrate:
+    image: ${BACKEND_IMAGE:-tp-backend:local}
+    build: ./tp_backend
+    command: ["alembic", "-c", "libs/db/alembic.ini", "upgrade", "head"]
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+    restart: "no"
+    mem_limit: 256m
+    logging: *logging
+
+  api:
+    image: ${BACKEND_IMAGE:-tp-backend:local}
+    build: ./tp_backend
+    command: ["uvicorn", "tp_api.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    environment: *backend-env
+    ports: ["8000:8000"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      # No /health endpoint yet, so this probes the OpenAPI schema instead.
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/openapi.json', timeout=3).status == 200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    restart: unless-stopped
+    mem_limit: 256m
+    logging: *logging
+
+  worker:
+    image: ${BACKEND_IMAGE:-tp-backend:local}
+    build: ./tp_backend
+    command: ["python", "-m", "tp_ingestions"]
+    environment:
+      <<: *backend-env
+      # On a named volume deliberately: the RedNote call history lives in this file, and losing it
+      # on a container restart lets the next start burst straight past the daily cap on a real
+      # logged-in account.
+      REDNOTE_THROTTLE_STATE: /state/rednote_ratelimit.json
+    volumes:
+      - rednote_throttle:/state
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+    mem_limit: 320m
+    logging: *logging
+
+  web:
+    image: ${WEB_IMAGE:-tp-web:local}
+    build: ./tp_client
+    environment:
+      TP_API_URL: http://api:8000
+    ports: ["3000:3000"]
+    depends_on:
+      api:
+        condition: service_started
+    restart: unless-stopped
+    mem_limit: 256m
+    logging: *logging
+
+volumes:
+  rednote_throttle:
