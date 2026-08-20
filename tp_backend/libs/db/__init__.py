@@ -9,6 +9,7 @@ from libs.db.models import (
     Place,
     PlaceMention,
     RedNotePost,
+    Trip,
     YouTubeVideo,
 )
 from libs.db.session import SessionLocal, engine, session
@@ -23,6 +24,7 @@ __all__ = [
     "PlaceMention",
     "RedNotePost",
     "SessionLocal",
+    "Trip",
     "YouTubeVideo",
     "engine",
     "session",

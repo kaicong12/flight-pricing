@@ -3,11 +3,12 @@
 import uuid
 
 import pytest
+from conftest import make_city
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import sessionmaker
 
-from libs.db import City, IngestRun, IngestTask
+from libs.db import IngestRun, IngestTask
 from libs.db.enums import RunKind, RunStatus, Source, TaskKind, TaskStatus
 
 CLAIM = text("""
@@ -28,12 +29,6 @@ WHERE run_id=:run AND NOT EXISTS (
   SELECT 1 FROM ingest_tasks WHERE run_id=:run AND status IN ('pending','running'))
 RETURNING run_id
 """)
-
-
-def make_city(db, city_id="helsinki"):
-    db.add(City(city_id=city_id, name=city_id.title(), lat=60.17, lon=24.94))
-    db.commit()
-    return city_id
 
 
 def make_run(db, city_id, status=RunStatus.RUNNING):
@@ -146,7 +141,7 @@ def test_expired_lease_is_reclaimable(db):
 
 
 def test_progress_query_shapes_the_checklist(db):
-    """PROMPT.md's 'Reading posts 4 of 7' is a group-by, not a stored counter."""
+    """The loading screen's 'Reading posts 4 of 7' is a group-by, not a stored counter."""
     run = make_run(db, make_city(db))
     for i in range(7):
         add_task(db, run, dedupe_key=f"fetch:{i}",

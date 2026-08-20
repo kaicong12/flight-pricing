@@ -5,10 +5,14 @@ description = "Trip planner ingestion worker"
 requires-python = ">=3.11"
 dependencies = [
     "alembic>=1.13",
+    "fastapi>=0.115",
+    "httpx>=0.27",
     "psycopg[binary]>=3.2",
     "pydantic>=2.9",
     "pydantic-settings>=2.5",
     "sqlalchemy>=2.0",
+    "truststore>=0.10.4",
+    "uvicorn[standard]>=0.30",
 ]
 
 [dependency-groups]
@@ -22,10 +26,12 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["libs", "tp_ingestions"]
+packages = ["libs", "tp_api", "tp_ingestions"]
 
 [tool.ruff]
 line-length = 100
+# Generated from Alembic's script.py.mako, so not ours to restyle.
+extend-exclude = ["libs/db/migrations/versions"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
