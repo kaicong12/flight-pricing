@@ -1,7 +1,7 @@
 """Scoring RedNote titles before paying to read the posts. Off by default in the spike, which takes
 search results in the API's own relevance order instead."""
 
-from libs.prompts.registry import GEMINI_FLASH_LITE, Prompt
+from libs.prompts.registry import Prompt
 
 SCHEMA = {
     "type": "object",
@@ -42,5 +42,4 @@ Titles:
 {titles}
 """
 
-REDNOTE_PRESCREEN = Prompt(name="rednote_prescreen", version="v1", model=GEMINI_FLASH_LITE,
-                           template=TEMPLATE, schema=SCHEMA)
+REDNOTE_PRESCREEN = Prompt(name="rednote_prescreen", version="v1", template=TEMPLATE, schema=SCHEMA)

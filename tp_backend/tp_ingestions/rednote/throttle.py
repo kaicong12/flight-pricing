@@ -6,18 +6,29 @@ host would get its own budget, so run exactly one RedNote worker until this move
 """
 
 import json
+import logging
 import os
 import random
 import time
+from datetime import timedelta
 from pathlib import Path
+
+from libs.db.enums import ErrorCode
+from tp_ingestions.errors import TaskError, Throttled
 
 MIN_GAP = 45.0
 JITTER = 15.0
 MAX_PER_HOUR = 20
 MAX_PER_DAY = 120
 
+# Below this we wait in-process; above it we hand the wait back to the queue via run_after rather
+# than hold a database connection and a task lease while sleeping.
+MAX_INLINE_WAIT = 10.0
+
 STATE = Path(os.environ.get("REDNOTE_THROTTLE_STATE",
                             Path(__file__).resolve().parents[2] / ".rednote_ratelimit.json"))
+
+log = logging.getLogger("rednote.throttle")
 
 
 class BudgetExhausted(RuntimeError):
@@ -52,3 +63,16 @@ def record() -> None:
     """Spend one call from the budget. Call this immediately before the request."""
     now = time.time()
     STATE.write_text(json.dumps({"calls": [*_history(now), now]}))
+
+
+def await_budget() -> None:
+    """The gate every RedNote handler passes through: sleep, defer, or give up for today."""
+    try:
+        wait = wait_time()
+    except BudgetExhausted as e:
+        raise TaskError(ErrorCode.QUOTA, str(e)) from e
+    if wait > MAX_INLINE_WAIT:
+        raise Throttled(f"throttled for {wait:.0f}s", retry_after=timedelta(seconds=wait))
+    if wait > 0:
+        log.info("throttle: sleeping %.1fs", wait)
+        time.sleep(wait)

@@ -1,39 +1,21 @@
 """rednote.search — find candidate notes for a city and fan out one fetch task per new note."""
 
 import logging
-import time
-from datetime import timedelta
 
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
 from libs.db import RedNotePost
-from libs.db.enums import ErrorCode, Source, TaskKind
+from libs.db.enums import Source, TaskKind
 from libs.ingest import enqueue
-from tp_ingestions.errors import TaskError
+from libs.settings import settings
 from tp_ingestions.queue import ClaimedTask
-from tp_ingestions.rednote import client, throttle
+from tp_ingestions.rednote import client
+from tp_ingestions.rednote.throttle import await_budget
 from tp_ingestions.registry import handles
 
 log = logging.getLogger("rednote.search")
-
-# Below this we wait in-process; above it we hand the wait back to the queue via run_after rather
-# than hold a database connection and a task lease while sleeping.
-MAX_INLINE_WAIT = 10.0
-
-
-def await_budget() -> None:
-    try:
-        wait = throttle.wait_time()
-    except throttle.BudgetExhausted as e:
-        raise TaskError(ErrorCode.QUOTA, str(e)) from e
-    if wait > MAX_INLINE_WAIT:
-        raise TaskError(ErrorCode.RATE_LIMITED, f"throttled for {wait:.0f}s",
-                        retry_after=timedelta(seconds=wait))
-    if wait > 0:
-        log.info("throttle: sleeping %.1fs", wait)
-        time.sleep(wait)
 
 
 @handles(TaskKind.REDNOTE_SEARCH)
@@ -62,7 +44,9 @@ def rednote_search(session: Session, task: ClaimedTask) -> dict:
                 set_={"xsec_token": note["xsec_token"], "likes": note["likes"]})
         )
 
-    fresh = [n for n in notes if n["note_id"] not in known]
+    # page_size is 20 and throttle.MAX_PER_HOUR is 20, so an uncapped fan-out would spend the whole
+    # hourly budget of a real logged-in account on one city. Keep the API's relevance order.
+    fresh = [n for n in notes if n["note_id"] not in known][:settings().rednote_max_fetch_per_search]
     queued = enqueue(session, [
         {"run_id": task.run_id, "kind": TaskKind.REDNOTE_FETCH, "source": Source.REDNOTE,
          "payload": {"note_id": n["note_id"], "xsec_token": n["xsec_token"], "city_id": city_id},

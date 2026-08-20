@@ -5,7 +5,7 @@ this runs only as a fallback.
 """
 
 from libs.prompts.rednote_text import SCHEMA
-from libs.prompts.registry import GEMINI_FLASH_LITE, Prompt
+from libs.prompts.registry import Prompt
 
 TEMPLATE = """You are reading the image cards of a Xiaohongshu/RedNote food post. The venue names are
 printed on the images themselves — the post's text body did not name them.
@@ -35,5 +35,4 @@ Post text body (context only — it named no venues, that is why you are reading
 ---
 """
 
-REDNOTE_OCR = Prompt(name="rednote_ocr", version="v1", model=GEMINI_FLASH_LITE,
-                     template=TEMPLATE, schema=SCHEMA)
+REDNOTE_OCR = Prompt(name="rednote_ocr", version="v1", template=TEMPLATE, schema=SCHEMA)

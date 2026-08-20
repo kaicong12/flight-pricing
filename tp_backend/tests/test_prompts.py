@@ -34,6 +34,20 @@ def test_version_key_fits_the_prompt_version_column():
     assert all(len(p.version_key) <= limit for p in PROMPTS.values())
 
 
+def test_the_model_comes_from_settings_not_the_prompt(monkeypatch):
+    """Swapping GEMINI_MODEL must reach every prompt, and must reach extractions.model with it."""
+    from libs.prompts import registry
+    from libs.settings import Settings
+
+    monkeypatch.setattr(registry, "settings", lambda: Settings(gemini_model="gemini-2.5-flash-lite"))
+    assert {p.model for p in PROMPTS.values()} == {"gemini-2.5-flash-lite"}
+
+
+def test_model_fits_the_extraction_column(monkeypatch):
+    limit = Extraction.__table__.c.model.type.length
+    assert all(len(p.model) <= limit for p in PROMPTS.values())
+
+
 def test_rendering_fills_every_placeholder():
     rendered = PROMPTS["rednote_text"].render(city="Helsinki", title="t", body="b")
     assert "Helsinki" in rendered

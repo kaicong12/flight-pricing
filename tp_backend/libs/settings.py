@@ -22,6 +22,10 @@ class Settings(BaseSettings):
     db_pool_size: int = 10
     db_max_overflow: int = 10
     google_api_key: str | None = None
+    gemini_api_key: str | None = None
+    # Every prompt resolves its model through this, so swapping it when a model's free tier runs out
+    # needs no code change. It lands in extractions.model, which is part of the re-extraction key.
+    gemini_model: str = "gemini-3.5-flash-lite"
     city_refresh_days: int = 30
 
     # RedNote needs a cookie AND a signature, and the signature is bound to the URL path — hence
@@ -31,6 +35,14 @@ class Settings(BaseSettings):
     xhs_search_xt: str | None = None
     xhs_search_xs_common: str | None = None
     xhs_search_xrap: str | None = None
+    xhs_feed_xs: str | None = None
+    xhs_feed_xt: str | None = None
+    xhs_feed_xs_common: str | None = None
+    xhs_feed_xrap: str | None = None
+
+    # One search burns a whole hour of throttle.MAX_PER_HOUR if every result is fetched.
+    rednote_max_fetch_per_search: int = 8
+    rednote_ocr_max_images: int = 4
 
     @property
     def db_max_connections(self) -> int:

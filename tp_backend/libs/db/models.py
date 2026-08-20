@@ -219,6 +219,7 @@ class Extraction(Base):
                                                  server_default=text("false"))
     content_type: Mapped[str | None] = mapped_column(Text)
     place_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
+    result: Mapped[dict | None] = mapped_column(JSONB)
     created_at: Mapped[datetime] = _ts(nullable=False, server_default=func.now())
 
 

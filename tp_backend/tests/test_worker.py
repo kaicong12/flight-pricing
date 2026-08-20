@@ -9,7 +9,7 @@ from sqlalchemy import select, update
 from libs.db import City, IngestRun, IngestTask
 from libs.db.enums import ErrorCode, RunKind, RunStatus, Source, TaskKind, TaskStatus
 from tp_ingestions import queue
-from tp_ingestions.errors import TaskError
+from tp_ingestions.errors import TaskError, Throttled
 from tp_ingestions.registry import HANDLERS
 from tp_ingestions.worker import Worker
 
@@ -99,6 +99,23 @@ def test_a_transient_failure_is_deferred_for_a_retry(worker, db, run):
     assert row.run_after > datetime.now(UTC)
     assert row.locked_by is None
     # Still outstanding, so the run must not be settled.
+    assert db.get(IngestRun, run.run_id).status == RunStatus.RUNNING
+
+
+def test_a_throttle_wait_does_not_spend_an_attempt(worker, db, run):
+    """Live-run bug: eight RedNote fetches behind a 45s gap failed on max_attempts, nothing wrong."""
+    task = add_task(db, run, max_attempts=1)
+
+    def not_yet(s, t):
+        raise Throttled("throttled for 45s", retry_after=timedelta(seconds=45))
+
+    HANDLERS[TaskKind.YOUTUBE_SEARCH] = not_yet
+    worker.run_once()
+
+    db.expire_all()
+    row = db.get(IngestTask, task.task_id)
+    assert (row.status, row.attempts) == (TaskStatus.PENDING, 0)
+    assert row.run_after > datetime.now(UTC)
     assert db.get(IngestRun, run.run_id).status == RunStatus.RUNNING
 
 

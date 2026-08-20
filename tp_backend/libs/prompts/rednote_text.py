@@ -1,6 +1,6 @@
 """Eateries out of a RedNote post's text body. Ported verbatim from spikes/xhs/food_spike.py."""
 
-from libs.prompts.registry import GEMINI_FLASH_LITE, Prompt
+from libs.prompts.registry import Prompt
 
 SCHEMA = {
     "type": "object",
@@ -74,5 +74,4 @@ Post body:
 ---
 """
 
-REDNOTE_TEXT = Prompt(name="rednote_text", version="v1", model=GEMINI_FLASH_LITE,
-                      template=TEMPLATE, schema=SCHEMA)
+REDNOTE_TEXT = Prompt(name="rednote_text", version="v1", template=TEMPLATE, schema=SCHEMA)

@@ -21,5 +21,9 @@ def handles(kind: TaskKind):
 
 def load_handlers() -> None:
     """Import the modules whose decorators populate HANDLERS."""
+    from tp_ingestions.rednote import extract as _rednote_extract  # noqa: F401
+    from tp_ingestions.rednote import fetch as _rednote_fetch  # noqa: F401
+    from tp_ingestions.rednote import ocr as _rednote_ocr  # noqa: F401
     from tp_ingestions.rednote import search as _rednote_search  # noqa: F401
+    from tp_ingestions.youtube import extract as _youtube_extract  # noqa: F401
     from tp_ingestions.youtube import search as _youtube_search  # noqa: F401
