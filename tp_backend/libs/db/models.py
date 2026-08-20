@@ -4,12 +4,13 @@ Statuses are stored as plain text with CHECK constraints rather than Postgres en
 a value to a native enum needs its own migration.
 """
 
-from datetime import datetime
+from datetime import date, datetime, time
 
 from sqlalchemy import (
     BigInteger,
     Boolean,
     CheckConstraint,
+    Date,
     DateTime,
     Float,
     ForeignKey,
@@ -17,6 +18,7 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
+    Time,
     UniqueConstraint,
     func,
     text,
@@ -52,19 +54,48 @@ def _ts(**kw) -> Mapped[datetime]:
 
 
 class City(Base):
-    """A city we ingest for. lat/lon anchors the geofence that keeps results local."""
+    """A city we ingest for, keyed by its Google place_id. lat/lon anchors the geofence."""
 
     __tablename__ = "cities"
 
-    city_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    city_id: Mapped[str] = mapped_column(String(255), primary_key=True)
     name: Mapped[str] = mapped_column(String(120), nullable=False)
     country: Mapped[str | None] = mapped_column(String(2))
+    timezone: Mapped[str | None] = mapped_column(String(64))
     lat: Mapped[float | None] = mapped_column(Float)
     lon: Mapped[float | None] = mapped_column(Float)
     last_ingested_at: Mapped[datetime | None] = _ts()
     created_at: Mapped[datetime] = _ts(nullable=False, server_default=func.now())
 
     places: Mapped[list["Place"]] = relationship(back_populates="city")
+    trips: Mapped[list["Trip"]] = relationship(back_populates="city")
+
+
+class Trip(Base):
+    """One person's plan for a city. Dates and times are local wall clock; the zone is city.timezone.
+
+    Storing an instant instead would drift, because a trip months out can cross a DST boundary.
+    """
+
+    __tablename__ = "trips"
+    __table_args__ = (
+        CheckConstraint("depart_date >= arrive_date", name="ck_trip_dates"),
+        Index("ix_trips_city", "city_id"),
+    )
+
+    trip_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    city_id: Mapped[str] = mapped_column(ForeignKey("cities.city_id"), nullable=False)
+    arrive_date: Mapped[date] = mapped_column(Date, nullable=False)
+    arrive_time: Mapped[time | None] = mapped_column(Time)
+    depart_date: Mapped[date] = mapped_column(Date, nullable=False)
+    depart_time: Mapped[time | None] = mapped_column(Time)
+    extra_details: Mapped[str | None] = mapped_column(Text)
+    owner: Mapped[str | None] = mapped_column(String(64))
+    created_at: Mapped[datetime] = _ts(nullable=False, server_default=func.now())
+    updated_at: Mapped[datetime] = _ts(nullable=False, server_default=func.now(),
+                                       onupdate=func.now())
+
+    city: Mapped[City] = relationship(back_populates="trips")
 
 
 class Place(Base):
@@ -174,6 +205,7 @@ class Extraction(Base):
         UniqueConstraint("source", "source_ref", "prompt_version", "model",
                          name="uq_extraction_ref_version"),
         _in("source", Source),
+        _in("extracted_from", ExtractedFrom),
     )
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
@@ -205,7 +237,8 @@ class IngestRun(Base):
     run_id: Mapped[str] = mapped_column(String(36), primary_key=True)
     city_id: Mapped[str | None] = mapped_column(ForeignKey("cities.city_id"))
     kind: Mapped[str] = mapped_column(String(20), nullable=False)
-    status: Mapped[str] = mapped_column(String(20), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False,
+                                       server_default=text("'pending'"))
     requested_by: Mapped[str | None] = mapped_column(String(64))
     requested_at: Mapped[datetime] = _ts(nullable=False, server_default=func.now())
     finished_at: Mapped[datetime | None] = _ts()
@@ -241,7 +274,8 @@ class IngestTask(Base):
     kind: Mapped[str] = mapped_column(String(32), nullable=False)
     source: Mapped[str | None] = mapped_column(String(16))
     payload: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default=text("'{}'::jsonb"))
-    dedupe_key: Mapped[str] = mapped_column(String(255), nullable=False)
+    # Wide because keys embed a city_id, which is a Google place_id.
+    dedupe_key: Mapped[str] = mapped_column(String(512), nullable=False)
     status: Mapped[str] = mapped_column(String(16), nullable=False,
                                         server_default=text("'pending'"))
     attempts: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))

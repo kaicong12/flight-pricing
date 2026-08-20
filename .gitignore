@@ -12,3 +12,4 @@ __pycache__/
 spikes/**/*.json
 spikes/**/ids.txt
 spikes/**/*.out
+tp_backend/.rednote_ratelimit.json
