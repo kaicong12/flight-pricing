@@ -6,14 +6,12 @@ sequence and warn about anything that does not work.
 
 **We do not optimise the order.** The user controls it; our job is routing plus validation.
 
-![Itinerary beside the map](screenshots/map_view_by_day.png)
+![Itinerary beside the map](screenshots/itinerary_and_map.png)
 
 Day 1 in Helsinki: ordered blocks with the walk leg between each pair, a provisional-plan banner
 because December holiday hours are not published yet, and a TOO LATE warning on Uspenski Cathedral —
-arrive 15:43, need 30 minutes, closes 16:00.
-
-These are **mockups, not a running app**: also [the trip form](screenshots/plan_city_trip.png) and
-[the progress checklist](screenshots/find_city_loading.png) shown while ingestion runs.
+arrive 15:43, need 30 minutes, closes 16:00. This screen is a **mockup, not a running app** — the
+map pane is a placeholder until the Routes API is enabled.
 
 ## How it works
 
@@ -32,11 +30,12 @@ to a Google `place_id` -> rank by how many independent sources mentioned it.
 
 | Works today | Not built |
 |---|---|
-| Schema + Alembic migrations | Handlers for `youtube.extract`, `rednote.fetch`, `rednote.extract`, `rednote.ocr`, `places.resolve` — those tasks are marked `blocked` |
+| Schema + Alembic migrations | `places.resolve` — extractions land in `extractions.result` and nothing writes `places` yet |
 | `POST /initiate-plan`, `GET /trips/{trip_id}` | Itinerary generation |
 | Worker loop: claim, lease reclaim, retry/backoff | Routing in the app (spike only) |
-| `youtube.search`, `rednote.search`, which fan out follow-on tasks | Next.js frontend — no `package.json` anywhere yet |
+| `youtube.search`, `rednote.search`, which fan out follow-on tasks | Every trip screen past the list: plan form redesign, ingesting, itinerary, sharing |
 | Versioned Gemini prompts in `libs/prompts` | Auth, sharing, proposed changes |
+| `tp_client`: the plan form and the trips list | |
 
 ## Getting started
 
@@ -59,6 +58,7 @@ The worker calls a real logged-in RedNote account with a hard rate limit. Do not
 | | |
 |---|---|
 | `tp_backend/` | API (`tp_api`), worker (`tp_ingestions`), schema and shared code (`libs`) |
+| `tp_client/` | Next.js app: route handlers proxy `tp_api`, so no key reaches client JS |
 | `spikes/` | throwaway exploration joined by JSON files on disk, not production code |
 | `screenshots/` | design mockups |
 

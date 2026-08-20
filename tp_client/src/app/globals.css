@@ -128,3 +128,42 @@
     @apply font-sans;
   }
 }
+/* The state accent is --brand, not --accent: shadcn already owns --accent as a neutral surface
+   and repainting it would restyle every ghost button. */
+@theme inline {
+  --color-page: var(--page);
+  --color-surface: var(--surface);
+  --color-ink: var(--ink);
+  --color-ink-soft: var(--ink-soft);
+  --color-faint: var(--faint);
+  --color-brand: var(--brand);
+  --color-brand-bg: var(--brand-bg);
+  --color-warn: var(--warn);
+  --color-warn-bg: var(--warn-bg);
+  --color-ok: var(--ok);
+  --color-ok-bg: var(--ok-bg);
+  --color-water: var(--water);
+  --shadow-card: 0 1px 2px rgba(23, 25, 28, 0.04);
+  --shadow-lift: 0 6px 20px rgba(23, 25, 28, 0.08);
+}
+
+:root {
+  --page: #eef1f5;
+  --surface: oklch(1 0 0);
+  --ink: #17191c;
+  --ink-soft: #545b65;
+  --faint: #9aa1ab;
+  --brand: #1f5fa9;
+  --brand-bg: #eef2f8;
+  --warn: #96601a;
+  --warn-bg: #fbf1e0;
+  --ok: #2f6b4f;
+  --ok-bg: #eaf1ec;
+  --water: #d7e3ec;
+  --ring: var(--brand);
+}
+
+@keyframes tp-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}

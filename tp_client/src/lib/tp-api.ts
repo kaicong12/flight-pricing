@@ -17,3 +17,13 @@ export async function proxy(path: string, init?: RequestInit): Promise<Response>
     headers: { "content-type": "application/json" },
   });
 }
+
+/** Server-side GET for server components, which need the parsed body rather than a Response. */
+export async function getJson<T>(path: string): Promise<T | null> {
+  try {
+    const r = await fetch(`${BASE}${path}`, { cache: "no-store" });
+    return r.ok ? ((await r.json()) as T) : null;
+  } catch {
+    return null;
+  }
+}
