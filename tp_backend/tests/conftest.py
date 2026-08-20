@@ -25,6 +25,20 @@ TABLES = ["place_mentions", "places", "ingest_tasks", "ingest_runs", "extraction
 HELSINKI = "ChIJkQYhlscLkkYRY_fiO4S9Ts0"
 
 
+@pytest.fixture(autouse=True)
+def _no_network(monkeypatch):
+    """Fail loudly rather than spend real quota: a stub that misses is otherwise a silent live call.
+
+    Only the real transports are blocked. TestClient rides ASGITransport, and psycopg does not go
+    through either of these, so both keep working.
+    """
+    def blocked(self, *a, **kw):
+        raise AssertionError(f"live network call in a test via {type(self).__name__} — stub it")
+
+    monkeypatch.setattr("httpx.HTTPTransport.handle_request", blocked)
+    monkeypatch.setattr("requests.adapters.HTTPAdapter.send", blocked)
+
+
 def make_city(db, city_id=HELSINKI, name="Helsinki", **kw):
     """A city row keyed the way the app keys them — by Google place_id."""
     db.add(City(city_id=city_id, name=name, country="FI", timezone="Europe/Helsinki",

@@ -16,6 +16,7 @@ from tp_ingestions.errors import TaskError
 from tp_ingestions.rednote import throttle
 
 SEARCH_URL = "https://webapi.rednote.com/api/sns/web/v1/search/notes"
+FEED_URL = "https://webapi.rednote.com/api/sns/web/v1/feed"
 
 UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
       "(KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36")
@@ -26,12 +27,15 @@ AUTH_HINTS = ("登录", "login", "登陆", "验证")
 log = logging.getLogger("rednote.client")
 
 
-def _headers() -> dict[str, str]:
+def _headers(endpoint: str) -> dict[str, str]:
+    """Signature headers for one endpoint. x-s is bound to the URL path, so search's will not
+    authenticate against /feed — each endpoint needs its own capture."""
     s = settings()
-    missing = [n for n, v in (("XHS_COOKIE", s.xhs_cookie),
-                              ("XHS_SEARCH_XS", s.xhs_search_xs),
-                              ("XHS_SEARCH_XT", s.xhs_search_xt),
-                              ("XHS_SEARCH_XS_COMMON", s.xhs_search_xs_common)) if not v]
+    prefix = f"XHS_{endpoint.upper()}_"
+    xs, xt = getattr(s, f"xhs_{endpoint}_xs"), getattr(s, f"xhs_{endpoint}_xt")
+    common, rap = getattr(s, f"xhs_{endpoint}_xs_common"), getattr(s, f"xhs_{endpoint}_xrap")
+    missing = [n for n, v in (("XHS_COOKIE", s.xhs_cookie), (prefix + "XS", xs),
+                              (prefix + "XT", xt), (prefix + "XS_COMMON", common)) if not v]
     if missing:
         raise TaskError(ErrorCode.CREDENTIALS, f"missing RedNote credentials: {', '.join(missing)}")
 
@@ -46,13 +50,13 @@ def _headers() -> dict[str, str]:
         "sec-fetch-site": "same-site",
         "user-agent": UA,
         "cookie": s.xhs_cookie,
-        "x-s": s.xhs_search_xs,
-        "x-t": s.xhs_search_xt,
-        "x-s-common": s.xhs_search_xs_common,
+        "x-s": xs,
+        "x-t": xt,
+        "x-s-common": common,
         "xy-common-params": "mlanguage=en_us&appKey=rednote",
     }
-    if s.xhs_search_xrap:
-        headers["x-rap-param"] = s.xhs_search_xrap
+    if rap:
+        headers["x-rap-param"] = rap
     return headers
 
 
@@ -65,10 +69,10 @@ def likes(raw: str | None) -> int:
     return int(re.sub(r"\D", "", text) or 0)
 
 
-def _post(url: str, body: dict) -> dict:
+def _post(url: str, endpoint: str, body: dict) -> dict:
     throttle.record()
     try:
-        r = client().post(url, json=body, headers=_headers())
+        r = client().post(url, json=body, headers=_headers(endpoint))
     except httpx.HTTPError as e:
         raise TaskError(ErrorCode.TRANSIENT, f"rednote: {e}") from e
 
@@ -99,7 +103,7 @@ def search_notes(keyword: str, page: int = 1, page_size: int = 20) -> list[dict]
     body = {"keyword": keyword, "page": page, "page_size": page_size,
             "search_id": uuid.uuid4().hex[:21], "sort": "general", "note_type": 0,
             "ext_flags": [], "geo": "", "image_formats": ["jpg", "webp", "avif"]}
-    data = _post(SEARCH_URL, body)
+    data = _post(SEARCH_URL, "search", body)
 
     notes = []
     for item in (data.get("data") or {}).get("items") or []:
@@ -114,3 +118,13 @@ def search_notes(keyword: str, page: int = 1, page_size: int = 20) -> list[dict]
             "author": (card.get("user") or {}).get("nickname"),
         })
     return notes
+
+
+def fetch_note(note_id: str, xsec_token: str | None) -> dict | None:
+    """One note's full body from /feed. Returns its note_card, or None if the feed had no item."""
+    body = {"source_note_id": note_id, "image_formats": ["jpg", "webp", "avif"],
+            "extra": {"need_body_topic": "1"}, "xsec_source": "pc_feed",
+            "xsec_token": xsec_token, "need_translation": 1}
+    data = _post(FEED_URL, "feed", body)
+    items = (data.get("data") or {}).get("items") or []
+    return (items[0].get("note_card") or None) if items else None

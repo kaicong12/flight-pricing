@@ -3,16 +3,20 @@ changes, or re-extraction will silently reuse the older result."""
 
 from dataclasses import dataclass
 
-GEMINI_FLASH_LITE = "gemini-3.5-flash-lite"
+from libs.settings import settings
 
 
 @dataclass(frozen=True)
 class Prompt:
     name: str
     version: str
-    model: str
     template: str
     schema: dict
+
+    @property
+    def model(self) -> str:
+        """Read at call time, not import time, so GEMINI_MODEL can be swapped without a code change."""
+        return settings().gemini_model
 
     @property
     def version_key(self) -> str:

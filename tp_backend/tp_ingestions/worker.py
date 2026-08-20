@@ -10,7 +10,7 @@ from datetime import UTC, datetime, timedelta
 from libs.db import session
 from libs.db.enums import ErrorCode
 from tp_ingestions import queue
-from tp_ingestions.errors import TaskError
+from tp_ingestions.errors import TaskError, Throttled
 from tp_ingestions.registry import HANDLERS, load_handlers
 from tp_ingestions.retry import retry_after
 
@@ -96,6 +96,12 @@ class Worker:
                 result = handler(s, task)
                 queue.complete(s, task.task_id)
             log.info("task %s done %s", task.task_id, result or "")
+        except Throttled as e:
+            when = datetime.now(UTC) + e.retry_after
+            log.info("task %s waiting %.0fs for budget", task.task_id,
+                     e.retry_after.total_seconds())
+            with session() as s:
+                queue.reschedule(s, task.task_id, str(e), when)
         except TaskError as e:
             self._settle_failure(task, e.code, str(e), e.retry_after)
         except Exception as e:

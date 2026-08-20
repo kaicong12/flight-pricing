@@ -1,6 +1,6 @@
 """Places out of a YouTube transcript. Ported verbatim from spikes/videos_transcribing."""
 
-from libs.prompts.registry import GEMINI_FLASH_LITE, Prompt
+from libs.prompts.registry import Prompt
 
 SCHEMA = {
     "type": "object",
@@ -71,5 +71,5 @@ Transcript:
 ---
 """
 
-YOUTUBE_TRANSCRIPT = Prompt(name="youtube_transcript", version="v1", model=GEMINI_FLASH_LITE,
-                            template=TEMPLATE, schema=SCHEMA)
+YOUTUBE_TRANSCRIPT = Prompt(name="youtube_transcript", version="v1", template=TEMPLATE,
+                            schema=SCHEMA)

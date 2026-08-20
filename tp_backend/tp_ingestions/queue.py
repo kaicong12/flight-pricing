@@ -86,6 +86,18 @@ def defer(session: Session, task_id: int, code: ErrorCode, error: str, when: dat
     )
 
 
+def reschedule(session: Session, task_id: int, reason: str, when: datetime) -> None:
+    """Put a task back without spending an attempt — it only waited its turn, it did not fail.
+
+    error_code is left alone so an earlier real failure's classification is not erased.
+    """
+    session.execute(
+        update(IngestTask).where(IngestTask.task_id == task_id)
+        .values(status=TaskStatus.PENDING, run_after=when, locked_by=None, locked_at=None,
+                attempts=IngestTask.attempts - 1, last_error=reason[:2000])
+    )
+
+
 def fail(session: Session, task_id: int, code: ErrorCode, error: str) -> None:
     session.execute(
         update(IngestTask).where(IngestTask.task_id == task_id)
