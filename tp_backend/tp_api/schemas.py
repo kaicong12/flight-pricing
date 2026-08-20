@@ -36,6 +36,12 @@ class InitiatePlanRequest(BaseModel):
         return self
 
 
+class CitySuggestionOut(BaseModel):
+    place_id: str
+    description: str
+    main_text: str | None = None
+
+
 class CityOut(BaseModel):
     city_id: str
     name: str

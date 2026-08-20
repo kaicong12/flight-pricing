@@ -8,6 +8,7 @@ from libs.http import client
 from libs.settings import settings
 
 DETAILS_URL = "https://places.googleapis.com/v1/places"
+AUTOCOMPLETE_URL = "https://places.googleapis.com/v1/places:autocomplete"
 FIELDS = "id,displayName,location,addressComponents,types,timeZone"
 
 # Autocomplete restricted to (cities) can still return a region or a district, but never a venue.
@@ -21,6 +22,13 @@ class PlacesError(RuntimeError):
 
 class NotACity(ValueError):
     """The place_id resolves to something that is not a city."""
+
+
+@dataclass(frozen=True)
+class CitySuggestion:
+    place_id: str
+    description: str
+    main_text: str | None
 
 
 @dataclass(frozen=True)
@@ -38,6 +46,35 @@ def _country(components: list[dict]) -> str | None:
         if "country" in c.get("types", []):
             return c.get("shortText")
     return None
+
+
+def search_cities(q: str, limit: int = 5, *, timeout: float = 10.0) -> list[CitySuggestion]:
+    """Typeahead over city names. No matches is an empty list, not an error."""
+    key = settings().google_api_key
+    if not key:
+        raise PlacesError("GOOGLE_API_KEY is not set")
+
+    try:
+        r = client().post(AUTOCOMPLETE_URL, timeout=timeout, headers={"X-Goog-Api-Key": key},
+                          json={"input": q, "includedPrimaryTypes": ["(cities)"]})
+    except httpx.HTTPError as e:
+        raise PlacesError(f"places autocomplete failed: {e}") from e
+    if r.status_code != 200:
+        raise PlacesError(f"places autocomplete returned {r.status_code}: {r.text[:200]}")
+
+    out = []
+    for s in r.json().get("suggestions") or []:
+        # A suggestion is either a placePrediction or a queryPrediction; only the former has an id.
+        p = s.get("placePrediction")
+        if not p or not p.get("placeId"):
+            continue
+        fmt = p.get("structuredFormat") or {}
+        out.append(CitySuggestion(
+            place_id=p["placeId"],
+            description=(p.get("text") or {}).get("text") or "",
+            main_text=(fmt.get("mainText") or {}).get("text"),
+        ))
+    return out[:limit]
 
 
 def city_details(place_id: str, *, timeout: float = 10.0) -> CityDetails:

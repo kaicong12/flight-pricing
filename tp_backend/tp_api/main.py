@@ -6,7 +6,7 @@ from typing import Annotated
 from uuid import uuid4
 
 from anyio import to_thread
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Query
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -15,9 +15,10 @@ from libs.db.enums import RunKind
 from libs.ingest import ensure_city, ensure_city_ingest
 from libs.places import NotACity, PlacesError
 from libs.settings import settings
-from tp_api.deps import CityLookup, city_lookup, db_session
+from tp_api.deps import CityLookup, CitySearch, city_lookup, city_search, db_session
 from tp_api.schemas import (
     CityOut,
+    CitySuggestionOut,
     IngestOut,
     InitiatePlanRequest,
     TaskProgress,
@@ -39,6 +40,20 @@ app = FastAPI(title="Trip planner API", lifespan=lifespan)
 
 Db = Annotated[Session, Depends(db_session)]
 Lookup = Annotated[CityLookup, Depends(city_lookup)]
+Search = Annotated[CitySearch, Depends(city_search)]
+
+
+@app.get("/cities/search", response_model=list[CitySuggestionOut])
+def search_cities_endpoint(
+    search: Search,
+    q: Annotated[str, Query(min_length=2, max_length=100)],
+    limit: Annotated[int, Query(ge=1, le=10)] = 5,
+) -> list[CitySuggestionOut]:
+    try:
+        found = search(q, limit)
+    except PlacesError as e:
+        raise HTTPException(502, f"city search failed: {e}") from e
+    return [CitySuggestionOut.model_validate(s, from_attributes=True) for s in found]
 
 
 @app.post("/initiate-plan", response_model=TripOut)
