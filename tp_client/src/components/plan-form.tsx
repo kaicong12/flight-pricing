@@ -12,11 +12,29 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { errorText, NOTE_TEXT, type CitySuggestion, type Trip } from "@/lib/api-types";
 
-const FIELD = "h-11 rounded-lg border-input bg-white px-3 text-sm shadow-xs";
+const FIELD = "h-11 rounded-[13px] border-input px-3.5 text-sm";
+const LABEL = "text-[13px] font-semibold";
+
+const STEPS = [
+  "We search YouTube and RedNote for this city, in English and the local language.",
+  "Gemini pulls the place names out of transcripts and note bodies.",
+  "Each name resolves to a Google place_id, so two sources naming one venue count as one place.",
+  "You get a shortlist ranked by independent mentions. You choose the order.",
+];
+
+// Routes API answers ROUTE_NOT_FOUND for transit beyond ~100 days, so the caveat is knowable
+// from the date the user just typed — before they commit, not after.
+const TRANSIT_HORIZON_DAYS = 100;
 
 /** Empty strings would fail time parsing upstream, so they go as null. */
 function orNull(value: string): string | null {
   return value.trim() === "" ? null : value;
+}
+
+function pastTransitHorizon(date: string): boolean {
+  if (date === "") return false;
+  const days = (Date.parse(`${date}T00:00:00`) - Date.now()) / 86_400_000;
+  return days > TRANSIT_HORIZON_DAYS;
 }
 
 export function PlanForm() {
@@ -65,85 +83,117 @@ export function PlanForm() {
   }
 
   return (
-    <div className="mx-auto w-full max-w-[520px] px-6 py-24">
-      <h1 className="text-3xl font-bold tracking-tight">Plan a city trip</h1>
-      <p className="mt-2 text-sm text-muted-foreground">
-        We read real travel videos to find places worth going to.
-      </p>
+    <main className="mx-auto grid w-full max-w-[1060px] items-start gap-12 px-7 pt-14 pb-24 lg:grid-cols-[minmax(0,1fr)_320px]">
+      <div>
+        <h1 className="text-[32px] font-semibold tracking-[-0.015em]">Plan a city trip</h1>
+        <p className="mt-2.5 text-[14.5px] text-muted-foreground">
+          We read real travel videos to find places worth going to.
+        </p>
 
-      <form onSubmit={submit} className="mt-10 space-y-6">
-        <div className="space-y-2">
-          <Label htmlFor="city" className="text-sm font-semibold">
+        <form
+          onSubmit={submit}
+          className="mt-8 rounded-card border border-border surface px-7 pt-6.5 pb-7 shadow-card"
+        >
+          <Label htmlFor="city" className={LABEL}>
             Where are you going?
           </Label>
-          <CityCombobox selected={city} onSelect={setCity} />
-        </div>
+          <div className="mt-2">
+            <CityCombobox selected={city} onSelect={setCity} />
+          </div>
 
-        <div className="grid grid-cols-2 gap-5">
-          <Leg
-            label="Arriving"
-            timeLabel="Flight lands"
-            idPrefix="arrive"
-            date={arriveDate}
-            time={arriveTime}
-            onDate={setArriveDate}
-            onTime={setArriveTime}
-          />
-          <Leg
-            label="Leaving"
-            timeLabel="Flight departs"
-            idPrefix="depart"
-            date={departDate}
-            time={departTime}
-            onDate={setDepartDate}
-            onTime={setDepartTime}
-          />
-        </div>
+          <div className="mt-6 grid gap-5 sm:grid-cols-2">
+            <Leg
+              label="Arriving"
+              timeLabel="Flight lands"
+              idPrefix="arrive"
+              date={arriveDate}
+              time={arriveTime}
+              onDate={setArriveDate}
+              onTime={setArriveTime}
+            />
+            <Leg
+              label="Leaving"
+              timeLabel="Flight departs"
+              idPrefix="depart"
+              date={departDate}
+              time={departTime}
+              onDate={setDepartDate}
+              onTime={setDepartTime}
+            />
+          </div>
 
-        <div className="space-y-2">
-          <Label htmlFor="extra" className="text-sm font-semibold">
-            Anything we should know?
-          </Label>
-          <Textarea
-            id="extra"
-            rows={3}
-            maxLength={500}
-            value={extraDetails}
-            onChange={(e) => setExtraDetails(e.target.value)}
-            placeholder="We love food and design, want at least one proper sauna, not big on churches, happy to walk"
-            className="rounded-lg border-input bg-white p-3 text-sm shadow-xs"
-          />
-        </div>
+          <div className="mt-6">
+            <Label htmlFor="extra" className={LABEL}>
+              Anything we should know?
+            </Label>
+            <Textarea
+              id="extra"
+              rows={3}
+              maxLength={500}
+              value={extraDetails}
+              onChange={(e) => setExtraDetails(e.target.value)}
+              placeholder="We love food and design, want at least one proper sauna, not big on churches, happy to walk"
+              className="mt-2 min-h-22 rounded-[13px] border-input p-3.5 text-sm leading-[1.5]"
+            />
+            <p className="mt-1.5 text-xs text-faint">One sentence is enough. 500 characters max.</p>
+          </div>
 
-        {error && (
-          <p role="alert" className="text-sm text-destructive">
-            {error}
-          </p>
-        )}
+          {pastTransitHorizon(arriveDate) && (
+            <div className="mt-6.5 flex items-center gap-3.5 rounded-[13px] border border-warn-border bg-warn-bg px-4 py-3.5">
+              <span className="size-1.5 shrink-0 rounded-full bg-warn" />
+              <p className="text-[13px] leading-[1.5] text-warn">
+                That is past the transit routing horizon, so this plan will use walking times only.
+                We will re-check nearer the date.
+              </p>
+            </div>
+          )}
 
-        <Button type="submit" disabled={!ready} className="h-11 w-full text-sm">
-          {submitting ? "Finding places…" : "Find places"}
-        </Button>
-        <p className="text-center text-xs text-muted-foreground">
-          We read real travel videos, so this takes a couple of minutes.
-        </p>
-      </form>
-
-      {trip && (
-        <section className="mt-10 space-y-3 rounded-lg border border-input bg-white p-4 text-sm">
-          <p className="font-mono text-xs">trip_id: {trip.trip_id}</p>
-          <p className="font-mono text-xs">
-            ingest: {trip.ingest ? `${trip.ingest.run_id} — ${trip.ingest.status}` : "none (city already warm)"}
-          </p>
-          {trip.notes.map((n) => (
-            <p key={n} className="text-xs text-muted-foreground">
-              {NOTE_TEXT[n] ?? n}
+          {error && (
+            <p role="alert" className="mt-6 text-sm text-destructive">
+              {error}
             </p>
+          )}
+
+          <Button type="submit" disabled={!ready} className="mt-5.5 h-11.5 w-full rounded-full text-sm hover:bg-ink-hover">
+            {submitting ? "Finding places…" : "Find places"}
+          </Button>
+          <p className="mt-3 text-center text-xs text-faint">
+            We read real travel videos, so this takes a couple of minutes.
+          </p>
+        </form>
+
+        {trip && (
+          <section className="mt-8 space-y-3 rounded-card-sm border border-border surface p-5 text-sm shadow-card">
+            <p className="font-mono text-xs text-ink-soft">trip_id: {trip.trip_id}</p>
+            <p className="font-mono text-xs text-ink-soft">
+              ingest: {trip.ingest ? `${trip.ingest.run_id} — ${trip.ingest.status}` : "none (city already warm)"}
+            </p>
+            {trip.notes.map((n) => (
+              <p key={n} className="text-xs text-muted-foreground">
+                {NOTE_TEXT[n] ?? n}
+              </p>
+            ))}
+            <TripProgress tripId={trip.trip_id} initialStatus={trip.ingest?.status ?? "done"} />
+          </section>
+        )}
+      </div>
+
+      <aside className="border-border pl-0 lg:sticky lg:top-23 lg:border-l lg:pl-6">
+        <h2 className="font-mono text-[11px] tracking-[0.06em] text-faint uppercase">
+          What happens next
+        </h2>
+        <ol className="mt-4 grid gap-4.5">
+          {STEPS.map((text, i) => (
+            <li key={text} className="grid grid-cols-[22px_minmax(0,1fr)] items-start gap-3">
+              <span className="grid size-5.5 place-items-center rounded-full bg-page font-mono text-[11px] text-muted-foreground">
+                {i + 1}
+              </span>
+              <span className="text-[13px] leading-[1.55] text-ink-soft">{text}</span>
+            </li>
           ))}
-          <TripProgress tripId={trip.trip_id} initialStatus={trip.ingest?.status ?? "done"} />
-        </section>
-      )}
-    </div>
+        </ol>
+      </aside>
+    </main>
   );
 }
 
@@ -159,27 +209,27 @@ type LegProps = {
 
 function Leg({ label, timeLabel, idPrefix, date, time, onDate, onTime }: LegProps) {
   return (
-    <div className="space-y-2">
-      <Label htmlFor={`${idPrefix}-date`} className="text-sm font-semibold">
+    <div>
+      <Label htmlFor={`${idPrefix}-date`} className={LABEL}>
         {label}
       </Label>
-      <Input
-        id={`${idPrefix}-date`}
-        type="date"
-        value={date}
-        onChange={(e) => onDate(e.target.value)}
-        className={FIELD}
-      />
-      <Label htmlFor={`${idPrefix}-time`} className="text-xs font-normal text-muted-foreground">
-        {timeLabel}
-      </Label>
-      <Input
-        id={`${idPrefix}-time`}
-        type="time"
-        value={time}
-        onChange={(e) => onTime(e.target.value)}
-        className="h-9 rounded-lg border-input bg-white px-3 text-sm shadow-xs"
-      />
+      <div className="mt-2 flex gap-2.5">
+        <Input
+          id={`${idPrefix}-date`}
+          type="date"
+          value={date}
+          onChange={(e) => onDate(e.target.value)}
+          className={FIELD}
+        />
+        <Input
+          type="time"
+          aria-label={timeLabel}
+          value={time}
+          onChange={(e) => onTime(e.target.value)}
+          className={`${FIELD} w-auto shrink-0 px-2.5 font-mono`}
+        />
+      </div>
+      <p className="mt-1.5 text-xs text-faint">{timeLabel}</p>
     </div>
   );
 }

@@ -5,24 +5,24 @@ import Link from "next/link";
 
 import { tripHref, type TripSummary } from "@/lib/trips";
 
-const GRID =
-  "repeating-linear-gradient(0deg, rgba(23,25,28,0.05) 0 1px, transparent 1px 34px), repeating-linear-gradient(90deg, rgba(23,25,28,0.05) 0 1px, transparent 1px 34px)";
+const CONTOURS =
+  "repeating-radial-gradient(circle at 28% 118%, rgba(58,74,53,0.09) 0 1.5px, transparent 1.5px 20px)";
 
 export function TripCard({ trip }: { trip: TripSummary }) {
   return (
     <Link
       href={tripHref(trip)}
-      className="block overflow-hidden rounded-xl border border-border bg-surface shadow-card transition-all hover:border-[#cdd4dd] hover:shadow-lift outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+      className="block overflow-hidden rounded-card border border-border surface shadow-card transition-all hover:border-[#c6bda4] hover:shadow-lift outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
     >
       <div
-        className="relative h-38 overflow-hidden bg-[#e7ebef]"
-        style={{ backgroundImage: GRID }}
+        className="relative h-38 overflow-hidden bg-land"
+        style={{ backgroundImage: CONTOURS }}
       >
-        <span className="absolute -bottom-[22%] -left-[30%] -right-[10%] h-[78px] -rotate-6 bg-water" />
-        <span className="absolute top-3 left-3 flex h-6 items-center rounded-full bg-white/90 px-2.5 font-mono text-[10.5px] tracking-[0.05em] text-ink-soft uppercase">
+        <span className="water absolute -bottom-[22%] -left-[30%] -right-[10%] h-[82px] -rotate-6 rounded-[46%_54%_38%_62%_/_60%_40%_56%_44%]" />
+        <span className="absolute top-3 left-3 flex h-6 items-center rounded-full bg-white/92 px-2.5 font-mono text-[10.5px] tracking-[0.04em] text-ink-soft uppercase">
           {trip.thumb_label}
         </span>
-        <span className="absolute right-3 bottom-3 font-mono text-[10.5px] text-ink-soft">
+        <span className="absolute right-3 bottom-3 flex h-[22px] items-center rounded-full bg-surface/90 px-2.5 font-mono text-[10.5px] text-ink-soft">
           {trip.thumb_note}
         </span>
       </div>
