@@ -118,13 +118,14 @@ box *before* judging anything else.
 
 ## To do
 
-- **`output: "standalone"` must be added to `tp_client/next.config.ts`.** `tp_client/Dockerfile`
-  copies `.next/standalone`, so the build fails without it.
 - A real `GET /health` endpoint. The `api` healthcheck currently probes `/openapi.json`, which only
   proves the process is serving, not that the database is reachable.
 
 ## Notes
 
+- **Do not set `output: "standalone"` in `tp_client/next.config.ts`.** Vercel bundles for itself, and
+  its Next 16.3.x packaging step fails with `ENOENT .next/next-server.js.nft.json` after a
+  `next build` that succeeded. It was there for a `tp_client/Dockerfile` nothing ever built.
 - `NODE_EXTRA_CA_CERTS` / `REQUESTS_CA_BUNDLE` are only needed behind corporate TLS interception.
   Not on EC2 — leave them unset.
 - RDS: `sslmode=require` in `DATABASE_URL`.

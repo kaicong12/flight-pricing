@@ -213,6 +213,9 @@ hours and daylight — *"Uspenski: arrive 15:43, need 75 min, closes 16:00"*. Al
 - **Visual language is recorded in `tp_client/docs/design-system.md`** — warm-neutral tokens over the
   shadcn `base-nova` structure, light only. Colour carries state and nothing else, so read it before
   adding a hex.
+- **`output: "standalone"` breaks the Vercel build** on Next 16.3.x — its packaging step ENOENTs on
+  `.next/next-server.js.nft.json` after a `next build` that succeeded. There is no client Docker
+  image, so nothing needs it.
 - **`shadcn` defaults to Base UI now, not Radix.** `components.json` says `base-nova`; `Popover` is
   `@base-ui/react` and only `Command` is still `cmdk`. Size a popup to its trigger with
   `w-(--anchor-width)`, not Radix's variable.
