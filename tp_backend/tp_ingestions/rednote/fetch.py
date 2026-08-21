@@ -8,11 +8,11 @@ from sqlalchemy.orm import Session
 
 from libs.db import RedNotePost
 from libs.db.enums import ErrorCode, TaskKind
+from tp_ingestions import limits
 from tp_ingestions.errors import TaskError
 from tp_ingestions.queue import ClaimedTask
 from tp_ingestions.rednote import client
 from tp_ingestions.rednote.extract import extract_note
-from tp_ingestions.rednote.throttle import await_budget
 from tp_ingestions.registry import handles
 
 log = logging.getLogger("rednote.fetch")
@@ -60,7 +60,7 @@ def rednote_fetch(session: Session, task: ClaimedTask) -> dict:
     if note is None:
         raise TaskError(ErrorCode.PERMANENT, f"rednote note {note_id} was never inserted by search")
 
-    await_budget()
+    limits.rednote().take()
     card = client.fetch_note(note_id, task.payload.get("xsec_token") or note.xsec_token)
     if not card or not (card.get("desc") or "").strip():
         raise TaskError(ErrorCode.PERMANENT, f"rednote note {note_id} returned no body")

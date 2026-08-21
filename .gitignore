@@ -12,4 +12,6 @@ __pycache__/
 spikes/**/*.json
 spikes/**/ids.txt
 spikes/**/*.out
-tp_backend/.rednote_ratelimit.json
+
+# Corporate TLS-interception roots, needed only to build behind such a proxy. Local, never shared.
+tp_backend/certs/*.crt

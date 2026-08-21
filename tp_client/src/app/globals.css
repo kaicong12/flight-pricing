@@ -8,7 +8,7 @@
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --font-sans: var(--font-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-mono: var(--font-plex-mono);
   --font-heading: var(--font-sans);
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
@@ -49,30 +49,30 @@
 }
 
 :root {
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
+  --background: #f3f0e6;
+  --foreground: #252b20;
+  --card: #fdfbf3;
+  --card-foreground: #252b20;
+  --popover: #fdfbf3;
+  --popover-foreground: #252b20;
+  --primary: #252b20;
+  --primary-foreground: #fdfbf3;
+  --secondary: #f0ece0;
+  --secondary-foreground: #252b20;
+  --muted: #f0ece0;
+  --muted-foreground: #6a7263;
+  --accent: #f0ece0;
+  --accent-foreground: #252b20;
   --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
+  --border: #e3ddcb;
+  --input: #e0dac9;
   --ring: oklch(0.708 0 0);
   --chart-1: oklch(0.87 0 0);
   --chart-2: oklch(0.556 0 0);
   --chart-3: oklch(0.439 0 0);
   --chart-4: oklch(0.371 0 0);
   --chart-5: oklch(0.269 0 0);
-  --radius: 0.625rem;
+  --radius: 0.875rem;
   --sidebar: oklch(0.985 0 0);
   --sidebar-foreground: oklch(0.145 0 0);
   --sidebar-primary: oklch(0.205 0 0);
@@ -123,6 +123,9 @@
   }
   body {
     @apply bg-background text-foreground;
+    background-image:
+      radial-gradient(1100px 620px at 12% -12%, rgba(116, 142, 108, 0.13), transparent 62%),
+      radial-gradient(900px 520px at 100% -4%, rgba(150, 180, 196, 0.2), transparent 58%);
   }
   html {
     @apply font-sans;
@@ -133,37 +136,63 @@
 @theme inline {
   --color-page: var(--page);
   --color-surface: var(--surface);
+  --color-hairline: var(--hairline);
   --color-ink: var(--ink);
+  --color-ink-hover: var(--ink-hover);
   --color-ink-soft: var(--ink-soft);
   --color-faint: var(--faint);
   --color-brand: var(--brand);
   --color-brand-bg: var(--brand-bg);
   --color-warn: var(--warn);
   --color-warn-bg: var(--warn-bg);
+  --color-warn-border: var(--warn-border);
   --color-ok: var(--ok);
   --color-ok-bg: var(--ok-bg);
-  --color-water: var(--water);
-  --shadow-card: 0 1px 2px rgba(23, 25, 28, 0.04);
-  --shadow-lift: 0 6px 20px rgba(23, 25, 28, 0.08);
+  --color-alert: var(--alert);
+  --color-alert-bg: var(--alert-bg);
+  --color-land: var(--land);
+  --radius-card: 26px 20px 24px 22px;
+  --radius-card-sm: 20px 16px 18px 17px;
+  --shadow-card: 0 1px 2px rgba(37, 43, 32, 0.04);
+  --shadow-lift: 0 6px 20px rgba(37, 43, 32, 0.08);
 }
 
 :root {
-  --page: #eef1f5;
-  --surface: oklch(1 0 0);
-  --ink: #17191c;
-  --ink-soft: #545b65;
-  --faint: #9aa1ab;
-  --brand: #1f5fa9;
-  --brand-bg: #eef2f8;
-  --warn: #96601a;
-  --warn-bg: #fbf1e0;
-  --ok: #2f6b4f;
-  --ok-bg: #eaf1ec;
-  --water: #d7e3ec;
+  --page: #f3f0e6;
+  --surface: #fdfbf3;
+  --hairline: #ece7d9;
+  --ink: #252b20;
+  --ink-hover: #39412f;
+  --ink-soft: #4b5344;
+  --faint: #98a08d;
+  --brand: #2c6b64;
+  --brand-bg: #e5efec;
+  --warn: #8a6524;
+  --warn-bg: #f6ebd4;
+  --warn-border: #ebdbba;
+  --ok: #4e7a45;
+  --ok-bg: #e9f0e0;
+  --alert: #8b4526;
+  --alert-bg: #f8e7dc;
+  --land: #e8e7d6;
   --ring: var(--brand);
+}
+
+/* Cards are paper, not glass: a gradient fill rather than a flat one. */
+@utility surface {
+  background-color: var(--surface);
+  background-image: linear-gradient(168deg, #fefdf7, #fbf6ea);
+}
+
+@utility water {
+  background-image: linear-gradient(180deg, #bfd2de, #adc3d2);
 }
 
 @keyframes tp-pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.35; }
+}
+
+@keyframes tp-spin {
+  to { transform: rotate(360deg); }
 }

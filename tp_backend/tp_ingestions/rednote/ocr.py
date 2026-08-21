@@ -11,7 +11,9 @@ from libs.db.enums import ErrorCode, ExtractedFrom, Source, TaskKind
 from libs.http import client
 from libs.prompts import REDNOTE_OCR
 from libs.settings import settings
+from tp_ingestions import limits
 from tp_ingestions.errors import TaskError
+from tp_ingestions.places.resolve import enqueue_resolve
 from tp_ingestions.queue import ClaimedTask
 from tp_ingestions.rednote.extract import already_extracted, city_name
 from tp_ingestions.registry import handles
@@ -48,7 +50,9 @@ def rednote_ocr(session: Session, task: ClaimedTask) -> dict:
     if already_extracted(session, Source.REDNOTE, note_id, REDNOTE_OCR):
         return {"note_id": note_id, "cached": True}
 
-    # The image cards sit on a CDN, not the logged-in API, so these calls are outside the throttle.
+    # Gemini's gate first: it is the budget that can defer, and downloading before it would throw
+    # away the images. The cards sit on a CDN, not the logged-in API, so they need no RedNote budget.
+    limits.gemini().take()
     images = download(note.image_urls[:settings().rednote_ocr_max_images])
     if not images:
         raise TaskError(ErrorCode.PERMANENT, f"rednote note {note_id}: no image card downloaded")
@@ -65,4 +69,7 @@ def rednote_ocr(session: Session, task: ClaimedTask) -> dict:
         is_promotional=bool(result.get("is_promotional")), content_type=result.get("content_type"),
         place_count=len(places), result=result))
 
-    return {"note_id": note_id, "images": len(images), "places": len(places)}
+    resolve = enqueue_resolve(session, task, Source.REDNOTE, note_id,
+                              REDNOTE_OCR.version_key, REDNOTE_OCR.model) if places else 0
+    return {"note_id": note_id, "images": len(images), "places": len(places),
+            "resolve_queued": resolve}

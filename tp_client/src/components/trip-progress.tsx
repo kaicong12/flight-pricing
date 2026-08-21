@@ -1,6 +1,6 @@
 "use client";
 
-// Wiring proof, not a designed screen: polls the trip and lists whatever the task checklist says.
+// Polls the trip and renders whatever the task checklist says, one row per (kind, status).
 
 import { useEffect, useState } from "react";
 
@@ -43,16 +43,39 @@ export function TripProgress({
   }, [tripId, stopped]);
 
   return (
-    <div className="space-y-1 border-t border-input pt-3 font-mono text-xs">
-      <p>
-        status: {status?.ingest?.status ?? initialStatus}
-        {stopped ? " (polling stopped)" : " (polling)"}
-      </p>
+    <div className="border-t border-hairline pt-3">
       {(status?.progress ?? []).map((p) => (
-        <p key={`${p.kind}:${p.status}`}>
-          {p.kind} — {p.status} — {p.count}
-        </p>
+        <div
+          key={`${p.kind}:${p.status}`}
+          className="grid grid-cols-[18px_minmax(0,1fr)_auto] items-center gap-3.5 border-b border-hairline py-2.5 last:border-b-0"
+        >
+          <StageIcon status={p.status} />
+          <div>
+            <p className="font-mono text-xs text-ink">{p.kind}</p>
+            <p className="mt-0.5 font-mono text-[11px] text-faint">{p.status}</p>
+          </div>
+          <span className="font-mono text-[11.5px] text-muted-foreground">{p.count}</span>
+        </div>
       ))}
+      <p className="pt-3 font-mono text-[11px] text-faint">
+        {status?.ingest?.status ?? initialStatus} · {stopped ? "polling stopped" : "polling"}
+      </p>
     </div>
   );
+}
+
+/** A throttle wait is not a failure, so `blocked` renders as waiting rather than as an error. */
+function StageIcon({ status }: { status: string }) {
+  if (status === "done")
+    return (
+      <span className="grid size-4.5 place-items-center rounded-full bg-ok text-[10px] font-bold text-primary-foreground">
+        ✓
+      </span>
+    );
+  if (status === "failed") return <span className="size-4 rounded-full border-2 border-destructive" />;
+  if (status === "running")
+    return (
+      <span className="size-4 animate-[tp-spin_0.9s_linear_infinite] rounded-full border-2 border-[#dcd5c2] border-t-brand motion-reduce:animate-none" />
+    );
+  return <span className="size-4 rounded-full border-[1.5px] border-dashed border-[#d7cfba]" />;
 }

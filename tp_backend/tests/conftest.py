@@ -18,9 +18,10 @@ from libs.settings import settings
 from tp_api.deps import city_lookup, db_session
 from tp_api.main import app
 from tp_api.schemas import today_utc
+from tp_ingestions.throttle import Throttler
 
-TABLES = ["place_mentions", "places", "ingest_tasks", "ingest_runs", "extractions",
-          "rednote_posts", "youtube_videos", "trips", "cities"]
+TABLES = ["place_mentions", "places", "place_queries", "ingest_tasks", "ingest_runs", "extractions",
+          "rednote_posts", "youtube_videos", "throttle_calls", "trips", "cities"]
 
 HELSINKI = "ChIJkQYhlscLkkYRY_fiO4S9Ts0"
 
@@ -37,6 +38,19 @@ def _no_network(monkeypatch):
 
     monkeypatch.setattr("httpx.HTTPTransport.handle_request", blocked)
     monkeypatch.setattr("requests.adapters.HTTPAdapter.send", blocked)
+
+
+@pytest.fixture(autouse=True)
+def _no_throttle(monkeypatch):
+    """No test sleeps on a gap or writes throttle history.
+
+    tests/test_throttle.py builds Throttlers directly, so it is unaffected by this.
+    """
+    free = Throttler("test", min_gap=0.0, jitter=0.0, limits=[])
+    monkeypatch.setattr(free, "take", lambda: None)
+    monkeypatch.setattr(free, "record", lambda: None)
+    monkeypatch.setattr("tp_ingestions.limits.rednote", lambda: free)
+    monkeypatch.setattr("tp_ingestions.limits.gemini", lambda: free)
 
 
 def make_city(db, city_id=HELSINKI, name="Helsinki", **kw):

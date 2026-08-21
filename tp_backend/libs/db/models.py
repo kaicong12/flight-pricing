@@ -27,6 +27,7 @@ from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 from libs.db.enums import (
+    Category,
     Confidence,
     ErrorCode,
     ExtractedFrom,
@@ -136,6 +137,7 @@ class PlaceMention(Base):
         _in("source", Source),
         _in("sentiment", Sentiment),
         _in("extracted_from", ExtractedFrom),
+        _in("category", Category),
         Index("ix_mentions_place", "place_id"),
     )
 
@@ -144,6 +146,7 @@ class PlaceMention(Base):
     source: Mapped[str] = mapped_column(String(16), nullable=False)
     source_ref: Mapped[str] = mapped_column(String(64), nullable=False)
     name_as_written: Mapped[str | None] = mapped_column(Text)
+    category: Mapped[str | None] = mapped_column(String(16))
     why_go: Mapped[str | None] = mapped_column(Text)
     dish: Mapped[str | None] = mapped_column(Text)
     quoted_price: Mapped[str | None] = mapped_column(Text)
@@ -155,6 +158,39 @@ class PlaceMention(Base):
     created_at: Mapped[datetime] = _ts(nullable=False, server_default=func.now())
 
     place: Mapped[Place] = relationship(back_populates="mentions")
+
+
+class ThrottleCall(Base):
+    """One call we have spent against an external domain's budget.
+
+    In Postgres rather than a file so every worker shares one budget — the budget protects a single
+    shared account, so a per-host file would hand a second worker a second full allowance. Written on
+    its own connection, never the handler's: a rolled-back task must not refund a call we really made.
+    """
+
+    __tablename__ = "throttle_calls"
+    __table_args__ = (Index("ix_throttle_domain_time", "domain", "called_at"),)
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    domain: Mapped[str] = mapped_column(String(32), nullable=False)
+    called_at: Mapped[datetime] = _ts(nullable=False, server_default=func.now())
+
+
+class PlaceQuery(Base):
+    """What a search string resolved to, so Google is never paid twice for the same name.
+
+    Only hits are stored. A miss is deliberately not cached: searchText answers a silent throttle
+    with 200 and an empty list, which is indistinguishable from "no such place", so remembering it
+    would poison that name for good. Re-paying for the ~10% of names that never resolve is the
+    cheaper mistake. No FK on place_id — a row is kept even when the place it names is then rejected.
+    """
+
+    __tablename__ = "place_queries"
+
+    city_id: Mapped[str] = mapped_column(ForeignKey("cities.city_id"), primary_key=True)
+    query_norm: Mapped[str] = mapped_column(String(200), primary_key=True)
+    place_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    created_at: Mapped[datetime] = _ts(nullable=False, server_default=func.now())
 
 
 class RedNotePost(Base):

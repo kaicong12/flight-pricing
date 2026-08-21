@@ -1,4 +1,4 @@
-"""youtube.extract — read a video's transcript for places. Nothing downstream is enqueued."""
+"""youtube.extract — read a video's transcript for places, then queue their resolution."""
 
 import logging
 
@@ -9,7 +9,9 @@ from libs import gemini
 from libs.db import Extraction, YouTubeVideo
 from libs.db.enums import ErrorCode, ExtractedFrom, Source, TaskKind
 from libs.prompts import YOUTUBE_TRANSCRIPT
+from tp_ingestions import limits
 from tp_ingestions.errors import TaskError
+from tp_ingestions.places.resolve import enqueue_resolve
 from tp_ingestions.queue import ClaimedTask
 from tp_ingestions.registry import handles
 from tp_ingestions.youtube import transcript as tx
@@ -40,6 +42,7 @@ def youtube_extract(session: Session, task: ClaimedTask) -> dict:
         video.transcript = text
         session.flush()
 
+    limits.gemini().take()
     result = gemini.generate(YOUTUBE_TRANSCRIPT, YOUTUBE_TRANSCRIPT.render(transcript=text))
     places = result.get("places") or []
 
@@ -51,5 +54,8 @@ def youtube_extract(session: Session, task: ClaimedTask) -> dict:
         is_promotional=False, content_type=result.get("content_type"),
         place_count=len(places), result=result))
 
+    resolve = enqueue_resolve(session, task, Source.YOUTUBE, video_id,
+                              YOUTUBE_TRANSCRIPT.version_key, YOUTUBE_TRANSCRIPT.model) \
+        if places else 0
     return {"video_id": video_id, "travel": bool(result.get("is_travel_content")),
-            "places": len(places)}
+            "places": len(places), "resolve_queued": resolve}

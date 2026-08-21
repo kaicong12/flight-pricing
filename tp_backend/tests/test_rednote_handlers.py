@@ -81,13 +81,10 @@ def queued_task(db, run, kind=TaskKind.REDNOTE_FETCH, **payload):
 
 @pytest.fixture
 def worker(monkeypatch):
-    monkeypatch.setattr("tp_ingestions.rednote.throttle.await_budget", lambda: None)
-    monkeypatch.setattr(fetch, "await_budget", lambda: None)
     return Worker(name="w1", poll_interval=0, reap_interval=1e9)
 
 
 def test_fetch_stores_the_note_body(db, run, post, monkeypatch):
-    monkeypatch.setattr(fetch, "await_budget", lambda: None)
     monkeypatch.setattr(fetch.client, "fetch_note", lambda n, t: CARD)
     monkeypatch.setattr(extract.gemini, "generate", lambda *a, **k: result([place()]))
 
@@ -104,7 +101,6 @@ def test_fetch_stores_the_note_body(db, run, post, monkeypatch):
 
 def test_fetch_strips_zero_width_characters_from_the_body(db, run, post, monkeypatch):
     """Some notes separate every letter of a venue name, which would wreck name extraction."""
-    monkeypatch.setattr(fetch, "await_budget", lambda: None)
     monkeypatch.setattr(fetch.client, "fetch_note",
                         lambda n, t: CARD | {"desc": "T\u200bang's\nR\u200be"})
     monkeypatch.setattr(extract.gemini, "generate", lambda *a, **k: result())
@@ -117,7 +113,6 @@ def test_fetch_strips_zero_width_characters_from_the_body(db, run, post, monkeyp
 
 
 def test_fetch_of_a_bodyless_note_is_permanent(db, run, post, monkeypatch):
-    monkeypatch.setattr(fetch, "await_budget", lambda: None)
     monkeypatch.setattr(fetch.client, "fetch_note", lambda n, t: None)
 
     with pytest.raises(TaskError) as e:
@@ -250,12 +245,11 @@ def test_ocr_downloads_at_most_the_configured_number_of_cards(db, run, post, mon
 
 
 def test_a_search_caps_its_fetch_fan_out(db, run, monkeypatch):
-    """page_size is 20 but MAX_PER_HOUR is 20, so one city must not spend the whole hour."""
+    """page_size is 20, so one city must not spend most of an hour's budget."""
     from tp_ingestions.rednote import search
 
     notes = [{"note_id": f"n{i}", "xsec_token": "t", "title": f"t{i}", "likes": i, "author": "a"}
              for i in range(20)]
-    monkeypatch.setattr(search, "await_budget", lambda: None)
     monkeypatch.setattr(search.client, "search_notes", lambda kw: notes)
 
     out = search.rednote_search(db, task(run, kind=TaskKind.REDNOTE_SEARCH, keyword="Tromsø 美食"))
@@ -266,7 +260,6 @@ def test_a_search_caps_its_fetch_fan_out(db, run, monkeypatch):
 
 
 def test_a_search_task_that_never_ran_leaves_fetch_permanent(db, run, monkeypatch):
-    monkeypatch.setattr(fetch, "await_budget", lambda: None)
     with pytest.raises(TaskError) as e:
         fetch.rednote_fetch(db, task(run))
     assert e.value.code == ErrorCode.PERMANENT
@@ -281,4 +274,4 @@ def test_a_blocked_kind_no_longer_happens_for_rednote(db, run, post, worker, mon
     worker.run_once()
 
     db.expire_all()
-    assert db.scalars(select(IngestTask.status)).all() == [TaskStatus.DONE]
+    assert TaskStatus.BLOCKED not in db.scalars(select(IngestTask.status)).all()

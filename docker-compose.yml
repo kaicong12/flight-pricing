@@ -1,5 +1,13 @@
-# Single-host stack for a t4g.micro. Postgres is RDS, so there is no db service — DATABASE_URL
-# arrives from the environment. Images are built elsewhere; see docs/deploy.md.
+# Backend stack for a t4g.micro: migrate + api + one worker. No db service — Postgres is RDS, so
+# DATABASE_URL arrives from the environment. No web service either: tp_client is on Vercel and talks
+# to this API over its public URL. Images are built elsewhere; see docs/deploy.md.
+
+# dockerd pulls base images using the host's trust store, so behind corporate TLS interception it
+# cannot verify docker.io. Set DOCKER_REGISTRY to an internal mirror; unset is correct on EC2.
+x-build: &build
+  context: ./tp_backend
+  args:
+    REGISTRY: ${DOCKER_REGISTRY:-docker.io}
 
 x-logging: &logging
   driver: json-file
@@ -26,8 +34,8 @@ x-backend-env: &backend-env
 
 services:
   migrate:
+    # No build section: api builds the shared image. Three services building one tag race on export.
     image: ${BACKEND_IMAGE:-tp-backend:local}
-    build: ./tp_backend
     command: ["alembic", "-c", "libs/db/alembic.ini", "upgrade", "head"]
     environment:
       DATABASE_URL: ${DATABASE_URL}
@@ -37,7 +45,7 @@ services:
 
   api:
     image: ${BACKEND_IMAGE:-tp-backend:local}
-    build: ./tp_backend
+    build: *build
     command: ["uvicorn", "tp_api.main:app", "--host", "0.0.0.0", "--port", "8000"]
     environment: *backend-env
     ports: ["8000:8000"]
@@ -57,35 +65,12 @@ services:
 
   worker:
     image: ${BACKEND_IMAGE:-tp-backend:local}
-    build: ./tp_backend
     command: ["python", "-m", "tp_ingestions"]
     environment:
       <<: *backend-env
-      # On a named volume deliberately: the RedNote call history lives in this file, and losing it
-      # on a container restart lets the next start burst straight past the daily cap on a real
-      # logged-in account.
-      REDNOTE_THROTTLE_STATE: /state/rednote_ratelimit.json
-    volumes:
-      - rednote_throttle:/state
     depends_on:
       migrate:
         condition: service_completed_successfully
     restart: unless-stopped
     mem_limit: 320m
     logging: *logging
-
-  web:
-    image: ${WEB_IMAGE:-tp-web:local}
-    build: ./tp_client
-    environment:
-      TP_API_URL: http://api:8000
-    ports: ["3000:3000"]
-    depends_on:
-      api:
-        condition: service_started
-    restart: unless-stopped
-    mem_limit: 256m
-    logging: *logging
-
-volumes:
-  rednote_throttle:

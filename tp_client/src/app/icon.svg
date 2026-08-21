@@ -1,6 +1,8 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">
-  <rect width="32" height="32" rx="8" fill="#1F5FA9"/>
-  <path d="M8.5 23.5 L13.5 15 L20 18.5 L23 12" fill="none" stroke="#fff" stroke-width="2.4"
-        stroke-linecap="round" stroke-linejoin="round" opacity="0.92"/>
-  <circle cx="23.5" cy="11" r="3.6" fill="#fff"/>
+  <linearGradient id="leaf" x1="0" y1="0" x2="1" y2="1">
+    <stop offset="0" stop-color="#4E7A45"/>
+    <stop offset="1" stop-color="#2C6B64"/>
+  </linearGradient>
+  <path d="M16 0 H28 A4 4 0 0 1 32 4 V16 A16 16 0 0 1 16 32 H4 A4 4 0 0 1 0 28 V16 A16 16 0 0 1 16 0 Z"
+        fill="url(#leaf)"/>
 </svg>

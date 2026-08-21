@@ -59,7 +59,7 @@ export function CityCombobox({ selected, onSelect }: Props) {
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger
         id="city"
-        className="flex h-11 w-full items-center justify-between rounded-lg border border-input bg-white px-3 text-left text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+        className="flex h-11 w-full items-center justify-between rounded-[13px] border border-input px-3.5 text-left text-sm outline-none transition-colors hover:border-[#c6bda4] focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
       >
         <span className={cn(!selected && "text-muted-foreground")}>
           {selected ? selected.description : "Helsinki"}
