@@ -60,9 +60,6 @@ def rednote_fetch(session: Session, task: ClaimedTask) -> dict:
     if note is None:
         raise TaskError(ErrorCode.PERMANENT, f"rednote note {note_id} was never inserted by search")
 
-    # Gemini's gate comes first: extraction runs as a child call below, so deferring on its budget
-    # after the fetch would roll the note body back and re-spend a RedNote call on the retry.
-    limits.gemini().take()
     limits.rednote().take()
     card = client.fetch_note(note_id, task.payload.get("xsec_token") or note.xsec_token)
     if not card or not (card.get("desc") or "").strip():
