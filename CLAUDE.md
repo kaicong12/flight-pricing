@@ -210,6 +210,9 @@ hours and daylight — *"Uspenski: arrive 15:43, need 75 min, closes 16:00"*. Al
 **Client**
 - The browser never calls `tp_api`. Next route handlers proxy it, so there is no CORS middleware to
   maintain and no Google key in client JS. `TP_API_URL` is the only knob.
+- **Visual language is recorded in `tp_client/docs/design-system.md`** — warm-neutral tokens over the
+  shadcn `base-nova` structure, light only. Colour carries state and nothing else, so read it before
+  adding a hex.
 - **`shadcn` defaults to Base UI now, not Radix.** `components.json` says `base-nova`; `Popover` is
   `@base-ui/react` and only `Command` is still `cmdk`. Size a popup to its trigger with
   `w-(--anchor-width)`, not Radix's variable.
