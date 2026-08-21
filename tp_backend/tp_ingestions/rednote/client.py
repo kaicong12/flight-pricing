@@ -1,6 +1,6 @@
 """RedNote's private web API. Ported from spikes/xhs/{call,food_spike}.py, on httpx.
 
-Every call goes through the throttle first — see throttle.py for why that is not optional.
+Callers must pass the RedNote budget first — see throttle.py for why that is not optional.
 """
 
 import logging
@@ -13,7 +13,6 @@ from libs.db.enums import ErrorCode
 from libs.http import client
 from libs.settings import settings
 from tp_ingestions.errors import TaskError
-from tp_ingestions.rednote import throttle
 
 SEARCH_URL = "https://webapi.rednote.com/api/sns/web/v1/search/notes"
 FEED_URL = "https://webapi.rednote.com/api/sns/web/v1/feed"
@@ -70,7 +69,6 @@ def likes(raw: str | None) -> int:
 
 
 def _post(url: str, endpoint: str, body: dict) -> dict:
-    throttle.record()
     try:
         r = client().post(url, json=body, headers=_headers(endpoint))
     except httpx.HTTPError as e:

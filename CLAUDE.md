@@ -18,38 +18,28 @@ route that exact sequence and warn about anything that doesn't work.
 | Deploy | Railway/Render/Fly first, EKS later |
 
 Built so far: `tp_backend/libs/db` (schema + migrations), `tp_backend/tp_api`, the
-`tp_backend/tp_ingestions` worker through extraction, and `tp_client` (the "plan a city trip"
-screen). `places.resolve` is the next step — extractions land in `extractions.result` as JSON and
-nothing writes `places`/`place_mentions` yet.
+`tp_backend/tp_ingestions` worker **through `places.resolve`**, and `tp_client` (the "plan a city
+trip" screen). The pipeline now ends at a `place_id`: extractions fan out to `places.resolve`, which
+writes `places` + `place_mentions`. Ranking and the itinerary screen are next.
 
-`docker-compose.yml` runs migrate + api + **one** worker + web on a single t4g.micro against RDS.
-One worker, not one per source: `queue.claim` has no `kind` filter and the RedNote throttle hands
-long waits back to the queue, so nothing starves. See `docs/deploy.md`.
+`docker-compose.yml` runs migrate + api + **one** worker on a t4g.micro against RDS; `tp_client` is on
+Vercel, so there is no `web` service. One worker, not one per source: `queue.claim` has no `kind`
+filter and a throttle wait goes back to the queue, so nothing starves. `./dev.sh` runs both locally.
+See `docs/deploy.md`.
 
 # Conventions
 
-## Comments and docstrings
+**Comments and docstrings.** Minimal; code should read on its own. One or two lines at the top of a
+file, one or two per function. Nothing else unless a line is genuinely non-obvious — a workaround, a
+surprising API behaviour, a constraint invisible from the code — and then one short comment, not a
+paragraph. No section banners, restatements, usage examples, or rationale essays: those belong here
+or in the commit message.
 
-Keep them minimal. Code should read on its own.
+**Docs.** This file is the only planning reference: decisions, what works, and gotchas that would cost
+time to rediscover. Keep it short and prune it when things change — it is not a research log.
 
-- One or two lines at the top of a file saying what it is.
-- One or two lines per function saying what it does.
-- Nothing else, unless a line is genuinely non-obvious — a workaround, a surprising API behaviour,
-  or a constraint that isn't visible from the code. Then one short comment, not a paragraph.
-
-Do not write: section banners (`# ---- setup ----`), restatements of the code, usage examples in
-docstrings, rationale essays, or explanations of design decisions. Those belong in this file or the
-commit message.
-
-## Docs
-
-This file is the only planning reference: decisions, what works, and gotchas that would cost time to
-rediscover. Keep it short and prune it when things change — it is not a research log.
-
-## Spikes
-
-Throwaway exploration lives in `spikes/<topic>/`. Secrets stay in the repo-root `.env` (gitignored);
-scripts walk up to find it rather than holding their own copy.
+**Spikes.** Throwaway exploration lives in `spikes/<topic>/`. Secrets stay in the repo-root `.env`
+(gitignored); scripts walk up to find it rather than holding their own copy.
 
 # Sources
 
@@ -90,8 +80,8 @@ only; skip reasons can't distinguish "closed" from "unreachable"), Tokyo/Bangkok
   extracting; keep `Cc`, since newlines are the post's paragraph structure.
 - On `/feed`, the English body is `note_translation.desc_trans` (not `desc_en`), `time` is epoch
   **milliseconds**, tags are `tag_list[].name`, and there is **no `ip_location`**.
-- Cap the fetch fan-out (`rednote_max_fetch_per_search`, default 8): a search returns 20 and
-  `MAX_PER_HOUR` is 20, so an uncapped fan-out spends a whole hour's budget on one city.
+- Cap the fetch fan-out (`rednote_max_fetch_per_search`, default 8): a search returns 20, so an
+  uncapped fan-out spends most of an hour's budget on one city.
 
 # Working pipeline
 
@@ -101,46 +91,74 @@ The real path is now the worker: `POST /initiate-plan` seeds `youtube.search` (o
 task, queued only when the `desc` named nothing. `python -m tp_ingestions --report <run_id>` prints
 what a run actually extracted.
 
-Proven live end-to-end on Tromsø: 22 tasks, 0 failed, 122 candidate places (11 RedNote, 111 YouTube)
-for 19 Gemini calls and about a cent. Run the worker with `python -m tp_ingestions`, **not `--once`**
-— RedNote waits are handed back to the queue via `run_after`, and `drain()` exits as soon as nothing
-is due.
+Proven live on Tromsø, Bergen and Porto (~36 tasks each, 0 failed, 0 blocked): Tromsø's 122
+candidates became 84 `searchText` calls and 58 places with 90 mentions. Run the worker with
+`python -m tp_ingestions`, **not `--once`** — a throttle wait goes back to the queue via `run_after`
+and `drain()` exits as soon as nothing is due.
 
-The original spike scripts, joined by JSON files on disk:
+## Budgets
 
-```bash
-python youtube_search.py Helsinki --lang en --region FI --out videos.json
-python youtube_llm_pipeline.py <id> --json places.json      # gemini-3.5-flash-lite + JSON schema
-python resolve_places.py places.json --hours --out resolved.json
-python route_day.py resolved.json --date 2026-12-06 --start 10:00 --mode walk --out day.json
-```
+One `Throttler` per domain (`tp_ingestions/throttle.py`), built in `limits.py` from `settings.py`: a
+jittered gap plus any number of sliding windows. RedNote 50/h + 300/day behind 45s ± 15s; Gemini
+15/min + 1000/day behind 4s. Places and YouTube are unthrottled — Places sits behind `place_queries`,
+YouTube's `search.list` is one call per language per city.
 
-`route_day.py` runs with `optimizeWaypointOrder: false`, returns an encoded polyline, per-leg
-durations and transit steps (`2: Kauppatori -> Lasipalatsi`), and validates against real hours and
-daylight — e.g. *"Uspenski: arrive 15:43, need 75 min, closes 16:00"*.
+- History is `throttle_calls` in **Postgres, not a file**: one shared account must not become one
+  budget per host. `take()` checks and spends under `pg_advisory_xact_lock`, making it a reservation —
+  a caller that then fails has still spent the slot, the safe way to be wrong.
+- The spend commits on the throttler's **own connection**. Written in the handler's session, a failed
+  task would roll it back and refund a call the remote already served.
+- A wait under `max_inline_wait` **blocks the single-threaded worker** (10s RedNote; 60s Gemini,
+  because deferring extraction inside `rednote.fetch` would re-spend a RedNote call). Longer defers.
 
-`spikes/videos_transcribing/` — `youtube_search.py`, `youtube_llm_pipeline.py`, `resolve_places.py`
-`spikes/routes_planning/` — `route_day.py`
-`spikes/xhs/` — `recommend.py` (city → restaurants), `food_spike.py`, `image_ocr.py`, `call.py`
-`spikes/flights/` — earlier Google Flights price-tracking spikes
+## Resolving names to places
+
+`places.resolve` turns one extraction's candidates into `places` + `place_mentions`.
+`--resolve-preview <run_id>` shows what would be queried and dropped and calls nothing;
+`--resolve-run <run_id>` then queues the real work over a finished run's extractions.
+
+`place_queries` (`city_id`, `query_norm`) → `place_id` caches **hits only**, which is what makes
+repeat resolution *guaranteed* rather than likely: a cached name never reaches Google, so it cannot
+come back different.
+
+- **A miss is deliberately not cached.** `searchText` answers a silent throttle with 200 and an empty
+  list, indistinguishable from "no such place", so caching it would poison that name permanently.
+  Re-paying is cheaper: a second Tromsø pass costs 9 calls, not 84. An in-task set stops one name
+  costing two calls in one extraction.
+- Unresolved candidates are logged and dropped — `places.place_id` is the PK, so there is no row for
+  a place without an id. Districts (`Ribeira`, `Bergen city center`) resolve with zero ratings and are
+  rejected on purpose: no hours, no single point to route to.
+
+Spikes, superseded by the worker except for routing:
+`spikes/routes_planning/route_day.py` runs `optimizeWaypointOrder: false` and validates against real
+hours and daylight — *"Uspenski: arrive 15:43, need 75 min, closes 16:00"*. Also
+`spikes/videos_transcribing/`, `spikes/xhs/`, `spikes/flights/`, `spikes/places_resolve/`.
 
 # Gotchas
 
 **Identity**
-- **`place_id` is the identity, never the name.** `Vanha Kauppahalli`/`Old Market Hall` and
-  `Löyly`/`Loyly` collapse to one id. The LLM returns different names across runs even at
+- **`place_id` is the identity, never the name.** `Vanha Kauppahalli`/`Old Market Hall` collapse to
+  one id, as do six ASR spellings of `Fjellheisen`. The LLM renames things run to run even at
   temperature 0 — dedupe on the id and that stops mattering.
-- **Sanity-check resolved coordinates against a city bounding box.** `Sentra` (an ASR garble)
-  resolved to a business 350 km away.
-- **Confidence from `userRatingCount`, not name similarity.** Zero ratings → reject. Deaccent before
-  comparing names.
+- **`locationRestriction` takes a `rectangle` only — a `circle` is a hard 400.** Circle is
+  `locationBias`-only. A 400 is terminal, so this kills the task instead of retrying.
+- **Always query `"<name>, <city>"`, even inside the box.** The box constrains geography, the suffix
+  anchors the matcher. Bare `Tromso Cathedral` returns the **Arctic Cathedral**, a different building.
+- **A bare generic noun resolves to a real, excellent venue and nothing in the response says so** —
+  `bakery` → Vervet Bakeri 4.7 (553). So junk must be gated **before** the call. Check the *returned*
+  name against the chain list too: `Storgata` is a street that resolves to the EUROSPAR on it.
+- **Never reject on place type.** `Fjellheisen`, Tromsø's top attraction, has an empty
+  `primaryTypeDisplayName`. Confidence comes from `userRatingCount`; zero ratings → reject.
+- **Google itself carries duplicate listings** — `Raketten Bar & Pølse` at two `place_id`s, 1626 vs 83
+  ratings. So `place_id` is necessary but not sufficient; v1 surfaces both for the user to delete one,
+  because a legitimate two-branch chain looks identical.
+- **Sanity-check coordinates against the city box.** `Sentra` (an ASR garble) resolved 350 km away.
 
 **Queue**
 - **A throttle wait must not spend an attempt.** `queue.claim` increments `attempts` on every claim,
-  so deferring a task because *our own* budget said "not yet" burned its retries: a live Tromsø run
-  lost 3 of 8 RedNote fetches to `max_attempts` with nothing actually wrong. Hence
-  `errors.Throttled` + `queue.reschedule`, which decrements `attempts` back. A RATE_LIMITED
-  `TaskError` still means the *remote* pushed back and still counts.
+  so deferring on *our own* budget burned retries — a Tromsø run lost 3 of 8 fetches to
+  `max_attempts` with nothing wrong. Hence `errors.Throttled` + `queue.reschedule`, which decrements
+  it back; a RATE_LIMITED `TaskError` means the *remote* pushed back and still counts.
 - Reviving tasks in an already-settled run leaves the run stuck: `finish_run_if_done` only settles a
   run that is still `pending`/`running`. Reset the run's status too.
 
@@ -208,6 +226,16 @@ daylight — e.g. *"Uspenski: arrive 15:43, need 75 min, closes 16:00"*.
   while `googleapis.com` succeeds, so it looks host-specific rather than trust-specific. All outbound
   HTTP goes through `libs/http.py`, which verifies via `truststore` (OS store), with
   `REQUESTS_CA_BUNDLE`/`SSL_CERT_FILE` as an override. Node needs `NODE_EXTRA_CA_CERTS`.
+- **Only the registry pull needs a workaround; the build does not.** Interception is selective, so
+  pypi.org verifies inside a container and `uv sync` needs nothing — but *dockerd* resolves base
+  images against the **host** trust store, which a Dockerfile cannot patch, hence `DOCKER_REGISTRY`
+  pointing at an internal mirror. `tp_backend/certs/*.crt` (gitignored, dropped in locally) is for
+  **runtime** egress to `webapi.rednote.com`. Both are no-ops on EC2.
+- **Do not point uv at a different index.** `uv.lock` pins pypi.org URLs, so `UV_INDEX_URL` makes
+  `uv sync --locked` fail on a lockfile it wants to rewrite. Pin `UV_VERSION` to the uv that wrote
+  the lock for the same reason.
+- Only `api` carries a `build:` section. All three services share one tag, and building it three
+  times races on export — `image "tp-backend:local": already exists`, after a successful build.
 - **Behind PgBouncer in transaction mode, set `connect_args={"prepare_threshold": None}`.** psycopg3
   prepares a statement after 5 executions, and transaction pooling breaks those. Not set today — we
   connect straight to Postgres. Web and worker each hold their own pool, so size them together.
@@ -224,18 +252,22 @@ daylight — e.g. *"Uspenski: arrive 15:43, need 75 min, closes 16:00"*.
 - `import libs.db.session` binds the re-exported `session` **function**, not the submodule. Reach it
   with `importlib.import_module`.
 
-The two load-bearing findings for the roadmap are the transit 100-day horizon and holiday hours being
-unfetchable for future dates. A trip planned in August genuinely cannot be fully accurate for
-December, so the UI needs a re-check-nearer-the-date affordance rather than presenting an early plan
-as final.
+The transit 100-day horizon and unfetchable future holiday hours are load-bearing for the roadmap: a
+trip planned in August cannot be fully accurate for December, so the UI needs a
+re-check-nearer-the-date affordance rather than presenting an early plan as final.
 
 # Open items
 
-1. **`places.resolve`** — turn `extractions.result` candidates into `places` + `place_mentions`. The
-   live run shows why it matters: `Raketten Bar & Pølse` (RedNote) and `Raken Bar and Pulse`
-   (YouTube ASR) are one venue, and `Pastafabrikken` was recommended by two separate notes.
+1. **Nothing exposes `places`.** The API has `/cities/search`, `/initiate-plan` and
+   `/trips/{id}` (progress counts only), so the UI can watch an ingestion finish but cannot show its
+   result. A shortlist endpoint ranked by mention count is the next thing to build. `GET /trips` is
+   missing too, so the trips list renders its empty state.
 2. **Enable Routes API** on the existing key, and restrict the key to Places + Routes + YouTube + Gemini.
-3. **Confirm Places and Routes pricing** and whether caching lat/lon is permitted.
+3. **Confirm Places and Routes pricing** and whether caching lat/lon is permitted. Resolution is now
+   the biggest spender: 84 `searchText` calls on one city, on the field mask that includes
+   `userRatingCount`.
 4. **Test transcript fetching from cloud egress**, not just a laptop. Confirmed working from a laptop;
    the failure mode to watch for on EC2 is `PoTokenRequired`.
 5. A real `GET /health` for the container healthcheck, which currently probes `/openapi.json`.
+6. **The generic-noun and chain stoplists in `tp_ingestions/places/names.py` are Norway-leaning.**
+   They will need a pass per new country; `--resolve-preview` is the free way to check one.

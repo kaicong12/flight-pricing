@@ -27,6 +27,8 @@ class Settings(BaseSettings):
     # needs no code change. It lands in extractions.model, which is part of the re-extraction key.
     gemini_model: str = "gemini-3.5-flash-lite"
     city_refresh_days: int = 30
+    # searchText's locationRestriction is a rectangle, not a circle, and this is its half-width.
+    places_search_radius_m: int = 50000
 
     # RedNote needs a cookie AND a signature, and the signature is bound to the URL path — hence
     # one set of these per endpoint. Only the cookie expires, so rotation means editing xhs_cookie.
@@ -40,9 +42,20 @@ class Settings(BaseSettings):
     xhs_feed_xs_common: str | None = None
     xhs_feed_xrap: str | None = None
 
-    # One search burns a whole hour of throttle.MAX_PER_HOUR if every result is fetched.
+    # One search burns most of an hour's budget if every result is fetched.
     rednote_max_fetch_per_search: int = 8
     rednote_ocr_max_images: int = 4
+
+    # Call budgets, one set per throttled domain. RedNote's gap stays conservative because the
+    # downside is a real logged-in account being restricted, not a slower run.
+    rednote_min_gap_s: float = 45.0
+    rednote_jitter_s: float = 15.0
+    rednote_max_per_hour: int = 50
+    rednote_max_per_day: int = 300
+    # The flash-lite free tier's shape. Settings so a paid key can loosen them without a code change.
+    gemini_min_gap_s: float = 4.0
+    gemini_max_per_minute: int = 15
+    gemini_max_per_day: int = 1000
 
     @property
     def db_max_connections(self) -> int:

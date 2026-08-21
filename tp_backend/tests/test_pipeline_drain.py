@@ -5,12 +5,22 @@ from conftest import HELSINKI, make_city
 from sqlalchemy import select
 
 from libs import gemini
-from libs.db import City, Extraction, IngestRun, IngestTask, RedNotePost, YouTubeVideo
+from libs.db import (
+    City,
+    Extraction,
+    IngestRun,
+    IngestTask,
+    Place,
+    PlaceMention,
+    RedNotePost,
+    YouTubeVideo,
+)
 from libs.db.enums import RunKind, RunStatus, Source, TaskKind, TaskStatus
 from libs.ingest import seed_search_tasks
+from libs.places import VenueHit
 from libs.prompts import YOUTUBE_TRANSCRIPT
+from tp_ingestions.places import resolve as places_resolve
 from tp_ingestions.rednote import client as rednote_client
-from tp_ingestions.rednote import fetch as rednote_fetch
 from tp_ingestions.report import report
 from tp_ingestions.worker import Worker
 from tp_ingestions.youtube import client as youtube_client
@@ -63,17 +73,28 @@ def fake_generate(prompt, rendered, images=None):
     return youtube_result() if prompt is YOUTUBE_TRANSCRIPT else rednote_result()
 
 
+VENUES = {
+    "Vanha Kauppahalli, Helsinki": VenueHit(
+        place_id="pid-kauppahalli", name="Old Market Hall", address="Etelaranta",
+        lat=60.166, lon=24.951, rating=4.5, rating_count=8000,
+        primary_type="Market", types=["tourist_attraction"]),
+    "Löyly, Helsinki": VenueHit(
+        place_id="pid-loyly", name="Löyly", address="Hernesaarenranta 4",
+        lat=60.150, lon=24.929, rating=4.4, rating_count=2600,
+        primary_type="Sauna", types=["spa"]),
+}
+
+
 @pytest.fixture
 def stubbed(monkeypatch):
-    """Every external client replaced. The throttle is stubbed too, or fetches would defer."""
+    """Every external client replaced. Budgets are freed by conftest's _no_throttle."""
+    monkeypatch.setattr(places_resolve, "search_venue",
+                        lambda q, lat, lon, radius: VENUES.get(q))
     monkeypatch.setattr(youtube_client, "search", lambda *a, **k: [HIT])
     monkeypatch.setattr(youtube_client, "hydrate", lambda ids: {HIT["video_id"]: META})
     monkeypatch.setattr(youtube_extract.tx, "fetch_transcript",
                         lambda vid: [(0.0, "welcome to Helsinki")])
 
-    monkeypatch.setattr("tp_ingestions.rednote.throttle.await_budget", lambda: None)
-    monkeypatch.setattr(rednote_fetch, "await_budget", lambda: None)
-    monkeypatch.setattr("tp_ingestions.rednote.search.await_budget", lambda: None)
     monkeypatch.setattr(rednote_client, "search_notes", lambda kw: [
         {"note_id": NOTE, "xsec_token": "tok", "title": "赫尔辛基美食", "likes": 196,
          "author": "a"}])
@@ -142,17 +163,27 @@ def test_the_report_names_failed_tasks_and_their_error(db, seeded, stubbed, monk
     assert "returned no body" in out
 
 
-def test_no_places_are_resolved_by_the_drain(db, seeded, stubbed):
-    """places.resolve is out of scope, so nothing may reach the places tables yet."""
-    from libs.db import Place, PlaceMention
-
+def test_the_drain_resolves_both_sources_to_places(db, seeded, stubbed):
+    """The pipeline now ends at place_id, not at extraction JSON."""
     Worker(name="w1", poll_interval=0, reap_interval=1e9).drain()
 
     db.expire_all()
-    assert db.scalars(select(Place)).all() == []
-    assert db.scalars(select(PlaceMention)).all() == []
-    kinds = set(db.scalars(select(IngestTask.kind)).all())
-    assert TaskKind.PLACES_RESOLVE not in kinds
+    assert TaskKind.PLACES_RESOLVE in set(db.scalars(select(IngestTask.kind)).all())
+    assert {p.place_id for p in db.scalars(select(Place)).all()} == {"pid-kauppahalli", "pid-loyly"}
+    assert {(m.source, m.place_id) for m in db.scalars(select(PlaceMention)).all()} == {
+        (Source.YOUTUBE, "pid-kauppahalli"), (Source.REDNOTE, "pid-loyly")}
+
+
+def test_a_resolved_place_keeps_the_name_google_gave_it(db, seeded, stubbed):
+    """Vanha Kauppahalli and Old Market Hall are one venue; the mention keeps what the source said."""
+    Worker(name="w1", poll_interval=0, reap_interval=1e9).drain()
+
+    db.expire_all()
+    place = db.get(Place, "pid-kauppahalli")
+    mention = db.scalars(select(PlaceMention).where(
+        PlaceMention.place_id == "pid-kauppahalli")).one()
+    assert (place.name, place.resolved_from_name) == ("Old Market Hall", "Vanha Kauppahalli")
+    assert (mention.name_as_written, mention.category) == ("Vanha Kauppahalli", "eat")
 
 
 def test_the_drain_marks_the_city_freshly_ingested(db, seeded, stubbed):

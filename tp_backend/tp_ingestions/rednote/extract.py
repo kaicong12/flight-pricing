@@ -10,7 +10,9 @@ from libs.db import City, Extraction, RedNotePost
 from libs.db.enums import ErrorCode, ExtractedFrom, Source, TaskKind
 from libs.ingest import enqueue
 from libs.prompts import REDNOTE_TEXT, Prompt
+from tp_ingestions import limits
 from tp_ingestions.errors import TaskError
+from tp_ingestions.places.resolve import enqueue_resolve
 from tp_ingestions.queue import ClaimedTask
 from tp_ingestions.registry import handles
 
@@ -44,6 +46,7 @@ def extract_note(session: Session, task: ClaimedTask, note: RedNotePost) -> dict
     city = city_name(session, task)
     rendered = REDNOTE_TEXT.render(city=city, title=note.title or "",
                                    body=(note.description or "")[:BODY_LIMIT])
+    limits.gemini().take()
     result = gemini.generate(REDNOTE_TEXT, rendered)
     places = result.get("places") or []
 
@@ -63,7 +66,10 @@ def extract_note(session: Session, task: ClaimedTask, note: RedNotePost) -> dict
                          "city_name": city},
              "dedupe_key": f"{TaskKind.REDNOTE_OCR}:{note.note_id}"}])
 
-    return {"note_id": note.note_id, "places": len(places), "ocr_queued": queued}
+    resolve = enqueue_resolve(session, task, Source.REDNOTE, note.note_id,
+                              REDNOTE_TEXT.version_key, REDNOTE_TEXT.model) if places else 0
+    return {"note_id": note.note_id, "places": len(places), "ocr_queued": queued,
+            "resolve_queued": resolve}
 
 
 @handles(TaskKind.REDNOTE_EXTRACT)

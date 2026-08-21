@@ -127,11 +127,24 @@ def test_a_video_search_never_inserted_is_permanent(db, run):
     assert e.value.code == ErrorCode.PERMANENT
 
 
-def test_extract_enqueues_nothing_downstream(db, run, video, monkeypatch):
+def test_extract_queues_resolution_for_what_it_found(db, run, video, monkeypatch):
     from libs.db import IngestTask
 
     monkeypatch.setattr(extract.tx, "fetch_transcript", lambda vid: [(0.0, "hi")])
     monkeypatch.setattr(extract.gemini, "generate", lambda *a, **k: result([place()]))
+
+    extract.youtube_extract(db, task(run))
+    db.commit()
+
+    assert db.scalars(select(IngestTask.kind)).all() == [TaskKind.PLACES_RESOLVE]
+
+
+def test_a_video_that_named_nothing_queues_no_resolution(db, run, video, monkeypatch):
+    """Resolution costs a Places call per name, so an empty extraction must not queue a task."""
+    from libs.db import IngestTask
+
+    monkeypatch.setattr(extract.tx, "fetch_transcript", lambda vid: [(0.0, "hi")])
+    monkeypatch.setattr(extract.gemini, "generate", lambda *a, **k: result([], travel=False))
 
     extract.youtube_extract(db, task(run))
     db.commit()

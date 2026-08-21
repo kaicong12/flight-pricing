@@ -6,6 +6,5 @@ __pycache__/
 tests/
 .env
 .env.*
-.rednote_ratelimit.json
 Dockerfile
 .dockerignore

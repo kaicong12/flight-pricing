@@ -10,9 +10,9 @@ from libs.db import RedNotePost
 from libs.db.enums import Source, TaskKind
 from libs.ingest import enqueue
 from libs.settings import settings
+from tp_ingestions import limits
 from tp_ingestions.queue import ClaimedTask
 from tp_ingestions.rednote import client
-from tp_ingestions.rednote.throttle import await_budget
 from tp_ingestions.registry import handles
 
 log = logging.getLogger("rednote.search")
@@ -23,7 +23,7 @@ def rednote_search(session: Session, task: ClaimedTask) -> dict:
     payload = task.payload
     city_id, keyword = payload["city_id"], payload["keyword"]
 
-    await_budget()
+    limits.rednote().take()
     notes = client.search_notes(keyword)
 
     # A note whose body we already have is never re-fetched.
@@ -44,8 +44,8 @@ def rednote_search(session: Session, task: ClaimedTask) -> dict:
                 set_={"xsec_token": note["xsec_token"], "likes": note["likes"]})
         )
 
-    # page_size is 20 and throttle.MAX_PER_HOUR is 20, so an uncapped fan-out would spend the whole
-    # hourly budget of a real logged-in account on one city. Keep the API's relevance order.
+    # page_size is 20, so an uncapped fan-out would spend most of an hour's budget on one city.
+    # Keep the API's relevance order.
     fresh = [n for n in notes if n["note_id"] not in known][:settings().rednote_max_fetch_per_search]
     queued = enqueue(session, [
         {"run_id": task.run_id, "kind": TaskKind.REDNOTE_FETCH, "source": Source.REDNOTE,

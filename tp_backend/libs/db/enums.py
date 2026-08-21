@@ -69,6 +69,18 @@ class ExtractedFrom(StrEnum):
     IMAGE = "image"
 
 
+class Category(StrEnum):
+    """What a mention says the place is for. The union of both prompts' enums."""
+
+    SEE = "see"
+    DO = "do"
+    EAT = "eat"
+    DRINK = "drink"
+    BUY = "buy"
+    SLEEP = "sleep"
+    OTHER = "other"
+
+
 class CredentialState(StrEnum):
     OK = "ok"
     EXPIRED = "expired"

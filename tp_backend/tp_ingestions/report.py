@@ -1,13 +1,10 @@
-"""Read-only summary of one ingest run: what each source yielded and what failed.
-
-extractions.result is the outcome store — nothing is resolved to a place_id yet, so this is how the
-candidates get read.
-"""
+"""Read-only summary of one ingest run: what each source yielded, resolved, and what failed."""
 
 from sqlalchemy import func, select
 
-from libs.db import Extraction, IngestRun, IngestTask, session
+from libs.db import IngestRun, IngestTask, Place, PlaceMention, session
 from libs.db.enums import TaskStatus
+from tp_ingestions.runs import run_extractions
 
 BAD = (TaskStatus.FAILED, TaskStatus.BLOCKED)
 
@@ -56,10 +53,8 @@ def report(run_id: str) -> int:
         for kind, status, n in counts:
             print(f"  {kind:<18} {status:<10} {n:>3}")
 
-        extractions = s.scalars(
-            select(Extraction).order_by(Extraction.source, Extraction.created_at)
-        ).all()
-        by_source: dict[str, list[Extraction]] = {}
+        extractions = s.scalars(run_extractions(s, run_id)).all()
+        by_source: dict[str, list] = {}
         for e in extractions:
             by_source.setdefault(e.source, []).append(e)
 
@@ -76,6 +71,21 @@ def report(run_id: str) -> int:
                 for place in result.get("places") or []:
                     for line in candidate_lines(place):
                         print(line)
+
+        if run.city_id:
+            resolved = s.execute(
+                select(Place, func.count(PlaceMention.id))
+                .join(PlaceMention, PlaceMention.place_id == Place.place_id)
+                .where(Place.city_id == run.city_id)
+                .group_by(Place.place_id)
+                # Most-mentioned first: that is the ranking signal the mentions exist for.
+                .order_by(func.count(PlaceMention.id).desc(), Place.name)
+            ).all()
+            print(_rule(f"resolved: {len(resolved)} place(s) in {run.city_id}"))
+            for place, mentions in resolved:
+                print(f"  {mentions:>2}x {place.name:<38} {place.confidence:<7} "
+                      f"{place.rating or '-'!s:>4} ({place.rating_count or 0}) "
+                      f"{place.primary_type or '-'}")
 
         bad = s.scalars(
             select(IngestTask).where(IngestTask.run_id == run_id, IngestTask.status.in_(BAD))
