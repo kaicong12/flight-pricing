@@ -76,6 +76,18 @@ class TripStatusOut(TripOut):
     progress: list[TaskProgress] = []
 
 
+class TripSummaryOut(BaseModel):
+    trip_id: str
+    city: CityOut
+    arrive_date: date
+    depart_date: date
+    ingest: IngestOut | None = None
+    tasks_done: int = 0
+    tasks_total: int = 0
+    place_count: int = 0
+    notes: list[str] = []
+
+
 def notes_for(arrive: date) -> list[str]:
     """Warnings the client must show. Never a reason to reject the trip."""
     if arrive > today_utc() + timedelta(days=TRANSIT_HORIZON_DAYS):

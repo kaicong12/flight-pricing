@@ -1,6 +1,7 @@
 "use client";
 
-// Polls the trip and renders whatever the task checklist says, one row per (kind, status).
+// Polls one trip and renders the ingestion checklist, one row per (kind, status). The polled body
+// is the only source of ingest status, so nothing on the page can go stale against it.
 
 import { useEffect, useState } from "react";
 
@@ -9,15 +10,19 @@ import { TERMINAL_STATUSES, type TripStatus } from "@/lib/api-types";
 const POLL_MS = 3000;
 const MAX_POLL_MS = 5 * 60 * 1000;
 
-export function TripProgress({
-  tripId,
-  initialStatus,
-}: {
-  tripId: string;
-  initialStatus: string;
-}) {
-  const [status, setStatus] = useState<TripStatus | null>(null);
-  const [stopped, setStopped] = useState(TERMINAL_STATUSES.includes(initialStatus));
+const STATUS_TEXT: Record<string, string> = {
+  pending: "Queued",
+  running: "Reading videos and posts",
+  done: "Shortlist ready",
+  failed: "Ingestion failed",
+  needs_credentials: "Needs credentials",
+};
+
+export function TripProgress({ initial }: { initial: TripStatus }) {
+  const [status, setStatus] = useState<TripStatus>(initial);
+  const [stopped, setStopped] = useState(
+    !initial.ingest || TERMINAL_STATUSES.includes(initial.ingest.status),
+  );
 
   useEffect(() => {
     if (stopped) return;
@@ -29,7 +34,7 @@ export function TripProgress({
         if (live) setStopped(true);
         return;
       }
-      const r = await fetch(`/api/trips/${tripId}`);
+      const r = await fetch(`/api/trips/${initial.trip_id}`);
       if (!r.ok || !live) return;
       const body = (await r.json()) as TripStatus;
       setStatus(body);
@@ -40,27 +45,55 @@ export function TripProgress({
       live = false;
       clearInterval(timer);
     };
-  }, [tripId, stopped]);
+  }, [initial.trip_id, stopped]);
+
+  const ingest = status.ingest;
+  const state = ingest?.status ?? "done";
+  const done = state === "done";
+  const broken = state === "failed" || state === "needs_credentials";
 
   return (
-    <div className="border-t border-hairline pt-3">
-      {(status?.progress ?? []).map((p) => (
-        <div
-          key={`${p.kind}:${p.status}`}
-          className="grid grid-cols-[18px_minmax(0,1fr)_auto] items-center gap-3.5 border-b border-hairline py-2.5 last:border-b-0"
-        >
-          <StageIcon status={p.status} />
-          <div>
-            <p className="font-mono text-xs text-ink">{p.kind}</p>
-            <p className="mt-0.5 font-mono text-[11px] text-faint">{p.status}</p>
-          </div>
-          <span className="font-mono text-[11.5px] text-muted-foreground">{p.count}</span>
+    <section className="mt-8 rounded-card border border-border surface shadow-card">
+      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-border px-6 py-4.5">
+        <div className="flex items-center gap-2.5">
+          {!done && !broken && (
+            <span className="size-1.5 animate-[tp-pulse_1.4s_ease-in-out_infinite] motion-reduce:animate-none rounded-full bg-brand" />
+          )}
+          <h2 className="text-[15px] font-semibold tracking-[-0.01em]">
+            {STATUS_TEXT[state] ?? state}
+          </h2>
         </div>
-      ))}
-      <p className="pt-3 font-mono text-[11px] text-faint">
-        {status?.ingest?.status ?? initialStatus} · {stopped ? "polling stopped" : "polling"}
+        <p className="font-mono text-[11px] text-faint">
+          {ingest ? `run ${ingest.run_id.slice(0, 8)} · ${state}` : "no ingestion (city already warm)"}
+        </p>
+      </div>
+
+      <div className="px-6 py-2">
+        {status.progress.length === 0 ? (
+          <p className="py-4 text-[13.5px] text-muted-foreground">
+            {ingest ? "Queueing the first tasks…" : "This city was already ingested."}
+          </p>
+        ) : (
+          status.progress.map((p) => (
+            <div
+              key={`${p.kind}:${p.status}`}
+              className="grid grid-cols-[18px_minmax(0,1fr)_auto] items-center gap-3.5 border-b border-hairline py-2.5 last:border-b-0"
+            >
+              <StageIcon status={p.status} />
+              <div>
+                <p className="font-mono text-xs text-ink">{p.kind}</p>
+                <p className="mt-0.5 font-mono text-[11px] text-faint">{p.status}</p>
+              </div>
+              <span className="font-mono text-[11.5px] text-muted-foreground">{p.count}</span>
+            </div>
+          ))
+        )}
+      </div>
+
+      <p className="border-t border-border px-6 py-3 font-mono text-[11px] text-faint">
+        {state} · {stopped ? "polling stopped" : "polling"}
       </p>
-    </div>
+    </section>
   );
 }
 

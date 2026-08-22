@@ -10,8 +10,8 @@ from fastapi import Depends, FastAPI, HTTPException, Query
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from libs.db import IngestRun, IngestTask, Trip
-from libs.db.enums import RunKind
+from libs.db import IngestRun, IngestTask, Place, Trip
+from libs.db.enums import RunKind, TaskStatus
 from libs.ingest import ensure_city, ensure_city_ingest
 from libs.places import NotACity, PlacesError
 from libs.settings import settings
@@ -24,6 +24,7 @@ from tp_api.schemas import (
     TaskProgress,
     TripOut,
     TripStatusOut,
+    TripSummaryOut,
     notes_for,
 )
 
@@ -90,6 +91,67 @@ def initiate_plan(body: InitiatePlanRequest, db: Db, lookup: Lookup) -> TripOut:
         ingest=IngestOut(run_id=run.run_id, status=run.status) if run else None,
         notes=notes_for(trip.arrive_date),
     )
+
+
+DONE_TASK_STATUSES = (TaskStatus.DONE, TaskStatus.SKIPPED)
+
+
+@app.get("/trips", response_model=list[TripSummaryOut])
+def list_trips(db: Db) -> list[TripSummaryOut]:
+    trips = db.scalars(select(Trip).order_by(Trip.created_at.desc())).all()
+    if not trips:
+        return []
+
+    city_ids = {t.city_id for t in trips}
+
+    # One query each rather than per trip: the list is the landing screen and N trips share cities.
+    latest_run: dict[str, IngestRun] = {}
+    for run in db.scalars(
+        select(IngestRun)
+        .where(IngestRun.city_id.in_(city_ids), IngestRun.kind == RunKind.CITY_INGEST)
+        .order_by(IngestRun.requested_at.desc())
+    ):
+        if run.city_id is not None:
+            latest_run.setdefault(run.city_id, run)
+
+    counts: dict[str, tuple[int, int]] = {}
+    if latest_run:
+        rows = db.execute(
+            select(IngestTask.run_id, IngestTask.status, func.count().label("n"))
+            .where(IngestTask.run_id.in_([r.run_id for r in latest_run.values()]))
+            .group_by(IngestTask.run_id, IngestTask.status)
+        ).all()
+        for row in rows:
+            done, total = counts.get(row.run_id, (0, 0))
+            counts[row.run_id] = (done + (row.n if row.status in DONE_TASK_STATUSES else 0),
+                                  total + row.n)
+
+    places = dict(
+        db.execute(
+            select(Place.city_id, func.count())
+            .where(Place.city_id.in_(city_ids))
+            .group_by(Place.city_id)
+        ).all()
+    )
+
+    out = []
+    for trip in trips:
+        run = latest_run.get(trip.city_id)
+        done, total = counts.get(run.run_id, (0, 0)) if run else (0, 0)
+        out.append(
+            TripSummaryOut(
+                trip_id=trip.trip_id,
+                city=CityOut.model_validate(trip.city, from_attributes=True),
+                arrive_date=trip.arrive_date,
+                depart_date=trip.depart_date,
+                ingest=IngestOut(run_id=run.run_id, status=run.status) if run else None,
+                tasks_done=done,
+                tasks_total=total,
+                place_count=places.get(trip.city_id, 0),
+                notes=notes_for(trip.arrive_date),
+            )
+        )
+    return out
 
 
 @app.get("/trips/{trip_id}", response_model=TripStatusOut)
