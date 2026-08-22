@@ -1,16 +1,17 @@
 "use client";
 
-// The one screen: collect a city and dates, post them, then watch ingestion.
+// Collects a city and dates, posts them, then hands off to /trip/[tripId] for the watching.
 
+import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 import { CityCombobox } from "@/components/city-combobox";
-import { TripProgress } from "@/components/trip-progress";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { errorText, NOTE_TEXT, type CitySuggestion, type Trip } from "@/lib/api-types";
+import { errorText, type CitySuggestion, type Trip } from "@/lib/api-types";
+import { tripHref } from "@/lib/trips";
 
 const FIELD = "h-11 rounded-[13px] border-input px-3.5 text-sm";
 const LABEL = "text-[13px] font-semibold";
@@ -38,6 +39,7 @@ function pastTransitHorizon(date: string): boolean {
 }
 
 export function PlanForm() {
+  const router = useRouter();
   const [city, setCity] = useState<CitySuggestion | null>(null);
   const [arriveDate, setArriveDate] = useState("");
   const [arriveTime, setArriveTime] = useState("");
@@ -47,7 +49,6 @@ export function PlanForm() {
 
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [trip, setTrip] = useState<Trip | null>(null);
 
   const ready = city !== null && arriveDate !== "" && departDate !== "" && !submitting;
 
@@ -72,12 +73,13 @@ export function PlanForm() {
       const body = await r.json();
       if (!r.ok) {
         setError(errorText(body, r.status));
+        setSubmitting(false);
         return;
       }
-      setTrip(body as Trip);
+      // Stays submitting: the button must not re-arm while the route transition is in flight.
+      router.push(tripHref(body as Trip));
     } catch {
       setError("Could not reach the server.");
-    } finally {
       setSubmitting(false);
     }
   }
@@ -161,21 +163,6 @@ export function PlanForm() {
             We read real travel videos, so this takes a couple of minutes.
           </p>
         </form>
-
-        {trip && (
-          <section className="mt-8 space-y-3 rounded-card-sm border border-border surface p-5 text-sm shadow-card">
-            <p className="font-mono text-xs text-ink-soft">trip_id: {trip.trip_id}</p>
-            <p className="font-mono text-xs text-ink-soft">
-              ingest: {trip.ingest ? `${trip.ingest.run_id} — ${trip.ingest.status}` : "none (city already warm)"}
-            </p>
-            {trip.notes.map((n) => (
-              <p key={n} className="text-xs text-muted-foreground">
-                {NOTE_TEXT[n] ?? n}
-              </p>
-            ))}
-            <TripProgress tripId={trip.trip_id} initialStatus={trip.ingest?.status ?? "done"} />
-          </section>
-        )}
       </div>
 
       <aside className="border-border pl-0 lg:sticky lg:top-23 lg:border-l lg:pl-6">
