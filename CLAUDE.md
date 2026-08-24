@@ -74,8 +74,10 @@ account must not become one budget per host.
 | `tp_client` | `/` (form), `/trips` (list), `/trip/{trip_id}` (checklist), `/trip/{trip_id}/plan` (shortlist + days + map) |
 | `spikes/<topic>/` | Throwaway exploration. `routes_planning` is superseded by `libs/routing` |
 
-`./dev.sh` runs migrate + api + worker locally. `docker-compose.yml` runs the same three on a
-t4g.micro against RDS; `tp_client` is on Vercel, so there is no `web` service. See `docs/deploy.md`.
+`make dev` runs everything locally — migrate + api + worker via `./dev.sh`, plus the web app — and one
+Ctrl-C stops all of it. `make help` lists the rest. `docker-compose.yml` runs the three backend
+services on a t4g.micro against RDS; `tp_client` is on Vercel, so there is no `web` service. See
+`docs/deploy.md`.
 
 Run the worker as `python -m tp_ingestions`, **not `--once`**: a throttle wait goes back to the queue
 via `run_after` and `drain()` exits as soon as nothing is due.
