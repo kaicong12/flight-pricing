@@ -12,16 +12,19 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 
-from libs.db import City
+from libs.db import City, Place, PlaceMention
+from libs.db.enums import Confidence, ExtractedFrom, Sentiment, Source
 from libs.places import CityDetails
+from libs.routing import Leg, RouteResult
 from libs.settings import settings
-from tp_api.deps import city_lookup, db_session
+from tp_api.deps import city_lookup, db_session, hours_lookup, route_compute
 from tp_api.main import app
 from tp_api.schemas import today_utc
 from tp_ingestions.throttle import Throttler
 
-TABLES = ["place_mentions", "places", "place_queries", "ingest_tasks", "ingest_runs", "extractions",
-          "rednote_posts", "youtube_videos", "throttle_calls", "trips", "cities"]
+TABLES = ["itinerary_items", "trip_dismissals", "place_hours", "place_mentions", "places",
+          "place_queries", "ingest_tasks", "ingest_runs", "extractions", "rednote_posts",
+          "youtube_videos", "throttle_calls", "trips", "cities"]
 
 HELSINKI = "ChIJkQYhlscLkkYRY_fiO4S9Ts0"
 
@@ -76,6 +79,25 @@ def plan_body(**kw):
             "extra_details": "food and design, one proper sauna"} | kw
 
 
+def make_place(db, city_id=HELSINKI, place_id="p1", name="A Place", **kw):
+    """A resolved place. lat/lon and rating_count are always populated in real data."""
+    db.add(Place(place_id=place_id, city_id=city_id, name=name,
+                 lat=kw.pop("lat", 60.17), lon=kw.pop("lon", 24.94),
+                 rating=kw.pop("rating", 4.5), rating_count=kw.pop("rating_count", 100),
+                 confidence=kw.pop("confidence", Confidence.HIGH), **kw))
+    db.commit()
+    return place_id
+
+
+def make_mention(db, place_id, *, source=Source.YOUTUBE, source_ref="ref1", category="see",
+                 why_go=None, sentiment=Sentiment.RECOMMENDED):
+    """One piece of evidence. The count of these is the shortlist's ranking signal."""
+    db.add(PlaceMention(place_id=place_id, source=source, source_ref=source_ref,
+                        category=category, why_go=why_go, sentiment=sentiment,
+                        extracted_from=ExtractedFrom.TEXT, prompt_version="v1", model="test"))
+    db.commit()
+
+
 @pytest.fixture
 def lookup():
     """Stands in for Google Places. Reassign ["fn"] to make a test's lookup fail."""
@@ -83,9 +105,28 @@ def lookup():
 
 
 @pytest.fixture
-def client(db, lookup):
+def hours():
+    """Stands in for Place Details. Reassign ["fn"] to change what hours a test sees."""
+    return {"fn": lambda place_ids: {}}
+
+
+@pytest.fixture
+def routes():
+    """Stands in for Routes. Defaults to a 10-minute 800 m leg between each pair."""
+    def default(place_ids, mode, depart_iso):
+        legs = [Leg(seconds=600, meters=800, transit_steps=[]) for _ in place_ids[:-1]]
+        return RouteResult(legs=legs, polyline="_p~iF~ps|U", total_seconds=600 * len(legs),
+                           total_meters=800 * len(legs))
+    return {"fn": default}
+
+
+@pytest.fixture
+def client(db, lookup, hours, routes):
     app.dependency_overrides[db_session] = lambda: db
     app.dependency_overrides[city_lookup] = lambda: (lambda pid: lookup["fn"](pid))
+    app.dependency_overrides[hours_lookup] = lambda: (lambda pids: hours["fn"](pids))
+    app.dependency_overrides[route_compute] = lambda: (
+        lambda pids, mode, iso: routes["fn"](pids, mode, iso))
     with TestClient(app) as c:
         yield c
     app.dependency_overrides.clear()

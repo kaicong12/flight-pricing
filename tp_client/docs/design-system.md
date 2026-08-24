@@ -79,5 +79,10 @@ thumbnail with a water blob and one status chip · `TripProgress` checklist rows
 dashed ring; `blocked` renders as waiting, not an error) · plan form card beside a mono-eyebrow
 "what happens next" rail.
 
-Not built yet, designed: itinerary + map, block detail, share + proposals, the standalone ingesting
-and blocked pages. See `design.md` in the design project.
+`src/components/plan/*` builds the itinerary + map: shortlist rows with source badges beside
+day-tabbed activity blocks beside a MapLibre route. Two rules from above carry the weight there —
+`--alert` is the per-block callout for a block that does not work, `--warn` is the whole-plan
+"Provisional" badge, and start times and leg distances are mono because a machine computed them.
+
+Not built yet, designed: block detail, share + proposals, the standalone ingesting and blocked pages.
+See `design.md` in the design project.

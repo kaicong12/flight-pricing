@@ -15,6 +15,7 @@ from libs.db.enums import RunKind, TaskStatus
 from libs.ingest import ensure_city, ensure_city_ingest
 from libs.places import NotACity, PlacesError
 from libs.settings import settings
+from tp_api import plan_routes
 from tp_api.deps import CityLookup, CitySearch, city_lookup, city_search, db_session
 from tp_api.schemas import (
     CityOut,
@@ -38,10 +39,17 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 
 app = FastAPI(title="Trip planner API", lifespan=lifespan)
+app.include_router(plan_routes.router)
 
 Db = Annotated[Session, Depends(db_session)]
 Lookup = Annotated[CityLookup, Depends(city_lookup)]
 Search = Annotated[CitySearch, Depends(city_search)]
+
+
+@app.get("/health")
+def health() -> dict[str, str]:
+    """What the container healthcheck probes. Liveness only — it must not touch the database."""
+    return {"status": "ok"}
 
 
 @app.get("/cities/search", response_model=list[CitySuggestionOut])

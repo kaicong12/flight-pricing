@@ -10,8 +10,8 @@ sequence and warn about anything that does not work.
 
 Day 1 in Helsinki: ordered blocks with the walk leg between each pair, a provisional-plan banner
 because December holiday hours are not published yet, and a TOO LATE warning on Uspenski Cathedral —
-arrive 15:43, need 30 minutes, closes 16:00. This screen is a **mockup, not a running app** — the
-map pane is a placeholder until the Routes API is enabled.
+arrive 15:43, need 30 minutes, closes 16:00. This was the mockup; the screen now exists at
+`/trip/{trip_id}/plan`, with real Routes legs, real opening hours and a MapLibre basemap.
 
 ## How it works
 
@@ -30,12 +30,14 @@ to a Google `place_id` -> rank by how many independent sources mentioned it.
 
 | Works today | Not built |
 |---|---|
-| Schema + Alembic migrations | `places.resolve` — extractions land in `extractions.result` and nothing writes `places` yet |
-| `POST /initiate-plan`, `GET /trips/{trip_id}` | Itinerary generation |
-| Worker loop: claim, lease reclaim, retry/backoff | Routing in the app (spike only) |
-| `youtube.search`, `rednote.search`, which fan out follow-on tasks | Every trip screen past the list: plan form redesign, ingesting, itinerary, sharing |
-| Versioned Gemini prompts in `libs/prompts` | Auth, sharing, proposed changes |
-| `tp_client`: the plan form and the trips list | |
+| Schema + Alembic migrations | Auth — so the owner/proposals split in the design is unenforced, and sharing is a link, not a permission |
+| `POST /initiate-plan`, `GET /trips`, `GET /trips/{trip_id}` | A cached routed day, so a page reload re-spends one `computeRoutes` call per day viewed |
+| Worker loop: claim, lease reclaim, retry/backoff | Pinned arrival times; a block's time is always derived from the order |
+| `youtube.search`, `rednote.search`, which fan out follow-on tasks | Any frontend test runner |
+| `places.resolve` — candidate names become `places` + `place_mentions` behind a query cache | Block detail, and the standalone ingesting/blocked pages |
+| Versioned Gemini prompts in `libs/prompts` | |
+| Shortlist, itinerary and per-day routing endpoints, validated against hours and daylight | |
+| `tp_client`: plan form, trips list, and the shortlist/itinerary/map screen | |
 
 ## Getting started
 
@@ -43,13 +45,14 @@ A `uv` project rooted at `tp_backend/`. Needs Postgres and a repo-root `.env` (g
 `DATABASE_URL`, `GOOGLE_API_KEY`, `GEMINI_API_KEY` and the `XHS_*` RedNote cookie/signature vars.
 
 ```bash
-cd tp_backend
-uv sync
-uv run alembic -c libs/db/alembic.ini upgrade head
-uv run pytest                            # creates and migrates <DATABASE_URL>_test
-uv run uvicorn tp_api.main:app --reload
-uv run python -m tp_ingestions           # worker; --once drains what is due and exits
+make install     # uv sync + npm ci
+make dev         # migrate, then api + worker + web app; one Ctrl-C stops all of it
+make help        # everything else: test, lint, migrate, revision, build
 ```
+
+`make dev` serves the API on 8000 and the web app on 3000 (`API_PORT` / `WEB_PORT` to change either).
+The pieces run standalone too — `make api`, `make web`, `make worker` — and `make test` creates and
+migrates `<DATABASE_URL>_test`.
 
 The worker calls a real logged-in RedNote account with a hard rate limit. Do not run it idly.
 
