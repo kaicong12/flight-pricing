@@ -3,6 +3,9 @@
 
 const BASE = process.env.TP_API_URL ?? "http://127.0.0.1:8000";
 
+// The Response constructor rejects a body on any of these, so a 204 from tp_api must stay bodyless.
+const NULL_BODY_STATUSES = new Set([101, 103, 204, 205, 304]);
+
 /** Proxies one tp_api call, preserving its status code and JSON body. */
 export async function proxy(path: string, init?: RequestInit): Promise<Response> {
   let upstream: Response;
@@ -10,6 +13,9 @@ export async function proxy(path: string, init?: RequestInit): Promise<Response>
     upstream = await fetch(`${BASE}${path}`, { ...init, cache: "no-store" });
   } catch {
     return Response.json({ detail: "The planning API is unreachable." }, { status: 502 });
+  }
+  if (NULL_BODY_STATUSES.has(upstream.status)) {
+    return new Response(null, { status: upstream.status });
   }
   const text = await upstream.text();
   return new Response(text || "null", {

@@ -69,6 +69,9 @@ class Throttler:
         s.execute(select(func.pg_advisory_xact_lock(func.hashtext(f"throttle:{self.domain}"))))
 
     def wait_time(self) -> float:
+        """Read the budget without spending it. No caller in the worker — this exists so a test can
+        assert the gap and the jitter, which `take()` cannot do without consuming a slot per look.
+        """
         now = datetime.now(UTC)
         with session() as s:
             return self._wait_for(self._history(s, now), now)

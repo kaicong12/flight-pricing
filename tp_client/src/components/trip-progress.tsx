@@ -3,6 +3,7 @@
 // Polls one trip and renders the ingestion checklist, one row per (kind, status). The polled body
 // is the only source of ingest status, so nothing on the page can go stale against it.
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 
 import { TERMINAL_STATUSES, type TripStatus } from "@/lib/api-types";
@@ -90,9 +91,23 @@ export function TripProgress({ initial }: { initial: TripStatus }) {
         )}
       </div>
 
-      <p className="border-t border-border px-6 py-3 font-mono text-[11px] text-faint">
-        {state} · {stopped ? "polling stopped" : "polling"}
-      </p>
+      {done ? (
+        <Link
+          href={`/trip/${initial.trip_id}/plan`}
+          className="flex items-center justify-between gap-4 border-t border-border px-6 py-4 transition-colors hover:bg-page outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+        >
+          <span className="text-[14px] font-semibold tracking-[-0.01em]">
+            Build the itinerary →
+          </span>
+          <span className="font-mono text-[11px] text-faint">
+            shortlist · order · route
+          </span>
+        </Link>
+      ) : (
+        <p className="border-t border-border px-6 py-3 font-mono text-[11px] text-faint">
+          {state} · {stopped ? "polling stopped" : "polling"}
+        </p>
+      )}
     </section>
   );
 }

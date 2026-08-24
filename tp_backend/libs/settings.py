@@ -29,6 +29,10 @@ class Settings(BaseSettings):
     city_refresh_days: int = 30
     # searchText's locationRestriction is a rectangle, not a circle, and this is its half-width.
     places_search_radius_m: int = 50000
+    # Hours move, and the Places terms only let place_id be kept indefinitely, so this is short.
+    place_hours_ttl_days: int = 7
+    # computeRoutes allows 25 intermediates, which bounds a day and so bounds a routing request.
+    max_stops_per_day: int = 25
 
     # RedNote needs a cookie AND a signature, and the signature is bound to the URL path — hence
     # one set of these per endpoint. Only the cookie expires, so rotation means editing xhs_cookie.

@@ -160,6 +160,76 @@ class PlaceMention(Base):
     place: Mapped[Place] = relationship(back_populates="mentions")
 
 
+class ItineraryItem(Base):
+    """One activity block: a place the user put on a day, at a position they chose.
+
+    The order is the product, so position is never recomputed from anything — a day is rewritten
+    wholesale and renumbered densely, which is also why (day_index, position) is not unique: a
+    reorder would collide against it mid-update.
+    """
+
+    __tablename__ = "itinerary_items"
+    __table_args__ = (
+        # A venue belongs to one day of a trip, which is what makes the shortlist's "already added"
+        # flag a join rather than a scan.
+        UniqueConstraint("trip_id", "place_id", name="uq_itinerary_trip_place"),
+        CheckConstraint("day_index >= 0", name="ck_itinerary_day"),
+        CheckConstraint("position >= 0", name="ck_itinerary_position"),
+        CheckConstraint("duration_min > 0", name="ck_itinerary_duration"),
+        Index("ix_itinerary_trip_day", "trip_id", "day_index", "position"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    trip_id: Mapped[str] = mapped_column(ForeignKey("trips.trip_id", ondelete="CASCADE"),
+                                         nullable=False)
+    place_id: Mapped[str] = mapped_column(ForeignKey("places.place_id"), nullable=False)
+    day_index: Mapped[int] = mapped_column(Integer, nullable=False)
+    position: Mapped[int] = mapped_column(Integer, nullable=False)
+    duration_min: Mapped[int] = mapped_column(Integer, nullable=False)
+    created_at: Mapped[datetime] = _ts(nullable=False, server_default=func.now())
+    updated_at: Mapped[datetime] = _ts(nullable=False, server_default=func.now(),
+                                       onupdate=func.now())
+
+    place: Mapped[Place] = relationship()
+
+
+class TripDismissal(Base):
+    """A place the user struck off one trip's shortlist.
+
+    Google itself carries duplicate listings for one venue, and a legitimate two-branch chain looks
+    identical, so the choice has to be the user's. Per trip rather than per city because there is no
+    auth: one person's judgement must not rewrite someone else's shortlist.
+    """
+
+    __tablename__ = "trip_dismissals"
+
+    trip_id: Mapped[str] = mapped_column(ForeignKey("trips.trip_id", ondelete="CASCADE"),
+                                         primary_key=True)
+    place_id: Mapped[str] = mapped_column(ForeignKey("places.place_id"), primary_key=True)
+    created_at: Mapped[datetime] = _ts(nullable=False, server_default=func.now())
+
+
+class PlaceHours(Base):
+    """Cached regular opening hours for one place, with a TTL.
+
+    place_id may be cached indefinitely; almost nothing else from Places may be, hence fetched_at.
+    Only *regular* hours are ever stored: specialDays covers the coming week only, so a plan for a
+    future date can never know about holiday closures and is labelled provisional instead.
+    """
+
+    __tablename__ = "place_hours"
+
+    place_id: Mapped[str] = mapped_column(ForeignKey("places.place_id"), primary_key=True)
+    periods: Mapped[list[dict]] = mapped_column(JSONB, nullable=False,
+                                                server_default=text("'[]'::jsonb"))
+    weekday_descriptions: Mapped[list[str] | None] = mapped_column(ARRAY(Text))
+    utc_offset_minutes: Mapped[int | None] = mapped_column(Integer)
+    # Distinguishes "asked, Google publishes none" from "never asked", without which every
+    # hours-less venue is re-fetched on every route.
+    has_hours: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    fetched_at: Mapped[datetime] = _ts(nullable=False, server_default=func.now())
+
+
 class ThrottleCall(Base):
     """One call we have spent against an external domain's budget.
 
