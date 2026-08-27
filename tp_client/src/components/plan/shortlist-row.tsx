@@ -6,6 +6,11 @@
 import { useDraggable } from "@dnd-kit/core";
 import { Plus, X } from "lucide-react";
 
+import {
+  PreviewCard,
+  PreviewCardContent,
+  PreviewCardTrigger,
+} from "@/components/ui/preview-card";
 import type { ShortlistPlace } from "@/lib/plan-types";
 import { cn } from "@/lib/utils";
 
@@ -74,21 +79,46 @@ export function ShortlistRow({
       </div>
 
       <div className="mt-2.5 flex flex-wrap items-center gap-2">
-        {place.sources.length > 0 && (
-          <span className="flex h-5.5 items-center rounded-full bg-page px-2 font-mono text-[10.5px] tracking-[0.03em] text-ink-soft">
-            {place.sources.join(" · ")}
-          </span>
-        )}
-        <span className="font-mono text-[11px] text-faint">
-          {place.mention_count === 1 ? "1 source" : `${place.mention_count} sources`}
-        </span>
-        {place.rating !== null && (
-          <span className="font-mono text-[11px] text-faint">
-            {place.rating.toFixed(1)}
-            {place.rating_count ? ` (${place.rating_count.toLocaleString("en-GB")})` : ""}
-          </span>
-        )}
+        <SourceCount place={place} />
       </div>
     </li>
+  );
+}
+
+function SourceCount({ place }: { place: ShortlistPlace }) {
+  const label = place.mention_count === 1 ? "1 source" : `${place.mention_count} sources`;
+
+  if (place.sources.length === 0) {
+    return <span className="font-mono text-[11px] text-faint">{label}</span>;
+  }
+
+  return (
+    <PreviewCard>
+      <PreviewCardTrigger
+        render={<button type="button" />}
+        className="font-mono text-[11px] text-faint underline decoration-dotted decoration-from-font underline-offset-3 transition-colors hover:text-ink outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+      >
+        {label}
+      </PreviewCardTrigger>
+      <PreviewCardContent>
+        <ul className="flex flex-col gap-2">
+          {place.sources.map((s) => (
+            <li key={s.url} className="flex flex-col gap-0.5">
+              <span className="font-mono text-[10px] tracking-[0.04em] text-faint uppercase">
+                {s.source}
+              </span>
+              <a
+                href={s.url}
+                target="_blank"
+                rel="noreferrer noopener"
+                className="line-clamp-2 text-[12.5px] leading-[1.45] text-ink underline decoration-hairline underline-offset-2 transition-colors hover:decoration-ink outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+              >
+                {s.title}
+              </a>
+            </li>
+          ))}
+        </ul>
+      </PreviewCardContent>
+    </PreviewCard>
   );
 }

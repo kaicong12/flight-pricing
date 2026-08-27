@@ -34,6 +34,7 @@ export type Trip = {
   extra_details: string | null;
   ingest: Ingest | null;
   notes: string[];
+  deleted: boolean;
 };
 
 export type TripStatus = Trip & { progress: TaskProgress[] };

@@ -21,18 +21,22 @@ WALK = "walk"
 TRANSIT = "transit"
 
 
+class SourceRefOut(BaseModel):
+    source: str
+    title: str
+    url: str
+
+
 class ShortlistPlaceOut(BaseModel):
     place_id: str
     name: str
     address: str | None = None
     lat: float | None = None
     lon: float | None = None
-    rating: float | None = None
-    rating_count: int | None = None
     primary_type: str | None = None
     category: str | None = None
     why_go: str | None = None
-    sources: list[str] = []
+    sources: list[SourceRefOut] = []
     mention_count: int = 0
     in_itinerary: bool = False
     day_index: int | None = None

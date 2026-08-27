@@ -4,6 +4,7 @@ The order is the user's. Nothing here reorders anything — routing follows the 
 and the warnings say what does not work.
 """
 
+import html
 from collections import Counter
 from collections.abc import Sequence
 from datetime import UTC, date, datetime, time, timedelta, timezone
@@ -11,12 +12,22 @@ from typing import Annotated
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import delete, distinct, func, or_, select
+from sqlalchemy import delete, func, or_, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
-from libs.db import City, ItineraryItem, Place, PlaceHours, PlaceMention, Trip, TripDismissal
-from libs.db.enums import Sentiment
+from libs.db import (
+    City,
+    ItineraryItem,
+    Place,
+    PlaceHours,
+    PlaceMention,
+    RedNotePost,
+    Trip,
+    TripDismissal,
+    YouTubeVideo,
+)
+from libs.db.enums import Sentiment, Source
 from libs.places import PlacesError
 from libs.routing import (
     PlanWarning,
@@ -50,6 +61,7 @@ from tp_api.plan_schemas import (
     RouteDayRequest,
     ShortlistOut,
     ShortlistPlaceOut,
+    SourceRefOut,
     WarningOut,
     provisional_reasons,
 )
@@ -61,6 +73,9 @@ Hours = Annotated[HoursLookup, Depends(hours_lookup)]
 Route = Annotated[RouteCompute, Depends(route_compute)]
 
 DEFAULT_START = time(9, 0)
+
+SOURCE_TITLE_MAX = 80
+FALLBACK_TITLE = {Source.YOUTUBE: "YouTube video", Source.REDNOTE: "RedNote post"}
 
 
 def _trip(db: Session, trip_id: str) -> Trip:
@@ -114,6 +129,49 @@ def _mention_facts(db: Session, place_ids: Sequence[str]) -> dict[str, tuple[str
             for pid in set(place_ids)}
 
 
+def _source_url(source: str, ref: str, token: str | None) -> str | None:
+    if source == Source.YOUTUBE:
+        return f"https://www.youtube.com/watch?v={ref}"
+    if source == Source.REDNOTE:
+        # The token expires, and RedNote then falls back to whatever the reader's own login can see.
+        return (f"https://www.xiaohongshu.com/explore/{ref}?xsec_token={token}" if token
+                else f"https://www.xiaohongshu.com/explore/{ref}")
+    return None
+
+
+def _mention_sources(db: Session, place_ids: Sequence[str]) -> dict[str, list[SourceRefOut]]:
+    """The videos and notes behind each place, so a shortlist row can link back to its evidence.
+
+    Each join is gated on the source, or a note_id would be matched against a video_id.
+    """
+    if not place_ids:
+        return {}
+    rows = db.execute(
+        select(PlaceMention.place_id, PlaceMention.source, PlaceMention.source_ref,
+               YouTubeVideo.title.label("video_title"),
+               RedNotePost.title.label("note_title"), RedNotePost.description,
+               RedNotePost.xsec_token)
+        .outerjoin(YouTubeVideo, (PlaceMention.source == Source.YOUTUBE)
+                   & (YouTubeVideo.video_id == PlaceMention.source_ref))
+        .outerjoin(RedNotePost, (PlaceMention.source == Source.REDNOTE)
+                   & (RedNotePost.note_id == PlaceMention.source_ref))
+        .where(PlaceMention.place_id.in_(place_ids))
+        .order_by(PlaceMention.place_id, PlaceMention.source, PlaceMention.id)
+    ).all()
+
+    out: dict[str, list[SourceRefOut]] = {}
+    for r in rows:
+        url = _source_url(r.source, r.source_ref, r.xsec_token)
+        if url is None:
+            continue
+        # A mention outlives the cache row it came from, and YouTube titles arrive HTML-escaped.
+        title = (r.video_title or r.note_title or (r.description or "")[:SOURCE_TITLE_MAX]
+                 or FALLBACK_TITLE[r.source])
+        out.setdefault(r.place_id, []).append(
+            SourceRefOut(source=r.source, title=html.unescape(title), url=url))
+    return out
+
+
 @router.get("/trips/{trip_id}/shortlist", response_model=ShortlistOut)
 def get_shortlist(
     trip_id: str,
@@ -126,16 +184,14 @@ def get_shortlist(
     trip = _trip(db, trip_id)
 
     mentions = (
-        select(PlaceMention.place_id.label("place_id"),
-               func.count().label("mention_count"),
-               func.array_agg(distinct(PlaceMention.source)).label("sources"))
+        select(PlaceMention.place_id.label("place_id"), func.count().label("mention_count"))
         .group_by(PlaceMention.place_id)
         .subquery()
     )
     rank = func.coalesce(mentions.c.mention_count, 0)
 
     stmt = (
-        select(Place, rank.label("mention_count"), mentions.c.sources,
+        select(Place, rank.label("mention_count"),
                ItineraryItem.day_index,
                # Computed before LIMIT, so one query yields both the page and the full count.
                func.count().over().label("total"))
@@ -154,7 +210,9 @@ def get_shortlist(
     )
     rows = db.execute(stmt).all()
 
-    facts = _mention_facts(db, [r.Place.place_id for r in rows])
+    place_ids = [r.Place.place_id for r in rows]
+    facts = _mention_facts(db, place_ids)
+    srcs = _mention_sources(db, place_ids)
     if category:
         rows = [r for r in rows if facts.get(r.Place.place_id, (None, None))[0] == category]
 
@@ -164,8 +222,8 @@ def get_shortlist(
         p = r.Place
         places.append(ShortlistPlaceOut(
             place_id=p.place_id, name=p.name, address=p.address, lat=p.lat, lon=p.lon,
-            rating=p.rating, rating_count=p.rating_count, primary_type=p.primary_type,
-            category=cat, why_go=why_go, sources=sorted(r.sources or []),
+            primary_type=p.primary_type,
+            category=cat, why_go=why_go, sources=srcs.get(p.place_id, []),
             mention_count=r.mention_count, in_itinerary=r.day_index is not None,
             day_index=r.day_index, default_duration_min=duration_for(cat),
         ))

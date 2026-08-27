@@ -2,7 +2,7 @@
 
 from datetime import timedelta
 
-from conftest import make_mention, make_place, plan_body
+from conftest import make_mention, make_note, make_place, make_video, plan_body
 from sqlalchemy import select
 
 from libs.db import ItineraryItem
@@ -64,16 +64,68 @@ class TestShortlist:
         places = client.get(f"/trips/{trip}/shortlist").json()["places"]
         assert [p["name"] for p in places] == ["Famous", "Quiet"]
 
-    def test_sources_are_distinct_and_drive_the_badges(self, client, db):
+    def test_every_mention_becomes_one_linked_source(self, client, db):
         trip = make_trip(client)
         make_place(db, place_id="p1")
-        make_mention(db, "p1", source=Source.YOUTUBE, source_ref="a")
-        make_mention(db, "p1", source=Source.YOUTUBE, source_ref="b")
-        make_mention(db, "p1", source=Source.REDNOTE, source_ref="c")
+        make_video(db, video_id="vid1", title="Tromsø in 3 Days")
+        make_note(db, note_id="note1", title="特罗姆瑟美食", xsec_token="tok")
+        make_mention(db, "p1", source=Source.YOUTUBE, source_ref="vid1")
+        make_mention(db, "p1", source=Source.REDNOTE, source_ref="note1")
 
         p = client.get(f"/trips/{trip}/shortlist").json()["places"][0]
-        assert p["sources"] == ["rednote", "youtube"]
-        assert p["mention_count"] == 3
+
+        assert p["mention_count"] == 2
+        assert p["sources"] == [
+            {"source": "rednote", "title": "特罗姆瑟美食",
+             "url": "https://www.xiaohongshu.com/explore/note1?xsec_token=tok"},
+            {"source": "youtube", "title": "Tromsø in 3 Days",
+             "url": "https://www.youtube.com/watch?v=vid1"},
+        ]
+
+    def test_a_note_without_a_token_still_gets_a_link(self, client, db):
+        trip = make_trip(client)
+        make_place(db, place_id="p1")
+        make_note(db, note_id="note1", xsec_token=None)
+        make_mention(db, "p1", source=Source.REDNOTE, source_ref="note1")
+
+        p = client.get(f"/trips/{trip}/shortlist").json()["places"][0]
+        assert p["sources"][0]["url"] == "https://www.xiaohongshu.com/explore/note1"
+
+    def test_a_titleless_note_falls_back_to_its_description(self, client, db):
+        trip = make_trip(client)
+        make_place(db, place_id="p1")
+        make_note(db, note_id="note1", title=None, description="八家必吃的店，人均一百出头")
+        make_mention(db, "p1", source=Source.REDNOTE, source_ref="note1")
+
+        p = client.get(f"/trips/{trip}/shortlist").json()["places"][0]
+        assert p["sources"][0]["title"] == "八家必吃的店，人均一百出头"
+
+    def test_a_mention_whose_source_row_is_gone_is_still_clickable(self, client, db):
+        """The mention outlives the cache row it came from, so a missing join must not lose the link."""
+        trip = make_trip(client)
+        make_place(db, place_id="p1")
+        make_mention(db, "p1", source=Source.YOUTUBE, source_ref="vid1")
+
+        p = client.get(f"/trips/{trip}/shortlist").json()["places"][0]
+        assert p["sources"] == [{"source": "youtube", "title": "YouTube video",
+                                 "url": "https://www.youtube.com/watch?v=vid1"}]
+
+    def test_an_escaped_youtube_title_is_readable(self, client, db):
+        """YouTube hands back "&amp;", which would otherwise render literally in the link."""
+        trip = make_trip(client)
+        make_place(db, place_id="p1")
+        make_video(db, video_id="vid1", title="Tromsø In &amp; Around")
+        make_mention(db, "p1", source=Source.YOUTUBE, source_ref="vid1")
+
+        p = client.get(f"/trips/{trip}/shortlist").json()["places"][0]
+        assert p["sources"][0]["title"] == "Tromsø In & Around"
+
+    def test_ratings_are_not_in_the_payload(self, client, db):
+        trip = make_trip(client)
+        make_place(db, place_id="p1", rating=4.5, rating_count=9000)
+
+        p = client.get(f"/trips/{trip}/shortlist").json()["places"][0]
+        assert "rating" not in p and "rating_count" not in p
 
     def test_category_is_the_modal_mention_and_sets_the_default_duration(self, client, db):
         trip = make_trip(client)

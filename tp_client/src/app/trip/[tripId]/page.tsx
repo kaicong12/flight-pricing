@@ -5,6 +5,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { AppHeader } from "@/components/app-header";
+import { DeleteTrip } from "@/components/delete-trip";
 import { TripProgress } from "@/components/trip-progress";
 import { NOTE_TEXT, type TripStatus } from "@/lib/api-types";
 import { getJson } from "@/lib/tp-api";
@@ -52,6 +53,15 @@ export default async function TripPage({ params }: PageProps<"/trip/[tripId]">) 
           )}
         </div>
 
+        {trip.deleted && (
+          <div className="mt-5 flex items-center gap-3.5 rounded-[13px] border border-alert/25 bg-alert-bg px-4 py-3.5">
+            <span className="size-1.5 shrink-0 rounded-full bg-alert" />
+            <p className="text-[13px] leading-[1.5] text-alert">
+              Deleted. It no longer shows in your trips list.
+            </p>
+          </div>
+        )}
+
         {trip.notes.map((n) => (
           <div
             key={n}
@@ -70,7 +80,10 @@ export default async function TripPage({ params }: PageProps<"/trip/[tripId]">) 
 
         <TripProgress initial={trip} />
 
-        <p className="mt-4 font-mono text-[11px] text-faint">trip_id: {trip.trip_id}</p>
+        <div className="mt-4 flex items-center justify-between gap-4">
+          <p className="font-mono text-[11px] text-faint">trip_id: {trip.trip_id}</p>
+          {!trip.deleted && <DeleteTrip tripId={trip.trip_id} city={trip.city.name} />}
+        </div>
       </main>
     </div>
   );

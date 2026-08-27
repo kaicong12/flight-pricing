@@ -49,8 +49,11 @@ sources naming one venue count once, and what makes the LLM's run-to-run renamin
 
 **5. Watch.** `GET /trips/{id}` returns the trip plus a group-by of its tasks; `GET /trips` returns
 one row per trip for the list. The client polls until the run reaches a terminal status.
+`DELETE /trips/{id}` sets `trips.deleted`, which drops it from the list — soft, because the ordering
+work is worth more than the row.
 
-**6. Plan.** `GET /trips/{id}/shortlist` ranks the city's places by mention count. The user drags
+**6. Plan.** `GET /trips/{id}/shortlist` ranks the city's places by mention count and returns each
+mention as a link back to the video or note that named it. The user drags
 them into days; `PUT /trips/{id}/itinerary` replaces whole days, because a drag is a statement about
 a sequence and positions are dense and derived. `POST /trips/{id}/days/{n}/route` then routes that
 exact order through `computeRoutes`, checks it against Place Details hours and local daylight, and
