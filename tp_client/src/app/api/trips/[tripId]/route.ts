@@ -6,3 +6,8 @@ export async function GET(_request: Request, { params }: RouteContext<"/api/trip
   const { tripId } = await params;
   return proxy(`/trips/${encodeURIComponent(tripId)}`);
 }
+
+export async function DELETE(_request: Request, { params }: RouteContext<"/api/trips/[tripId]">) {
+  const { tripId } = await params;
+  return proxy(`/trips/${encodeURIComponent(tripId)}`, { method: "DELETE" });
+}

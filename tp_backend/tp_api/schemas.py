@@ -70,6 +70,7 @@ class TripOut(BaseModel):
     extra_details: str | None = None
     ingest: IngestOut | None = None
     notes: list[str] = []
+    deleted: bool = False
 
 
 class TripStatusOut(TripOut):

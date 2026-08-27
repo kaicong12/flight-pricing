@@ -12,7 +12,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 
-from libs.db import City, Place, PlaceMention
+from libs.db import City, Place, PlaceMention, RedNotePost, YouTubeVideo
 from libs.db.enums import Confidence, ExtractedFrom, Sentiment, Source
 from libs.places import CityDetails
 from libs.routing import Leg, RouteResult
@@ -96,6 +96,20 @@ def make_mention(db, place_id, *, source=Source.YOUTUBE, source_ref="ref1", cate
                         category=category, why_go=why_go, sentiment=sentiment,
                         extracted_from=ExtractedFrom.TEXT, prompt_version="v1", model="test"))
     db.commit()
+
+
+def make_video(db, video_id="ref1", title="Tromsø in 3 Days"):
+    """The row a youtube mention's source_ref joins to for its title."""
+    db.add(YouTubeVideo(video_id=video_id, title=title))
+    db.commit()
+    return video_id
+
+
+def make_note(db, note_id="note1", title="特罗姆瑟美食", xsec_token="tok", **kw):
+    """The row a rednote mention's source_ref joins to. xsec_token is what makes the link openable."""
+    db.add(RedNotePost(note_id=note_id, title=title, xsec_token=xsec_token, **kw))
+    db.commit()
+    return note_id
 
 
 @pytest.fixture

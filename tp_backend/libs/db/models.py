@@ -92,6 +92,7 @@ class Trip(Base):
     depart_time: Mapped[time | None] = mapped_column(Time)
     extra_details: Mapped[str | None] = mapped_column(Text)
     owner: Mapped[str | None] = mapped_column(String(64))
+    deleted: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
     created_at: Mapped[datetime] = _ts(nullable=False, server_default=func.now())
     updated_at: Mapped[datetime] = _ts(nullable=False, server_default=func.now(),
                                        onupdate=func.now())

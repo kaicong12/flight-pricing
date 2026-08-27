@@ -3,18 +3,22 @@
 
 export type TravelMode = "walk" | "transit";
 
+export type SourceRef = {
+  source: string;
+  title: string;
+  url: string;
+};
+
 export type ShortlistPlace = {
   place_id: string;
   name: string;
   address: string | null;
   lat: number | null;
   lon: number | null;
-  rating: number | null;
-  rating_count: number | null;
   primary_type: string | null;
   category: string | null;
   why_go: string | null;
-  sources: string[];
+  sources: SourceRef[];
   mention_count: number;
   in_itinerary: boolean;
   day_index: number | null;

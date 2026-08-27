@@ -106,7 +106,9 @@ DONE_TASK_STATUSES = (TaskStatus.DONE, TaskStatus.SKIPPED)
 
 @app.get("/trips", response_model=list[TripSummaryOut])
 def list_trips(db: Db) -> list[TripSummaryOut]:
-    trips = db.scalars(select(Trip).order_by(Trip.created_at.desc())).all()
+    trips = db.scalars(
+        select(Trip).where(Trip.deleted.is_(False)).order_by(Trip.created_at.desc())
+    ).all()
     if not trips:
         return []
 
@@ -195,5 +197,16 @@ def get_trip(trip_id: str, db: Db) -> TripStatusOut:
         extra_details=trip.extra_details,
         ingest=IngestOut(run_id=run.run_id, status=run.status) if run else None,
         notes=notes_for(trip.arrive_date),
+        deleted=trip.deleted,
         progress=progress,
     )
+
+
+@app.delete("/trips/{trip_id}", status_code=204)
+def delete_trip(trip_id: str, db: Db) -> None:
+    """Hide a trip from the list. Soft, so its days and dismissals survive; idempotent."""
+    trip = db.get(Trip, trip_id)
+    if trip is None:
+        raise HTTPException(404, "no such trip")
+    trip.deleted = True
+    db.commit()
