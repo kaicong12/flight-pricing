@@ -235,6 +235,52 @@ def test_a_handlers_writes_roll_back_when_it_fails(worker, db, run):
     assert TaskKind.YOUTUBE_EXTRACT not in kinds
 
 
+def test_claiming_stamps_started_at(db, run):
+    task = add_task(db, run)
+
+    queue.claim(db, "w1")
+    db.commit()
+
+    db.expire_all()
+    row = db.get(IngestTask, task.task_id)
+    assert row.started_at is not None
+    assert row.started_at == row.locked_at
+
+
+def test_started_at_outlives_the_lease(worker, db, run):
+    """The lease is nulled on settle, so started_at is what makes a duration computable after."""
+    task = add_task(db, run)
+    HANDLERS[TaskKind.YOUTUBE_SEARCH] = lambda s, t: None
+
+    worker.run_once()
+
+    db.expire_all()
+    row = db.get(IngestTask, task.task_id)
+    assert (row.status, row.locked_at) == (TaskStatus.DONE, None)
+    assert row.started_at is not None
+    assert row.finished_at >= row.started_at
+
+
+def test_a_retry_restamps_started_at(worker, db, run):
+    task = add_task(db, run)
+
+    def boom(s, t):
+        raise TaskError(ErrorCode.TRANSIENT, "flaky")
+
+    HANDLERS[TaskKind.YOUTUBE_SEARCH] = boom
+    worker.run_once()
+    db.expire_all()
+    first = db.get(IngestTask, task.task_id).started_at
+
+    db.execute(update(IngestTask).where(IngestTask.task_id == task.task_id)
+               .values(run_after=datetime.now(UTC) - timedelta(seconds=1)))
+    db.commit()
+    worker.run_once()
+
+    db.expire_all()
+    assert db.get(IngestTask, task.task_id).started_at > first
+
+
 def test_an_expired_lease_is_reclaimed(db, run):
     task = add_task(db, run, status=TaskStatus.RUNNING, locked_by="dead",
                     locked_at=datetime.now(UTC) - timedelta(minutes=30))

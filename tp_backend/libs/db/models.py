@@ -391,6 +391,7 @@ class IngestTask(Base):
     run_after: Mapped[datetime] = _ts(nullable=False, server_default=func.now())
     locked_by: Mapped[str | None] = mapped_column(String(64))
     locked_at: Mapped[datetime | None] = _ts()
+    started_at: Mapped[datetime | None] = _ts()
     error_code: Mapped[str | None] = mapped_column(String(16))
     last_error: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = _ts(nullable=False, server_default=func.now())

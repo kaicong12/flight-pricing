@@ -13,7 +13,7 @@ ACTIVE_TASK = (TaskStatus.PENDING, TaskStatus.RUNNING)
 ACTIVE_RUN = (RunStatus.PENDING, RunStatus.RUNNING)
 
 _CLAIM = text("""
-UPDATE ingest_tasks SET status='running', locked_by=:worker, locked_at=now(),
+UPDATE ingest_tasks SET status='running', locked_by=:worker, locked_at=now(), started_at=now(),
        attempts=attempts+1
 WHERE task_id = (
   SELECT task_id FROM ingest_tasks
