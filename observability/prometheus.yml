@@ -1,0 +1,13 @@
+# One target covers both ways the API runs: `make dev` serves it as a host process on 8000, and the
+# deployed stack publishes the api container's 8000 to the host. Both are reachable through the host
+# gateway, so there is no second config to keep in sync.
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: tp_api
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["host.docker.internal:8000"]

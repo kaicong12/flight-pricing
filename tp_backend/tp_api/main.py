@@ -15,6 +15,7 @@ from libs.db.enums import RunKind, TaskKind, TaskStatus
 from libs.ingest import ensure_city, ensure_city_ingest, ensure_trip_plan
 from libs.places import NotACity, PlacesError
 from libs.settings import settings
+from tp_api import metrics
 from tp_api.deps import CityLookup, CitySearch, city_lookup, city_search, db_session
 from tp_api.route_planning import router as planning_router
 from tp_api.schemas import (
@@ -42,6 +43,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 app = FastAPI(title="Trip planner API", lifespan=lifespan)
 app.include_router(planning_router)
+metrics.install(app)
 
 Db = Annotated[Session, Depends(db_session)]
 Lookup = Annotated[CityLookup, Depends(city_lookup)]

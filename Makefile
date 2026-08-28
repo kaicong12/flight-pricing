@@ -8,17 +8,22 @@ SHELL := /bin/bash
 
 API_PORT ?= 8000
 WEB_PORT ?= 3000
+# Prometheus's TSDB is the only copy of the metric history, so a teardown keeps it unless told not to.
+KEEP_DATA ?= 1
 BACKEND := tp_backend
 CLIENT  := tp_client
 ALEMBIC := uv run alembic -c libs/db/alembic.ini
 
-.PHONY: help install dev api web worker migrate revision test lint build clean
+.PHONY: help install dev api web worker migrate revision test lint build clean observability \
+        observability-down
 
 help:
 	@echo "make dev        api + worker + web, one Ctrl-C stops all three"
 	@echo "make api        backend only (migrate, then api + worker)"
 	@echo "make web        web app only, against API_PORT"
 	@echo "make worker     the ingestion worker on its own"
+	@echo "make observability   prometheus + grafana, scraping the API's /metrics"
+	@echo "make observability-down   stop them; add KEEP_DATA=0 to discard the metric history"
 	@echo "make install    uv sync + npm ci"
 	@echo "make migrate    alembic upgrade head"
 	@echo "make revision m='what changed'   autogenerate a migration"
@@ -74,6 +79,21 @@ web:
 # nothing is due.
 worker:
 	cd $(BACKEND) && uv run python -m tp_ingestions
+
+# Separate from `make dev` so the one command you use all day never needs a docker daemon.
+observability:
+	@echo "==> Starting Observability stack..."
+	docker compose -f docker-compose.observability.yml up -d
+	@echo "==> Grafana  http://localhost:3001  (dashboard: API latency)"
+	@echo "    Prometheus http://localhost:9090/targets"
+	@echo "    Scrapes host.docker.internal:8000, so run 'make dev' or 'make api' alongside."
+
+observability-down:
+	@echo "==> Stopping Observability stack..."
+	docker compose -f docker-compose.observability.yml down $(if $(filter 0,$(KEEP_DATA)),--volumes)
+	@test "$(KEEP_DATA)" = "0" \
+	    && echo "==> volumes removed, metric history discarded" \
+	    || echo "==> volumes kept, metric history survives the next 'make observability'"
 
 migrate:
 	cd $(BACKEND) && $(ALEMBIC) upgrade head
