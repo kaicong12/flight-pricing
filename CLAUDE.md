@@ -82,9 +82,13 @@ Ctrl-C stops all of it. `make help` lists the rest. `docker-compose.yml` runs th
 services on a t4g.micro against RDS; `tp_client` is on Vercel, so there is no `web` service. See
 `docs/deploy.md`.
 
+`make observability` adds Prometheus + Grafana as an opt-in overlay, scraping one histogram —
+`http_request_duration_seconds` — off the API's `/metrics`. The app stores nothing: Prometheus owns
+the history, so its volume is the thing that must survive. `route` is the route template, never the
+path. See `docs/observability.md`.
+
 Run the worker as `python -m tp_ingestions`, **not `--once`**: a throttle wait goes back to the queue
 via `run_after` and `drain()` exits as soon as nothing is due.
-`python -m tp_ingestions --report <run_id>` prints what a run actually extracted.
 
 Proven live on Tromsø, Bergen, Porto and Singapore (~36 tasks each). Tromsø's 122 candidates became
 84 `searchText` calls and 58 places with 90 mentions. The plan screen is proven against Tromsø
@@ -140,7 +144,8 @@ rather than presenting an early plan as final.
 4. **Test transcript fetching from cloud egress**, not just a laptop. The failure mode to watch for
    on EC2 is `PoTokenRequired`.
 5. **The generic-noun and chain stoplists in `tp_ingestions/places/names.py` are Norway-leaning.**
-   They will need a pass per new country; `--resolve-preview` is the free way to check one.
+   They will need a pass per new country, and there is no longer a dry-run that shows what a
+   country's names would query or drop.
 6. **`tp_client` has no test runner.** The plan screen's reducer is exported pure precisely so it can
    be covered; a revision-handling bug in it wedged re-routing and only a browser caught it.
 7. **No pinned arrival times.** Durations are editable; block start times are always derived. The

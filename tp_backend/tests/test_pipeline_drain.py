@@ -21,7 +21,6 @@ from libs.places import VenueHit
 from libs.prompts import YOUTUBE_TRANSCRIPT
 from tp_ingestions.places import resolve as places_resolve
 from tp_ingestions.rednote import client as rednote_client
-from tp_ingestions.report import report
 from tp_ingestions.worker import Worker
 from tp_ingestions.youtube import client as youtube_client
 from tp_ingestions.youtube import extract as youtube_extract
@@ -133,34 +132,6 @@ def test_the_drain_writes_both_sources_into_extractions(db, seeded, stubbed):
     assert rows[Source.REDNOTE].result["places"][0]["name_as_written"] == "Löyly"
     assert db.get(RedNotePost, NOTE).description == "Löyly 很好吃"
     assert db.get(YouTubeVideo, HIT["video_id"]).transcript is not None
-
-
-def test_the_report_shows_what_the_run_yielded(db, seeded, stubbed, capsys):
-    Worker(name="w1", poll_interval=0, reap_interval=1e9).drain()
-
-    assert report("run-1") == 0
-
-    out = capsys.readouterr().out
-    assert "Vanha Kauppahalli" in out and "Löyly" in out
-    assert "city=Helsinki" in out and "confidence=high" in out
-    assert "youtube" in out and "rednote" in out
-
-
-def test_the_report_of_an_unknown_run_is_an_error(db, capsys):
-    assert report("nope") == 1
-    assert "no such run" in capsys.readouterr().out
-
-
-def test_the_report_names_failed_tasks_and_their_error(db, seeded, stubbed, monkeypatch, capsys):
-    """A run that half-worked has to say what it could not read."""
-    monkeypatch.setattr(rednote_client, "fetch_note", lambda n, t: None)
-    Worker(name="w1", poll_interval=0, reap_interval=1e9).drain()
-
-    report("run-1")
-
-    out = capsys.readouterr().out
-    assert "rednote.fetch" in out and "permanent" in out
-    assert "returned no body" in out
 
 
 def test_the_drain_resolves_both_sources_to_places(db, seeded, stubbed):

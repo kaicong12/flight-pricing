@@ -1,0 +1,9 @@
+apiVersion: 1
+
+providers:
+  - name: trip-planner
+    type: file
+    # Read-only in the UI: the file is the source of truth, so the dashboard stays diffable.
+    allowUiUpdates: false
+    options:
+      path: /var/lib/grafana/dashboards
