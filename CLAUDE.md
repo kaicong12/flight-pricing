@@ -82,6 +82,11 @@ Ctrl-C stops all of it. `make help` lists the rest. `docker-compose.yml` runs th
 services on a t4g.micro against RDS; `tp_client` is on Vercel, so there is no `web` service. See
 `docs/deploy.md`.
 
+`make observability` adds Prometheus + Grafana as an opt-in overlay, scraping one histogram —
+`http_request_duration_seconds` — off the API's `/metrics`. The app stores nothing: Prometheus owns
+the history, so its volume is the thing that must survive. `route` is the route template, never the
+path. See `docs/observability.md`.
+
 Run the worker as `python -m tp_ingestions`, **not `--once`**: a throttle wait goes back to the queue
 via `run_after` and `drain()` exits as soon as nothing is due.
 

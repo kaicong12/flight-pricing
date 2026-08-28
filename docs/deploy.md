@@ -116,6 +116,16 @@ trending down over hours is the signal to watch in CloudWatch, not instantaneous
 removes YouTube — about 90% of candidates — leaving RedNote's handful. Test transcript fetching on the
 box *before* judging anything else.
 
+## Observability is not part of this stack
+
+`docker-compose.observability.yml` is a separate overlay, brought up by `make observability`.
+
+Measured at idle against a live scrape: **prometheus 29 MiB / 256, grafana 71 MiB / 256** — so ~100 MiB,
+which would in fact fit the box's remaining ~300M. It is still kept out of this stack on purpose: a
+metrics UI on the instance it is watching dies with the thing it was meant to explain, and Prometheus
+grows with retention and active series, so today's 29 MiB is not a ceiling. Run it on a laptop against
+the API's public URL. `docs/observability.md`.
+
 ## To do
 
 - A real `GET /health` endpoint. The `api` healthcheck currently probes `/openapi.json`, which only
