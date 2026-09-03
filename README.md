@@ -8,10 +8,11 @@ sequence and warn about anything that does not work.
 
 ![Itinerary beside the map](screenshots/itinerary_and_map.png)
 
-Day 1 in Helsinki: ordered blocks with the walk leg between each pair, a provisional-plan banner
-because December holiday hours are not published yet, and a TOO LATE warning on Uspenski Cathedral —
-arrive 15:43, need 30 minutes, closes 16:00. This was the mockup; the screen now exists at
-`/trip/{trip_id}/plan`, with real Routes legs, real opening hours and a MapLibre basemap.
+Day 2 of a Tromsø trip, live at `/trip/{trip_id}/plan`: ordered blocks with the real walking leg
+between each pair, the route drawn across the bridge from `computeRoutes`, and two warnings the
+validator found in an order the user chose — Arctic Cathedral opens at 13:00 but the walk gets you
+there at 11:11, and Restaurant Skirri is closed that day. The title is editable; it falls back to the
+city name. "Provisional" is there because holiday hours for a future date are unpublishable.
 
 ## How it works
 

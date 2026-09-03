@@ -3,6 +3,7 @@
 
 import Link from "next/link";
 
+import { TripName } from "@/components/trip-name";
 import { tripHref, type TripSummary } from "@/lib/trips";
 
 const CONTOURS =
@@ -29,10 +30,19 @@ export function TripCard({ trip }: { trip: TripSummary }) {
 
       <div className="px-4.5 pt-4 pb-4.5">
         <div className="flex items-baseline justify-between gap-3">
-          <h2 className="text-lg font-semibold tracking-[-0.015em]">{trip.city}</h2>
-          <span className="text-[12.5px] text-faint">{trip.country}</span>
+          <h2 className="min-w-0 text-lg font-semibold tracking-[-0.015em]">
+            <TripName
+              tripId={trip.trip_id}
+              name={trip.name}
+              fallback={trip.city}
+              className="text-lg font-semibold tracking-[-0.015em]"
+            />
+          </h2>
+          <span className="shrink-0 text-[12.5px] text-faint">{trip.country}</span>
         </div>
-        <p className="mt-1.5 text-[13.5px] text-muted-foreground">{trip.dates}</p>
+        <p className="mt-1.5 text-[13.5px] text-muted-foreground">
+          {trip.name?.trim() ? `${trip.city} · ${trip.dates}` : trip.dates}
+        </p>
         <div className="mt-3.5 flex items-center gap-2">
           {trip.status === "ingesting" ? (
             <span className="inline-flex h-6 items-center gap-[7px] rounded-full bg-brand-bg px-2.5 text-xs font-medium text-brand">

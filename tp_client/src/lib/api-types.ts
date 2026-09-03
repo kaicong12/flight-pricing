@@ -26,6 +26,7 @@ export type TaskProgress = {
 
 export type Trip = {
   trip_id: string;
+  name: string | null;
   city: City;
   arrive_date: string;
   arrive_time: string | null;
@@ -37,7 +38,24 @@ export type Trip = {
   deleted: boolean;
 };
 
-export type TripStatus = Trip & { progress: TaskProgress[] };
+export type TaskFailure = {
+  kind: string;
+  status: string;
+  error_code: string | null;
+  last_error: string | null;
+  count: number;
+};
+
+/** `blocked` is terminal — nothing will retry it — so it reads as a problem, not as waiting. */
+export const FAILURE_TEXT: Record<string, string> = {
+  permanent: "Nothing to retry — this source cannot be read",
+  credentials: "A key needs rotating",
+  quota: "Daily quota ran out",
+  rate_limited: "Rate limited too many times",
+  transient: "Gave up after repeated errors",
+};
+
+export type TripStatus = Trip & { progress: TaskProgress[]; failures: TaskFailure[] };
 
 export type InitiatePlanRequest = {
   city_place_id: string;

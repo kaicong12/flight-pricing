@@ -86,6 +86,7 @@ class Trip(Base):
 
     trip_id: Mapped[str] = mapped_column(String(36), primary_key=True)
     city_id: Mapped[str] = mapped_column(ForeignKey("cities.city_id"), nullable=False)
+    name: Mapped[str | None] = mapped_column(String(120))
     arrive_date: Mapped[date] = mapped_column(Date, nullable=False)
     arrive_time: Mapped[time | None] = mapped_column(Time)
     depart_date: Mapped[date] = mapped_column(Date, nullable=False)
