@@ -1,9 +1,9 @@
 // The trips list: tp_api's GET /trips shaped for the card, which wants display strings.
 
 import { getJson } from "@/lib/tp-api";
-import { TERMINAL_STATUSES, type Trip } from "@/lib/api-types";
+import { TERMINAL_STATUSES, type City, type Trip } from "@/lib/api-types";
 
-export type TripListItem = Pick<Trip, "trip_id" | "city" | "arrive_date" | "depart_date" | "ingest" | "notes"> & {
+export type TripListItem = Pick<Trip, "trip_id" | "name" | "city" | "arrive_date" | "depart_date" | "ingest" | "notes"> & {
   tasks_done: number;
   tasks_total: number;
   place_count: number;
@@ -11,6 +11,8 @@ export type TripListItem = Pick<Trip, "trip_id" | "city" | "arrive_date" | "depa
 
 export type TripSummary = {
   trip_id: string;
+  name: string | null;
+  title: string;
   city: string;
   country: string;
   start_date: string;
@@ -21,6 +23,11 @@ export type TripSummary = {
   thumb_note: string;
   progress_text: string;
 };
+
+/** The city name is the fallback, so an unnamed trip still reads as something. */
+export function tripTitle(trip: { name?: string | null; city?: City | null }): string {
+  return trip.name?.trim() || trip.city?.name || "Untitled trip";
+}
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
@@ -51,6 +58,8 @@ function summarise(item: TripListItem): TripSummary {
   const nights = nightCount(item.arrive_date, item.depart_date);
   return {
     trip_id: item.trip_id,
+    name: item.name ?? null,
+    title: tripTitle(item),
     city: item.city?.name ?? "",
     country: item.city?.country ?? "",
     start_date: item.arrive_date,

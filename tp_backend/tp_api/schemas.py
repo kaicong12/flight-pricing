@@ -17,8 +17,16 @@ def today_utc() -> date:
     return datetime.now(UTC).date()
 
 
+NAME_MAX = 120
+
+
+class TripPatch(BaseModel):
+    name: str | None = Field(default=None, max_length=NAME_MAX)
+
+
 class InitiatePlanRequest(BaseModel):
     city_place_id: str = Field(min_length=1, max_length=255)
+    name: str | None = Field(default=None, max_length=NAME_MAX)
     arrive_date: date
     arrive_time: time | None = None
     depart_date: date
@@ -60,8 +68,19 @@ class TaskProgress(BaseModel):
     count: int
 
 
+class TaskFailure(BaseModel):
+    """Sources we could not read, grouped by why."""
+
+    kind: str
+    status: str
+    error_code: str | None = None
+    last_error: str | None = None
+    count: int = 1
+
+
 class TripOut(BaseModel):
     trip_id: str
+    name: str | None = None
     city: CityOut
     arrive_date: date
     arrive_time: time | None = None
@@ -75,10 +94,12 @@ class TripOut(BaseModel):
 
 class TripStatusOut(TripOut):
     progress: list[TaskProgress] = []
+    failures: list[TaskFailure] = []
 
 
 class TripSummaryOut(BaseModel):
     trip_id: str
+    name: str | None = None
     city: CityOut
     arrive_date: date
     depart_date: date

@@ -6,6 +6,7 @@
 import { Check, Link2, RefreshCw } from "lucide-react";
 import { useState } from "react";
 
+import { TripName } from "@/components/trip-name";
 import type { Trip } from "@/lib/api-types";
 import type { TravelMode } from "@/lib/plan-types";
 import { PROVISIONAL_TEXT, shortTime } from "@/lib/plan-types";
@@ -45,7 +46,14 @@ export function PlanHeader({
     <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-3">
       <div>
         <div className="flex flex-wrap items-center gap-2.5">
-          <h1 className="text-3xl font-semibold tracking-[-0.015em]">{trip.city.name}</h1>
+          <h1 className="min-w-0 text-3xl font-semibold tracking-[-0.015em]">
+            <TripName
+              tripId={trip.trip_id}
+              name={trip.name}
+              fallback={trip.city.name}
+              className="text-3xl font-semibold tracking-[-0.015em]"
+            />
+          </h1>
           {provisional.length > 0 && (
             <span className="flex h-6.5 items-center rounded-full bg-warn-bg px-2.5 text-xs font-medium text-warn">
               Provisional · {provisional.map((p) => PROVISIONAL_TEXT[p] ?? p).join(" · ")}
@@ -54,6 +62,7 @@ export function PlanHeader({
         </div>
         <p className="mt-2 text-sm text-muted-foreground">
           {[
+            trip.name?.trim() ? trip.city.name : null,
             formatRange(trip.arrive_date, trip.depart_date),
             arrive && `lands ${arrive}`,
             depart && `leaves ${depart}`,

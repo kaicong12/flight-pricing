@@ -6,7 +6,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 
-import { TERMINAL_STATUSES, type TripStatus } from "@/lib/api-types";
+import { FAILURE_TEXT, TERMINAL_STATUSES, type TripStatus } from "@/lib/api-types";
 
 const POLL_MS = 3000;
 const MAX_POLL_MS = 5 * 60 * 1000;
@@ -91,6 +91,8 @@ export function TripProgress({ initial }: { initial: TripStatus }) {
         )}
       </div>
 
+      {status.failures.length > 0 && <Failures failures={status.failures} />}
+
       {done ? (
         <Link
           href={`/trip/${initial.trip_id}/plan`}
@@ -112,7 +114,41 @@ export function TripProgress({ initial }: { initial: TripStatus }) {
   );
 }
 
-/** A throttle wait is not a failure, so `blocked` renders as waiting rather than as an error. */
+function Failures({ failures }: { failures: TripStatus["failures"] }) {
+  const total = failures.reduce((n, f) => n + f.count, 0);
+
+  return (
+    <details className="border-t border-border px-6 py-3">
+      <summary className="cursor-pointer text-[13px] text-muted-foreground outline-none focus-visible:ring-3 focus-visible:ring-ring/50">
+        {total} source{total === 1 ? "" : "s"} could not be read
+      </summary>
+      <ul className="mt-2.5 space-y-2">
+        {failures.map((f) => (
+          <li key={`${f.kind}:${f.status}:${f.last_error}`} className="flex gap-2.5">
+            <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-destructive/60" />
+            <div className="min-w-0">
+              <p className="font-mono text-[11px] text-faint">
+                {f.kind}
+                {f.count > 1 && ` · ${f.count}×`}
+                {f.error_code && ` · ${f.error_code}`}
+                {f.status === "blocked" && " · blocked"}
+              </p>
+              <p className="text-[12.5px] text-muted-foreground">
+                {(f.error_code && FAILURE_TEXT[f.error_code]) ??
+                  (f.status === "blocked" ? "Parked — nothing is registered to run it" : "Failed")}
+              </p>
+              {f.last_error && (
+                <p className="mt-0.5 break-words font-mono text-[11px] text-faint">{f.last_error}</p>
+              )}
+            </div>
+          </li>
+        ))}
+      </ul>
+    </details>
+  );
+}
+
+/** `blocked` is terminal — no retry will ever pick it up — so it must not read as still waiting. */
 function StageIcon({ status }: { status: string }) {
   if (status === "done")
     return (
@@ -120,7 +156,8 @@ function StageIcon({ status }: { status: string }) {
         ✓
       </span>
     );
-  if (status === "failed") return <span className="size-4 rounded-full border-2 border-destructive" />;
+  if (status === "failed" || status === "blocked")
+    return <span className="size-4 rounded-full border-2 border-destructive" />;
   if (status === "running")
     return (
       <span className="size-4 animate-[tp-spin_0.9s_linear_infinite] rounded-full border-2 border-[#dcd5c2] border-t-brand motion-reduce:animate-none" />
