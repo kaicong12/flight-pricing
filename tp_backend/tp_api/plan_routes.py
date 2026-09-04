@@ -97,6 +97,20 @@ def _check_day(trip: Trip, day_index: int) -> date:
     return trip.arrive_date + timedelta(days=day_index)
 
 
+def _available_window(trip: Trip, day_index: int) -> tuple[int, int]:
+    """Local minutes a day's blocks must fit inside.
+
+    The flight is the only hard bound: you cannot be somewhere before you land or after you leave.
+    Mirrored by availableWindow in tp_client/src/lib/plan-types.ts, which stops the drop happening.
+    """
+    first, last = 0, 24 * 60
+    if day_index == 0 and trip.arrive_time:
+        first = trip.arrive_time.hour * 60 + trip.arrive_time.minute
+    if day_index == _day_count(trip) - 1 and trip.depart_time:
+        last = trip.depart_time.hour * 60 + trip.depart_time.minute
+    return first, last
+
+
 def _mention_facts(db: Session, place_ids: Sequence[str]) -> dict[str, tuple[str | None, str | None]]:
     """Modal category and a why_go blurb per place.
 
@@ -271,6 +285,14 @@ def put_itinerary(trip_id: str, body: ItineraryIn, db: Db) -> ItineraryOut:
         raise HTTPException(422, "a day is listed twice")
     for d in body.days:
         _check_day(trip, d.day_index)
+        first, last = _available_window(trip, d.day_index)
+        for item in d.items:
+            if item.start_min < first or item.start_min + item.duration_min > last:
+                raise HTTPException(
+                    422,
+                    f"day {d.day_index} is only usable {hhmm(first)}-{hhmm(last)}: "
+                    f"{hhmm(item.start_min)} for {item.duration_min} min does not fit",
+                )
 
     place_ids = [i.place_id for d in body.days for i in d.items]
     if len(set(place_ids)) != len(place_ids):
@@ -358,13 +380,11 @@ def _load_hours(db: Session, place_ids: list[str], fetch: HoursLookup) -> dict[s
             pg_insert(PlaceHours)
             .values(place_id=pid, periods=hit.periods,
                     weekday_descriptions=hit.weekday_descriptions,
-                    utc_offset_minutes=hit.utc_offset_minutes, has_hours=hit.has_hours,
-                    fetched_at=now)
+                    utc_offset_minutes=hit.utc_offset_minutes, fetched_at=now)
             .on_conflict_do_update(
                 index_elements=["place_id"],
                 set_={"periods": hit.periods, "weekday_descriptions": hit.weekday_descriptions,
-                      "utc_offset_minutes": hit.utc_offset_minutes, "has_hours": hit.has_hours,
-                      "fetched_at": now})
+                      "utc_offset_minutes": hit.utc_offset_minutes, "fetched_at": now})
         )
     db.commit()
     return {

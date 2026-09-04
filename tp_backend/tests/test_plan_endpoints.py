@@ -194,7 +194,7 @@ class TestShortlist:
         seed(db, ("p1", "Added", 1), ("p2", "Not added", 1))
         client.put(f"/trips/{trip}/itinerary",
                    json={"days": [{"day_index": 2,
-                                   "items": [{"place_id": "p1", "start_min": 540, "duration_min": 60}]}]})
+                                   "items": [{"place_id": "p1", "start_min": 900, "duration_min": 60}]}]})
 
         by_name = {p["name"]: p for p in client.get(f"/trips/{trip}/shortlist").json()["places"]}
         assert by_name["Added"]["in_itinerary"] is True
@@ -267,13 +267,13 @@ class TestItineraryWrite:
         seed(db, ("p1", "First", 1), ("p2", "Second", 1), ("p3", "Third", 1))
 
         body = client.put(f"/trips/{trip}/itinerary", json={"days": [{"day_index": 0, "items": [
-            {"place_id": "p3", "start_min": 540, "duration_min": 60},
-            {"place_id": "p1", "start_min": 630, "duration_min": 90},
-            {"place_id": "p2", "start_min": 720, "duration_min": 30},
+            {"place_id": "p3", "start_min": 900, "duration_min": 60},
+            {"place_id": "p1", "start_min": 990, "duration_min": 90},
+            {"place_id": "p2", "start_min": 1080, "duration_min": 30},
         ]}]}).json()
 
         assert [i["name"] for i in body["days"][0]["items"]] == ["Third", "First", "Second"]
-        assert [i["start_min"] for i in body["days"][0]["items"]] == [540, 630, 720]
+        assert [i["start_min"] for i in body["days"][0]["items"]] == [900, 990, 1080]
         assert [i["duration_min"] for i in body["days"][0]["items"]] == [60, 90, 30]
 
     def test_swapping_two_blocks_swaps_their_times(self, client, db):
@@ -284,13 +284,13 @@ class TestItineraryWrite:
         body = put_day(client, trip, ["p2", "p1"]).json()
 
         assert [i["place_id"] for i in body["days"][0]["items"]] == ["p2", "p1"]
-        assert [i["start_min"] for i in body["days"][0]["items"]] == [540, 630]
+        assert [i["start_min"] for i in body["days"][0]["items"]] == [900, 990]
 
     def test_the_order_survives_a_reread(self, client, db):
         trip = make_trip(client)
         seed(db, ("p1", "A", 1), ("p2", "B", 1))
         client.put(f"/trips/{trip}/itinerary", json={"days": [{"day_index": 0, "items": [
-            {"place_id": "p2", "start_min": 540, "duration_min": 60}, {"place_id": "p1", "start_min": 630, "duration_min": 60}]}]})
+            {"place_id": "p2", "start_min": 900, "duration_min": 60}, {"place_id": "p1", "start_min": 990, "duration_min": 60}]}]})
 
         days = client.get(f"/trips/{trip}/itinerary").json()["days"]
         assert [i["place_id"] for i in days[0]["items"]] == ["p2", "p1"]
@@ -299,7 +299,7 @@ class TestItineraryWrite:
         trip = make_trip(client)
         seed(db, ("p1", "A", 1))
         client.put(f"/trips/{trip}/itinerary", json={"days": [
-            {"day_index": 0, "items": [{"place_id": "p1", "start_min": 540, "duration_min": 60}]}]})
+            {"day_index": 0, "items": [{"place_id": "p1", "start_min": 900, "duration_min": 60}]}]})
 
         body = client.put(f"/trips/{trip}/itinerary",
                           json={"days": [{"day_index": 0, "items": []}]}).json()
@@ -309,8 +309,8 @@ class TestItineraryWrite:
         trip = make_trip(client)
         seed(db, ("p1", "A", 1), ("p2", "B", 1))
         client.put(f"/trips/{trip}/itinerary", json={"days": [
-            {"day_index": 0, "items": [{"place_id": "p1", "start_min": 540, "duration_min": 60}]},
-            {"day_index": 1, "items": [{"place_id": "p2", "start_min": 540, "duration_min": 60}]}]})
+            {"day_index": 0, "items": [{"place_id": "p1", "start_min": 900, "duration_min": 60}]},
+            {"day_index": 1, "items": [{"place_id": "p2", "start_min": 900, "duration_min": 60}]}]})
 
         body = client.put(f"/trips/{trip}/itinerary",
                           json={"days": [{"day_index": 0, "items": []}]}).json()
@@ -322,11 +322,11 @@ class TestItineraryWrite:
         trip = make_trip(client)
         seed(db, ("p1", "A", 1))
         client.put(f"/trips/{trip}/itinerary", json={"days": [
-            {"day_index": 0, "items": [{"place_id": "p1", "start_min": 540, "duration_min": 60}]}]})
+            {"day_index": 0, "items": [{"place_id": "p1", "start_min": 900, "duration_min": 60}]}]})
 
         body = client.put(f"/trips/{trip}/itinerary", json={"days": [
             {"day_index": 0, "items": []},
-            {"day_index": 1, "items": [{"place_id": "p1", "start_min": 540, "duration_min": 60}]}]}).json()
+            {"day_index": 1, "items": [{"place_id": "p1", "start_min": 900, "duration_min": 60}]}]}).json()
 
         assert body["days"][0]["items"] == []
         assert [i["place_id"] for i in body["days"][1]["items"]] == ["p1"]
@@ -337,10 +337,10 @@ class TestItineraryWrite:
         trip = make_trip(client)
         seed(db, ("p1", "A", 1))
         client.put(f"/trips/{trip}/itinerary", json={"days": [
-            {"day_index": 0, "items": [{"place_id": "p1", "start_min": 540, "duration_min": 60}]}]})
+            {"day_index": 0, "items": [{"place_id": "p1", "start_min": 900, "duration_min": 60}]}]})
 
         body = client.put(f"/trips/{trip}/itinerary", json={"days": [
-            {"day_index": 1, "items": [{"place_id": "p1", "start_min": 540, "duration_min": 60}]}]}).json()
+            {"day_index": 1, "items": [{"place_id": "p1", "start_min": 900, "duration_min": 60}]}]}).json()
 
         assert body["days"][0]["items"] == []
         assert [i["place_id"] for i in body["days"][1]["items"]] == ["p1"]
@@ -350,15 +350,15 @@ class TestItineraryWrite:
         trip = make_trip(client)
         seed(db, ("p1", "A", 1))
         r = client.put(f"/trips/{trip}/itinerary", json={"days": [{"day_index": 0, "items": [
-            {"place_id": "p1", "start_min": 540, "duration_min": 60}, {"place_id": "p1", "start_min": 630, "duration_min": 60}]}]})
+            {"place_id": "p1", "start_min": 900, "duration_min": 60}, {"place_id": "p1", "start_min": 990, "duration_min": 60}]}]})
         assert r.status_code == 422
 
     def test_the_same_place_on_two_days_in_one_payload_is_rejected(self, client, db):
         trip = make_trip(client)
         seed(db, ("p1", "A", 1))
         r = client.put(f"/trips/{trip}/itinerary", json={"days": [
-            {"day_index": 0, "items": [{"place_id": "p1", "start_min": 540, "duration_min": 60}]},
-            {"day_index": 1, "items": [{"place_id": "p1", "start_min": 540, "duration_min": 60}]}]})
+            {"day_index": 0, "items": [{"place_id": "p1", "start_min": 900, "duration_min": 60}]},
+            {"day_index": 1, "items": [{"place_id": "p1", "start_min": 900, "duration_min": 60}]}]})
         assert r.status_code == 422
 
     def test_one_day_listed_twice_is_rejected(self, client, db):
@@ -380,20 +380,59 @@ class TestItineraryWrite:
         make_place(db, city_id="other", place_id="p9", name="Elsewhere")
 
         r = client.put(f"/trips/{trip}/itinerary", json={"days": [
-            {"day_index": 0, "items": [{"place_id": "p9", "start_min": 540, "duration_min": 60}]}]})
+            {"day_index": 0, "items": [{"place_id": "p9", "start_min": 900, "duration_min": 60}]}]})
         assert r.status_code == 422
 
     def test_a_duration_off_the_grid_is_rejected(self, client, db):
         trip = make_trip(client)
         seed(db, ("p1", "A", 1))
         r = client.put(f"/trips/{trip}/itinerary", json={"days": [
-            {"day_index": 0, "items": [{"place_id": "p1", "start_min": 540, "duration_min": 0}]}]})
+            {"day_index": 0, "items": [{"place_id": "p1", "start_min": 900, "duration_min": 0}]}]})
         assert r.status_code == 422
+
+    def test_a_block_before_the_flight_lands_is_rejected(self, client, db):
+        """plan_body lands 14:30, so 14:00 on day 0 is time the traveller does not have."""
+        trip = make_trip(client)
+        seed(db, ("p1", "A", 1))
+        r = client.put(f"/trips/{trip}/itinerary", json={"days": [
+            {"day_index": 0, "items": [{"place_id": "p1", "start_min": 840, "duration_min": 60}]}]})
+        assert r.status_code == 422
+        assert "14:30" in r.json()["detail"]
+
+    def test_the_first_slot_after_landing_is_accepted(self, client, db):
+        trip = make_trip(client)
+        seed(db, ("p1", "A", 1))
+        r = client.put(f"/trips/{trip}/itinerary", json={"days": [
+            {"day_index": 0, "items": [{"place_id": "p1", "start_min": 900, "duration_min": 60}]}]})
+        assert r.status_code == 200
+
+    def test_a_block_running_past_the_departure_is_rejected(self, client, db):
+        """plan_body leaves 18:05 on day 3, so a block ending 18:30 does not fit even if it starts."""
+        trip = make_trip(client)
+        seed(db, ("p1", "A", 1))
+        r = client.put(f"/trips/{trip}/itinerary", json={"days": [
+            {"day_index": 3, "items": [{"place_id": "p1", "start_min": 1050, "duration_min": 60}]}]})
+        assert r.status_code == 422
+        assert "18:05" in r.json()["detail"]
+
+    def test_a_middle_day_is_unbounded(self, client, db):
+        trip = make_trip(client)
+        seed(db, ("p1", "A", 1))
+        r = client.put(f"/trips/{trip}/itinerary", json={"days": [
+            {"day_index": 1, "items": [{"place_id": "p1", "start_min": 0, "duration_min": 30}]}]})
+        assert r.status_code == 200
+
+    def test_a_trip_with_no_flight_times_bounds_nothing(self, client, db):
+        trip = make_trip(client, arrive_time=None, depart_time=None)
+        seed(db, ("p1", "A", 1))
+        r = client.put(f"/trips/{trip}/itinerary", json={"days": [
+            {"day_index": 0, "items": [{"place_id": "p1", "start_min": 0, "duration_min": 30}]}]})
+        assert r.status_code == 200
 
     def test_more_stops_than_a_day_takes_is_rejected(self, client, db):
         trip = make_trip(client)
         r = client.put(f"/trips/{trip}/itinerary", json={"days": [{"day_index": 0, "items": [
-            {"place_id": f"p{i}", "start_min": 540, "duration_min": 60} for i in range(26)]}]})
+            {"place_id": f"p{i}", "start_min": 900, "duration_min": 60} for i in range(26)]}]})
         assert r.status_code == 422
 
     def test_unknown_trip_is_a_404(self, client):
@@ -402,8 +441,8 @@ class TestItineraryWrite:
         assert r.status_code == 404
 
 
-def put_day(client, trip, ids, day=0, start=540, step=90):
-    """Blocks pinned from 09:00, 90 minutes apart, so a 60-minute stop leaves a 30-minute gap."""
+def put_day(client, trip, ids, day=0, start=900, step=90):
+    """Pinned from 15:00 — plan_body lands at 14:30, so anything earlier is outside the day."""
     return client.put(f"/trips/{trip}/itinerary", json={"days": [{"day_index": day, "items": [
         {"place_id": pid, "start_min": start + step * i, "duration_min": 60}
         for i, pid in enumerate(ids)]}]})
@@ -411,7 +450,7 @@ def put_day(client, trip, ids, day=0, start=540, step=90):
 
 def open_hours(place_ids):
     return {p: HoursHit(place_id=p, periods=OPEN_ALL_WEEK, weekday_descriptions=[],
-                        utc_offset_minutes=120, has_hours=True) for p in place_ids}
+                        utc_offset_minutes=120) for p in place_ids}
 
 
 class TestRouteDay:
@@ -432,15 +471,15 @@ class TestRouteDay:
                                                                     routes):
         trip = make_trip(client)
         seed(db, ("p1", "A", 1), ("p2", "B", 1))
-        put_day(client, trip, ["p1", "p2"], start=600, step=90)
+        put_day(client, trip, ["p1", "p2"], start=900, step=90)
         hours["fn"] = open_hours
 
         body = client.post(f"/trips/{trip}/days/0/route", json={}).json()
 
-        # 10:00 and 11:30 as stored. The old endpoint would have derived 11:10 from the 10 min walk.
-        assert [(b["start"], b["end"]) for b in body["blocks"]] == [("10:00", "11:00"),
-                                                                    ("11:30", "12:30")]
-        assert body["start_time"] == "10:00:00"
+        # 15:00 and 16:30 as stored. The old endpoint would have derived 16:10 from the 10 min walk.
+        assert [(b["start"], b["end"]) for b in body["blocks"]] == [("15:00", "16:00"),
+                                                                    ("16:30", "17:30")]
+        assert body["start_time"] == "15:00:00"
         assert body["legs"][0]["seconds"] == 600
         assert body["legs"][0]["meters"] == 800
         assert body["legs"][0]["from_place_id"] == "p1"
@@ -527,11 +566,11 @@ class TestRouteDay:
         """No day-level start any more: the flight time and the 09:00 default both stop mattering."""
         trip = make_trip(client)  # plan_body arrives at 14:30
         seed(db, ("p1", "A", 1))
-        put_day(client, trip, ["p1"], start=7 * 60 + 30)
+        put_day(client, trip, ["p1"], start=19 * 60)
 
         body = client.post(f"/trips/{trip}/days/0/route", json={}).json()
-        assert body["start_time"] == "07:30:00"
-        assert body["blocks"][0]["start"] == "07:30"
+        assert body["start_time"] == "19:00:00"
+        assert body["blocks"][0]["start"] == "19:00"
 
     def test_an_empty_day_has_no_start_time(self, client, db):
         trip = make_trip(client)
@@ -565,7 +604,7 @@ class TestRouteDay:
         assert body["routed"] is False
         assert "no_route" in [w["code"] for w in body["warnings"]]
         # The blocks keep their pinned times; only the travel claim is withheld.
-        assert [b["start"] for b in body["blocks"]] == ["09:00", "10:30"]
+        assert [b["start"] for b in body["blocks"]] == ["15:00", "16:30"]
 
     def test_an_unrouted_day_does_not_also_claim_each_pair_is_unreachable(self, client, db, routes):
         trip = make_trip(client)

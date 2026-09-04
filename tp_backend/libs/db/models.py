@@ -92,7 +92,6 @@ class Trip(Base):
     depart_date: Mapped[date] = mapped_column(Date, nullable=False)
     depart_time: Mapped[time | None] = mapped_column(Time)
     extra_details: Mapped[str | None] = mapped_column(Text)
-    owner: Mapped[str | None] = mapped_column(String(64))
     deleted: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
     created_at: Mapped[datetime] = _ts(nullable=False, server_default=func.now())
     updated_at: Mapped[datetime] = _ts(nullable=False, server_default=func.now(),
@@ -228,9 +227,6 @@ class PlaceHours(Base):
                                                 server_default=text("'[]'::jsonb"))
     weekday_descriptions: Mapped[list[str] | None] = mapped_column(ARRAY(Text))
     utc_offset_minutes: Mapped[int | None] = mapped_column(Integer)
-    # Distinguishes "asked, Google publishes none" from "never asked", without which every
-    # hours-less venue is re-fetched on every route.
-    has_hours: Mapped[bool] = mapped_column(Boolean, nullable=False)
     fetched_at: Mapped[datetime] = _ts(nullable=False, server_default=func.now())
 
 
@@ -281,7 +277,6 @@ class RedNotePost(Base):
     tags: Mapped[list[str] | None] = mapped_column(ARRAY(Text))
     likes: Mapped[int | None] = mapped_column(Integer)
     author: Mapped[str | None] = mapped_column(Text)
-    ip_location: Mapped[str | None] = mapped_column(String(64))
     posted_at: Mapped[datetime | None] = _ts()
     fetched_at: Mapped[datetime] = _ts(nullable=False, server_default=func.now())
 
@@ -350,7 +345,6 @@ class IngestRun(Base):
     kind: Mapped[str] = mapped_column(String(20), nullable=False)
     status: Mapped[str] = mapped_column(String(20), nullable=False,
                                        server_default=text("'pending'"))
-    requested_by: Mapped[str | None] = mapped_column(String(64))
     requested_at: Mapped[datetime] = _ts(nullable=False, server_default=func.now())
     finished_at: Mapped[datetime | None] = _ts()
     failed_task_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
