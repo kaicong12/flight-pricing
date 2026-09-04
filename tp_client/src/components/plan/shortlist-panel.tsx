@@ -16,7 +16,6 @@ export function ShortlistPanel({
   category,
   loading,
   onCategory,
-  onAdd,
   onDismiss,
   onMore,
 }: {
@@ -26,7 +25,6 @@ export function ShortlistPanel({
   category: string | null;
   loading: boolean;
   onCategory: (category: string | null) => void;
-  onAdd: (place: ShortlistPlace) => void;
   onDismiss: (place: ShortlistPlace) => void;
   onMore: () => void;
 }) {
@@ -70,7 +68,6 @@ export function ShortlistPanel({
               key={place.place_id}
               place={place}
               placedDay={placedDays.get(place.place_id) ?? null}
-              onAdd={() => onAdd(place)}
               onDismiss={() => onDismiss(place)}
             />
           ))}

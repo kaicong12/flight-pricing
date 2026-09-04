@@ -1,37 +1,50 @@
 "use client";
 
-// The middle column: one day as ordered blocks with the travel between them.
+// The middle column: one day as a half-hour grid you pin places onto.
+//
+// Each half hour is its own droppable, so a drop reports a time rather than a pixel offset. Blocks
+// are absolutely positioned from their own start_min, and overlapping ones share the width in lanes.
 
 import { useDroppable } from "@dnd-kit/core";
-import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
 
 import type { DayRoute, ItineraryDay, PlanWarning, TravelMode } from "@/lib/plan-types";
-import { formatDayTab, formatDistance, formatMinutes, warningText } from "@/lib/plan-types";
+import {
+  DAY_END_MIN,
+  DAY_START_MIN,
+  MIN_DURATION,
+  SLOT_MIN,
+  formatDayTab,
+  formatDistance,
+  formatMinutes,
+  hhmm,
+  layout,
+  warningText,
+} from "@/lib/plan-types";
 import { cn } from "@/lib/utils";
 
 import { ActivityBlock } from "./activity-block";
-import { LegRow } from "./leg-row";
+
+const SLOT_PX = 26;
+const SLOTS = Math.round((DAY_END_MIN - DAY_START_MIN) / SLOT_MIN);
 
 export function DayColumn({
   day,
   route,
   mode,
   stale,
+  available,
   onRemove,
-  onDuration,
+  onResize,
 }: {
   day: ItineraryDay;
   route: DayRoute | undefined;
   mode: TravelMode;
   stale: boolean;
+  /** Minutes the flight leaves usable. Outside it, a slot is shown but takes no drop. */
+  available: { from: number; to: number };
   onRemove: (placeId: string) => void;
-  onDuration: (placeId: string, minutes: number) => void;
+  onResize: (placeId: string, startMin: number, durationMin: number) => void;
 }) {
-  const { setNodeRef, isOver } = useDroppable({
-    id: `day:${day.day_index}`,
-    data: { kind: "day", day: day.day_index },
-  });
-
   const routed = Boolean(route?.routed) && !stale;
   const byPlace = new Map((route?.blocks ?? []).map((b) => [b.place_id, b]));
   const perPlace = new Map<string, PlanWarning[]>();
@@ -42,9 +55,10 @@ export function DayColumn({
   }
 
   const warningCount = stale ? 0 : (route?.warnings.length ?? 0);
+  const placed = layout(day.items);
 
   return (
-    <div ref={setNodeRef} className="min-h-[420px] px-5 pt-4 pb-5">
+    <div className="px-5 pt-4 pb-5">
       <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
         <h3 className="text-[15px] font-semibold tracking-[-0.01em]">
           Day {day.day_index + 1} · {formatDayTab(day.date)}
@@ -78,39 +92,90 @@ export function DayColumn({
         </div>
       ))}
 
-      <SortableContext
-        items={day.items.map((i) => `item:${i.place_id}`)}
-        strategy={verticalListSortingStrategy}
-      >
-        <ol className="mt-4">
-          {day.items.map((item, index) => (
-            <li key={item.place_id}>
-              <ActivityBlock
-                item={item}
-                block={byPlace.get(item.place_id)}
-                warnings={perPlace.get(item.place_id) ?? []}
-                index={index}
-                onRemove={() => onRemove(item.place_id)}
-                onDuration={(minutes) => onDuration(item.place_id, minutes)}
-              />
-              {index < day.items.length - 1 && (
-                <LegRow leg={route?.legs[index]} mode={mode} routed={routed} />
-              )}
-            </li>
-          ))}
-        </ol>
-      </SortableContext>
+      {day.items.length === 0 && (
+        <p className="mt-3.5 text-[13px] text-muted-foreground">
+          Drag a place from the shortlist onto the time you want it.
+        </p>
+      )}
 
-      <div
-        className={cn(
-          "mt-4 grid h-16 place-items-center rounded-card-sm border border-dashed text-[13px] transition-colors",
-          isOver ? "border-brand bg-brand-bg text-brand" : "border-[#d7cfba] text-faint",
-        )}
-      >
-        {day.items.length === 0
-          ? "Drag a place from the shortlist to start this day"
-          : "Drag a place from the shortlist to add it here"}
+      <div className="mt-4 flex" style={{ height: SLOTS * SLOT_PX }}>
+        <div className="relative w-11 shrink-0">
+          {Array.from({ length: SLOTS }, (_, i) => DAY_START_MIN + i * SLOT_MIN)
+            .filter((m) => m % 60 === 0)
+            .map((m) => (
+              <span
+                key={m}
+                className="absolute font-mono text-[10.5px] text-faint"
+                style={{ top: ((m - DAY_START_MIN) / SLOT_MIN) * SLOT_PX - 6 }}
+              >
+                {hhmm(m)}
+              </span>
+            ))}
+        </div>
+
+        <div data-grid className="relative flex-1">
+          {Array.from({ length: SLOTS }, (_, i) => DAY_START_MIN + i * SLOT_MIN).map((m) => (
+            <Slot
+              key={m}
+              day={day.day_index}
+              minute={m}
+              // A slot has to fit the shortest block there is, or dropping on it cannot work.
+              blocked={m < available.from || m + MIN_DURATION > available.to}
+            />
+          ))}
+
+          {placed.map((p) => (
+            <ActivityBlock
+              key={p.item.place_id}
+              placed={p}
+              block={byPlace.get(p.item.place_id)}
+              warnings={perPlace.get(p.item.place_id) ?? []}
+              slotPx={SLOT_PX}
+              onRemove={() => onRemove(p.item.place_id)}
+              onResize={(startMin, durationMin) =>
+                onResize(p.item.place_id, startMin, durationMin)
+              }
+            />
+          ))}
+        </div>
       </div>
+
+      {perPlace.size > 0 && (
+        <ul className="mt-3.5">
+          {[...perPlace.entries()].flatMap(([placeId, ws]) =>
+            ws.map((w) => (
+              <li key={`${placeId}:${w.code}`} className="flex gap-2.5 py-0.5">
+                <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-alert" />
+                <p className="text-[12.5px] leading-[1.45] text-alert">{warningText(w)}</p>
+              </li>
+            )),
+          )}
+        </ul>
+      )}
     </div>
   );
 }
+
+/** One half hour. Being a droppable is what makes a drop report a time rather than a pixel. */
+function Slot({ day, minute, blocked }: { day: number; minute: number; blocked: boolean }) {
+  const { setNodeRef, isOver } = useDroppable({
+    id: `slot:${day}:${minute}`,
+    data: { kind: "slot", day, minute },
+    disabled: blocked,
+  });
+
+  return (
+    <div
+      ref={setNodeRef}
+      aria-hidden={blocked}
+      className={cn(
+        "border-t",
+        minute % 60 === 0 ? "border-border" : "border-hairline",
+        blocked && "bg-[repeating-linear-gradient(135deg,transparent_0_5px,rgba(37,43,32,0.05)_5px_6px)]",
+        isOver && "bg-brand-bg",
+      )}
+      style={{ height: SLOT_PX }}
+    />
+  );
+}
+

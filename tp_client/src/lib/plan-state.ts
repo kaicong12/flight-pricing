@@ -1,9 +1,10 @@
 // All of the planning screen's mutable state, as one pure reducer.
 //
-// A reducer rather than a dozen useStates because the transitions are interdependent: moving a place
-// changes two days, renumbers both, marks both unsaved and both un-routed. Doing that in one place
-// is what stops a half-applied drag.
+// A reducer rather than a dozen useStates because the transitions are interdependent: pinning a place
+// to another day changes two days, re-sorts both, marks both unsaved and both un-routed. Doing that
+// in one place is what stops a half-applied drag.
 
+import { DEFAULT_DURATION } from "@/lib/plan-types";
 import type {
   DayRoute,
   Itinerary,
@@ -23,7 +24,7 @@ export type PlanState = {
   activeDay: number;
   mode: TravelMode;
   routes: Record<number, DayRoute>;
-  /** Reordered since it was last routed, so its times no longer describe it. */
+  /** Edited since it was last routed, so the legs no longer describe it. */
   stale: number[];
   /** Which days the next write must send. */
   unsaved: number[];
@@ -34,10 +35,9 @@ export type PlanState = {
 };
 
 export type PlanAction =
-  | { type: "add"; place: ShortlistPlace; day: number }
+  | { type: "add"; place: ShortlistPlace; day: number; startMin: number; durationMin: number }
   | { type: "remove"; day: number; placeId: string }
-  | { type: "reorder"; day: number; from: number; to: number }
-  | { type: "move"; placeId: string; fromDay: number; toDay: number; toIndex: number }
+  | { type: "pin"; placeId: string; fromDay: number; toDay: number; startMin: number }
   | { type: "duration"; day: number; placeId: string; minutes: number }
   | { type: "activeDay"; day: number }
   | { type: "mode"; mode: TravelMode }
@@ -51,13 +51,15 @@ export type PlanAction =
 const without = (xs: number[], y: number) => xs.filter((x) => x !== y);
 const with_ = (xs: number[], y: number) => (xs.includes(y) ? xs : [...xs, y]);
 
-/** Positions are dense and derived, never carried across an edit. */
-function renumber(items: ItineraryItem[]): ItineraryItem[] {
-  return items.map((item, position) => (item.position === position ? item : { ...item, position }));
+/** The day's sequence, matching how the server reads it back — legs are indexed against this. */
+function inTimeOrder(items: ItineraryItem[]): ItineraryItem[] {
+  return [...items].sort(
+    (a, b) => a.start_min - b.start_min || a.place_id.localeCompare(b.place_id),
+  );
 }
 
 function setDay(state: PlanState, day: number, items: ItineraryItem[]): ItineraryDay[] {
-  return state.days.map((d) => (d.day_index === day ? { ...d, items: renumber(items) } : d));
+  return state.days.map((d) => (d.day_index === day ? { ...d, items: inTimeOrder(items) } : d));
 }
 
 /** A day whose contents changed needs writing, and its route no longer describes it. */
@@ -76,14 +78,18 @@ function itemsOf(state: PlanState, day: number): ItineraryItem[] {
   return state.days.find((d) => d.day_index === day)?.items ?? [];
 }
 
-export function itemFor(place: ShortlistPlace, position: number): ItineraryItem {
+export function itemFor(
+  place: ShortlistPlace,
+  startMin: number,
+  durationMin: number = DEFAULT_DURATION,
+): ItineraryItem {
   return {
     place_id: place.place_id,
     name: place.name,
     lat: place.lat,
     lon: place.lon,
-    position,
-    duration_min: place.default_duration_min,
+    start_min: startMin,
+    duration_min: durationMin,
     category: place.category,
     primary_type: place.primary_type,
   };
@@ -92,18 +98,21 @@ export function itemFor(place: ShortlistPlace, position: number): ItineraryItem 
 export function planReducer(state: PlanState, action: PlanAction): PlanState {
   switch (action.type) {
     case "add": {
-      // A place sits on at most one day, so adding one already placed is a move.
+      // A place sits on at most one day, so dropping one already placed just re-pins it.
       const current = dayOf(state, action.place.place_id);
       if (current !== null) {
         return planReducer(state, {
-          type: "move",
+          type: "pin",
           placeId: action.place.place_id,
           fromDay: current,
           toDay: action.day,
-          toIndex: itemsOf(state, action.day).length,
+          startMin: action.startMin,
         });
       }
-      const items = [...itemsOf(state, action.day), itemFor(action.place, 0)];
+      const items = [
+        ...itemsOf(state, action.day),
+        itemFor(action.place, action.startMin, action.durationMin),
+      ];
       return { ...state, days: setDay(state, action.day, items), ...touched(state, [action.day]) };
     }
 
@@ -112,43 +121,39 @@ export function planReducer(state: PlanState, action: PlanAction): PlanState {
       return { ...state, days: setDay(state, action.day, items), ...touched(state, [action.day]) };
     }
 
-    case "reorder": {
-      const items = [...itemsOf(state, action.day)];
-      if (action.from === action.to) return state;
-      const [moved] = items.splice(action.from, 1);
-      if (!moved) return state;
-      items.splice(action.to, 0, moved);
-      return { ...state, days: setDay(state, action.day, items), ...touched(state, [action.day]) };
-    }
-
-    case "move": {
-      if (action.fromDay === action.toDay) {
-        const from = itemsOf(state, action.fromDay).findIndex(
-          (i) => i.place_id === action.placeId,
-        );
-        return from < 0
-          ? state
-          : planReducer(state, {
-              type: "reorder",
-              day: action.fromDay,
-              from,
-              to: action.toIndex,
-            });
-      }
+    // One action for both "move it to 14:00" and "move it to tomorrow at 14:00": a drop always
+    // names a day and a time, and there is no ordering left to state separately.
+    case "pin": {
       const moving = itemsOf(state, action.fromDay).find((i) => i.place_id === action.placeId);
       if (!moving) return state;
+      const pinned = { ...moving, start_min: action.startMin };
+
+      if (action.fromDay === action.toDay) {
+        // A drop that changes nothing must not bump the revision, or it re-routes for free.
+        if (moving.start_min === action.startMin) return state;
+        const items = itemsOf(state, action.toDay).map((i) =>
+          i.place_id === action.placeId ? pinned : i,
+        );
+        return {
+          ...state,
+          days: setDay(state, action.toDay, items),
+          ...touched(state, [action.toDay]),
+        };
+      }
+
       const source = itemsOf(state, action.fromDay).filter((i) => i.place_id !== action.placeId);
-      const target = [...itemsOf(state, action.toDay)];
-      target.splice(Math.min(action.toIndex, target.length), 0, moving);
+      const target = [...itemsOf(state, action.toDay), pinned];
       const days = state.days.map((d) => {
-        if (d.day_index === action.fromDay) return { ...d, items: renumber(source) };
-        if (d.day_index === action.toDay) return { ...d, items: renumber(target) };
+        if (d.day_index === action.fromDay) return { ...d, items: inTimeOrder(source) };
+        if (d.day_index === action.toDay) return { ...d, items: inTimeOrder(target) };
         return d;
       });
       return { ...state, days, ...touched(state, [action.fromDay, action.toDay]) };
     }
 
     case "duration": {
+      const current = itemsOf(state, action.day).find((i) => i.place_id === action.placeId);
+      if (!current || current.duration_min === action.minutes) return state;
       const items = itemsOf(state, action.day).map((i) =>
         i.place_id === action.placeId ? { ...i, duration_min: action.minutes } : i,
       );

@@ -14,6 +14,7 @@ import {
   KeyboardSensor,
   PointerSensor,
   closestCenter,
+  pointerWithin,
   useSensor,
   useSensors,
 } from "@dnd-kit/core";
@@ -36,6 +37,7 @@ import type {
   ShortlistPlace,
   TravelMode,
 } from "@/lib/plan-types";
+import { DEFAULT_DURATION, MIN_DURATION, SLOT_MIN, availableWindow } from "@/lib/plan-types";
 
 import { DayColumn } from "./day-column";
 import { DayMap } from "./day-map";
@@ -97,6 +99,7 @@ export function PlanBoard({
           day_index: index,
           items: (state.days.find((d) => d.day_index === index)?.items ?? []).map((i) => ({
             place_id: i.place_id,
+            start_min: i.start_min,
             duration_min: i.duration_min,
           })),
         })),
@@ -207,16 +210,30 @@ export function PlanBoard({
     if (!over) return;
 
     const activeId = String(active.id);
-    const overId = String(over.id);
-    const overData = over.data.current as { kind?: string; day?: number } | undefined;
+    const overData = over.data.current as
+      | { kind?: string; day?: number; minute?: number }
+      | undefined;
+    if (overData?.day === undefined) return;
 
-    // Where did it land: an explicit day target, or beside another block?
-    const targetDay =
-      overData?.kind === "day" ? overData.day! : dayOfItemId(state, overId) ?? state.activeDay;
+    const targetDay = overData.day;
+    // A slot names its time. A day tab does not, so a cross-day drop keeps the block's own time.
+    const slotMin = overData.kind === "slot" ? overData.minute : undefined;
 
     if (activeId.startsWith("shortlist:")) {
+      if (slotMin === undefined) return;
       const place = (active.data.current as { place: ShortlistPlace }).place;
-      dispatch({ type: "add", place, day: targetDay });
+      const room = availableWindow(trip, targetDay, state.days.length).to - slotMin;
+      dispatch({
+        type: "add",
+        place,
+        day: targetDay,
+        startMin: slotMin,
+        // A new block gets an hour unless the flight leaves less than that.
+        durationMin: Math.max(
+          MIN_DURATION,
+          Math.min(DEFAULT_DURATION, Math.floor(room / SLOT_MIN) * SLOT_MIN),
+        ),
+      });
       if (targetDay !== state.activeDay) dispatch({ type: "activeDay", day: targetDay });
       return;
     }
@@ -224,25 +241,18 @@ export function PlanBoard({
     const placeId = activeId.slice("item:".length);
     const fromDay = dayOf(state, placeId);
     if (fromDay === null) return;
+    const moving = state.days
+      .find((d) => d.day_index === fromDay)
+      ?.items.find((i) => i.place_id === placeId);
+    if (!moving) return;
 
-    if (targetDay !== fromDay) {
-      const target = state.days.find((d) => d.day_index === targetDay);
-      dispatch({
-        type: "move",
-        placeId,
-        fromDay,
-        toDay: targetDay,
-        toIndex: target?.items.length ?? 0,
-      });
-      return;
-    }
-
-    const items = state.days.find((d) => d.day_index === fromDay)?.items ?? [];
-    const from = items.findIndex((i) => i.place_id === placeId);
-    const to = items.findIndex((i) => `item:${i.place_id}` === overId);
-    if (from >= 0 && to >= 0 && from !== to) {
-      dispatch({ type: "reorder", day: fromDay, from, to });
-    }
+    dispatch({
+      type: "pin",
+      placeId,
+      fromDay,
+      toDay: targetDay,
+      startMin: slotMin ?? moving.start_min,
+    });
   }
 
   if (!day) return null;
@@ -253,7 +263,7 @@ export function PlanBoard({
       // the server and client land on different numbers.
       id="plan-board"
       sensors={sensors}
-      collisionDetection={closestCenter}
+      collisionDetection={collisionDetection}
       modifiers={[restrictToWindowEdges]}
       onDragStart={onDragStart}
       onDragEnd={onDragEnd}
@@ -278,7 +288,6 @@ export function PlanBoard({
           category={category}
           loading={!settled}
           onCategory={setCategory}
-          onAdd={(place) => dispatch({ type: "add", place, day: state.activeDay })}
           onDismiss={dismiss}
           onMore={loadMore}
         />
@@ -294,12 +303,17 @@ export function PlanBoard({
             route={route}
             mode={state.mode}
             stale={isStale}
+            available={availableWindow(trip, state.activeDay, state.days.length)}
             onRemove={(placeId) =>
               dispatch({ type: "remove", day: state.activeDay, placeId })
             }
-            onDuration={(placeId, minutes) =>
-              dispatch({ type: "duration", day: state.activeDay, placeId, minutes })
-            }
+            onResize={(placeId, startMin, durationMin) => {
+              // A top-edge drag changes both, so both go through, each guarded against a no-op.
+              dispatch({ type: "pin", placeId, fromDay: state.activeDay,
+                         toDay: state.activeDay, startMin });
+              dispatch({ type: "duration", day: state.activeDay, placeId,
+                         minutes: durationMin });
+            }}
           />
         </section>
 
@@ -323,10 +337,15 @@ export function PlanBoard({
   );
 }
 
-function dayOfItemId(state: PlanState, overId: string): number | null {
-  if (!overId.startsWith("item:")) return null;
-  return dayOf(state, overId.slice("item:".length));
-}
+/**
+ * Cursor first: closestCenter alone resolves a drop from the drag overlay's centre, which sits
+ * wherever the pointer grabbed the row, so aiming at one half hour lands on the next. closestCenter
+ * stays as the fallback for a pointer outside every slot, e.g. over a day tab.
+ */
+const collisionDetection: typeof pointerWithin = (args) => {
+  const hit = pointerWithin(args);
+  return hit.length > 0 ? hit : closestCenter(args);
+};
 
 function labelFor(state: PlanState, dragId: string): string {
   if (dragId.startsWith("shortlist:")) {
