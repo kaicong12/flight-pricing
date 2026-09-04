@@ -92,7 +92,6 @@ class Trip(Base):
     depart_date: Mapped[date] = mapped_column(Date, nullable=False)
     depart_time: Mapped[time | None] = mapped_column(Time)
     extra_details: Mapped[str | None] = mapped_column(Text)
-    owner: Mapped[str | None] = mapped_column(String(64))
     deleted: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
     created_at: Mapped[datetime] = _ts(nullable=False, server_default=func.now())
     updated_at: Mapped[datetime] = _ts(nullable=False, server_default=func.now(),
@@ -163,11 +162,11 @@ class PlaceMention(Base):
 
 
 class ItineraryItem(Base):
-    """One activity block: a place the user put on a day, at a position they chose.
+    """One activity block: a place the user pinned to a time on a day.
 
-    The order is the product, so position is never recomputed from anything — a day is rewritten
-    wholesale and renumbered densely, which is also why (day_index, position) is not unique: a
-    reorder would collide against it mid-update.
+    `start_min` is local minutes past midnight and is the user's statement, never derived. Sequence
+    falls out of it, so there is no position column — and two blocks may share a start time, because
+    overlapping them is a legitimate thing to say about a day.
     """
 
     __tablename__ = "itinerary_items"
@@ -176,9 +175,11 @@ class ItineraryItem(Base):
         # flag a join rather than a scan.
         UniqueConstraint("trip_id", "place_id", name="uq_itinerary_trip_place"),
         CheckConstraint("day_index >= 0", name="ck_itinerary_day"),
-        CheckConstraint("position >= 0", name="ck_itinerary_position"),
-        CheckConstraint("duration_min > 0", name="ck_itinerary_duration"),
-        Index("ix_itinerary_trip_day", "trip_id", "day_index", "position"),
+        # End may run past midnight; a start may not, or it belongs to the next day.
+        CheckConstraint("start_min >= 0 AND start_min < 1440", name="ck_itinerary_start"),
+        CheckConstraint("duration_min >= 30 AND duration_min % 30 = 0",
+                        name="ck_itinerary_duration"),
+        Index("ix_itinerary_trip_day", "trip_id", "day_index", "start_min"),
     )
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
@@ -186,7 +187,7 @@ class ItineraryItem(Base):
                                          nullable=False)
     place_id: Mapped[str] = mapped_column(ForeignKey("places.place_id"), nullable=False)
     day_index: Mapped[int] = mapped_column(Integer, nullable=False)
-    position: Mapped[int] = mapped_column(Integer, nullable=False)
+    start_min: Mapped[int] = mapped_column(Integer, nullable=False)
     duration_min: Mapped[int] = mapped_column(Integer, nullable=False)
     created_at: Mapped[datetime] = _ts(nullable=False, server_default=func.now())
     updated_at: Mapped[datetime] = _ts(nullable=False, server_default=func.now(),
@@ -226,9 +227,6 @@ class PlaceHours(Base):
                                                 server_default=text("'[]'::jsonb"))
     weekday_descriptions: Mapped[list[str] | None] = mapped_column(ARRAY(Text))
     utc_offset_minutes: Mapped[int | None] = mapped_column(Integer)
-    # Distinguishes "asked, Google publishes none" from "never asked", without which every
-    # hours-less venue is re-fetched on every route.
-    has_hours: Mapped[bool] = mapped_column(Boolean, nullable=False)
     fetched_at: Mapped[datetime] = _ts(nullable=False, server_default=func.now())
 
 
@@ -279,7 +277,6 @@ class RedNotePost(Base):
     tags: Mapped[list[str] | None] = mapped_column(ARRAY(Text))
     likes: Mapped[int | None] = mapped_column(Integer)
     author: Mapped[str | None] = mapped_column(Text)
-    ip_location: Mapped[str | None] = mapped_column(String(64))
     posted_at: Mapped[datetime | None] = _ts()
     fetched_at: Mapped[datetime] = _ts(nullable=False, server_default=func.now())
 
@@ -348,7 +345,6 @@ class IngestRun(Base):
     kind: Mapped[str] = mapped_column(String(20), nullable=False)
     status: Mapped[str] = mapped_column(String(20), nullable=False,
                                        server_default=text("'pending'"))
-    requested_by: Mapped[str | None] = mapped_column(String(64))
     requested_at: Mapped[datetime] = _ts(nullable=False, server_default=func.now())
     finished_at: Mapped[datetime | None] = _ts()
     failed_task_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))

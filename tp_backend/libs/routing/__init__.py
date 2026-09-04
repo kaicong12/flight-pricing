@@ -3,24 +3,28 @@
 from libs.routing.daylight import sun_times
 from libs.routing.hours import CLOSED, HoursHit, fetch_hours, window_for
 from libs.routing.plan import (
-    DURATIONS,
+    DEFAULT_DURATION,
+    MIN_DURATION,
     OUTDOOR,
+    SLOT_MIN,
     Block,
     DayPlan,
     PlanWarning,
     Stop,
     TravelLeg,
-    duration_for,
     hhmm,
     implausible_walk,
+    in_time_order,
     plan_day,
 )
 from libs.routing.routes import Leg, RouteResult, RoutesError, compute_transit, compute_walk
 
 __all__ = [
     "CLOSED",
-    "DURATIONS",
+    "DEFAULT_DURATION",
+    "MIN_DURATION",
     "OUTDOOR",
+    "SLOT_MIN",
     "Block",
     "DayPlan",
     "HoursHit",
@@ -32,10 +36,10 @@ __all__ = [
     "TravelLeg",
     "compute_transit",
     "compute_walk",
-    "duration_for",
     "fetch_hours",
     "hhmm",
     "implausible_walk",
+    "in_time_order",
     "plan_day",
     "sun_times",
     "window_for",

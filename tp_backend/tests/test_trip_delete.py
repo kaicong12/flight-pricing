@@ -56,7 +56,8 @@ def test_the_ordering_work_survives(client, db):
     make_mention(db, "p1")
     client.put(f"/trips/{trip_id}/itinerary",
                json={"days": [{"day_index": 0,
-                               "items": [{"place_id": "p1", "duration_min": 60}]}]})
+                               "items": [{"place_id": "p1", "start_min": 900,
+                                          "duration_min": 60}]}]})
 
     client.delete(f"/trips/{trip_id}")
 

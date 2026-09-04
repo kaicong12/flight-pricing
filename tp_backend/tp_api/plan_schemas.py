@@ -12,6 +12,10 @@ from tp_api.schemas import TRANSIT_HORIZON_DAYS, TRANSIT_HORIZON_NOTE, today_utc
 
 MAX_STOPS_PER_DAY = 25
 
+# The half-hour grid the client drags against; a duration is always a whole number of slots.
+SLOT_MIN = 30
+MIN_DURATION = SLOT_MIN
+
 # Regular hours are all we can ever have for a future date, so past this many days out the plan is
 # validated against them and labelled rather than presented as final.
 SPECIAL_HOURS_HORIZON_DAYS = 7
@@ -40,8 +44,6 @@ class ShortlistPlaceOut(BaseModel):
     mention_count: int = 0
     in_itinerary: bool = False
     day_index: int | None = None
-    # Sent so the client can add a place without carrying its own copy of the category durations.
-    default_duration_min: int = 60
 
 
 class ShortlistOut(BaseModel):
@@ -55,7 +57,7 @@ class ItemOut(BaseModel):
     name: str
     lat: float | None = None
     lon: float | None = None
-    position: int
+    start_min: int
     duration_min: int
     category: str | None = None
     primary_type: str | None = None
@@ -72,8 +74,11 @@ class ItineraryOut(BaseModel):
 
 
 class ItemIn(BaseModel):
+    """A block the user pinned. Both times are grid-aligned, which the database also enforces."""
+
     place_id: str = Field(min_length=1, max_length=255)
-    duration_min: int = Field(ge=5, le=24 * 60)
+    start_min: int = Field(ge=0, lt=24 * 60, multiple_of=SLOT_MIN)
+    duration_min: int = Field(ge=MIN_DURATION, le=24 * 60, multiple_of=SLOT_MIN)
 
 
 class DayIn(BaseModel):
@@ -122,15 +127,17 @@ class DaylightOut(BaseModel):
 
 
 class RouteDayRequest(BaseModel):
+    """No start time: every block carries its own, so there is nothing left for the day to say."""
+
     mode: str = Field(default=WALK, pattern=f"^({WALK}|{TRANSIT})$")
-    start_time: time | None = None
 
 
 class DayRouteOut(BaseModel):
     day_index: int
     date: date
     mode: str
-    start_time: time
+    # The first block's time, echoed back. None on an empty day.
+    start_time: time | None = None
     blocks: list[BlockOut] = []
     legs: list[LegOut] = []
     polyline: str | None = None
