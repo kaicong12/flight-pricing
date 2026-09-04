@@ -41,6 +41,7 @@ function pastTransitHorizon(date: string): boolean {
 export function PlanForm() {
   const router = useRouter();
   const [city, setCity] = useState<CitySuggestion | null>(null);
+  const [name, setName] = useState("");
   const [arriveDate, setArriveDate] = useState("");
   const [arriveTime, setArriveTime] = useState("");
   const [departDate, setDepartDate] = useState("");
@@ -63,6 +64,7 @@ export function PlanForm() {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           city_place_id: city.place_id,
+          name: orNull(name),
           arrive_date: arriveDate,
           arrive_time: orNull(arriveTime),
           depart_date: departDate,
@@ -101,6 +103,21 @@ export function PlanForm() {
           </Label>
           <div className="mt-2">
             <CityCombobox selected={city} onSelect={setCity} />
+          </div>
+
+          <div className="mt-6">
+            <Label htmlFor="name" className={LABEL}>
+              Call it something
+            </Label>
+            <Input
+              id="name"
+              maxLength={120}
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder={city ? `${city.main_text ?? city.description} trip` : "Optional"}
+              className="mt-2"
+            />
+            <p className="mt-1.5 text-xs text-faint">Optional — we will use the city name.</p>
           </div>
 
           <div className="mt-6 grid gap-5 sm:grid-cols-2">

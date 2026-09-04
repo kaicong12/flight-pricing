@@ -11,3 +11,12 @@ export async function DELETE(_request: Request, { params }: RouteContext<"/api/t
   const { tripId } = await params;
   return proxy(`/trips/${encodeURIComponent(tripId)}`, { method: "DELETE" });
 }
+
+export async function PATCH(request: Request, { params }: RouteContext<"/api/trips/[tripId]">) {
+  const { tripId } = await params;
+  return proxy(`/trips/${encodeURIComponent(tripId)}`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: await request.text(),
+  });
+}

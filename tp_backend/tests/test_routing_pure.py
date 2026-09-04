@@ -1,4 +1,4 @@
-"""The validation core: daylight, opening windows, and the schedule walk. No DB, no network."""
+"""The validation core: daylight, opening windows, and the check of a pinned day. No DB, no network."""
 
 from datetime import date
 
@@ -8,13 +8,16 @@ from libs.routing.plan import (
     AFTER_SUNSET,
     CLOSED_TODAY,
     CLOSES_BEFORE_DONE,
+    DEFAULT_DURATION,
     IMPLAUSIBLE_LEG,
+    MIN_DURATION,
     NO_HOURS,
     NO_ROUTE,
     OPENS_LATER,
+    SLOT_MIN,
+    TRAVEL_DOES_NOT_FIT,
     Stop,
     TravelLeg,
-    duration_for,
 )
 
 # Google's periods use 0=Sunday. Two real shapes, taken from live Place Details responses.
@@ -70,100 +73,158 @@ class TestWindowFor:
 
 
 class TestDurations:
-    def test_category_defaults(self):
-        assert duration_for("eat") == 75
-        assert duration_for("do") == 120
-
-    def test_unknown_and_missing_fall_back(self):
-        assert duration_for(None) == 60
-        assert duration_for("nonsense") == 60
-
-    def test_sleep_is_zero_in_the_table_but_never_returned_as_zero(self):
-        # duration_min has a > 0 CHECK, so a zero default would be unstorable.
-        assert duration_for("sleep") == 60
+    def test_the_default_is_one_hour_and_grid_aligned(self):
+        # There are no per-category durations any more: one hour, and the user drags from there.
+        assert DEFAULT_DURATION == 60
+        assert DEFAULT_DURATION % SLOT_MIN == 0
+        assert MIN_DURATION == SLOT_MIN
 
 
-def stop(pid, name, *, category="see", minutes=60, periods=ARCTIC_CATHEDRAL):
-    return Stop(place_id=pid, name=name, category=category, duration_min=minutes, periods=periods)
+def stop(pid, name, *, start, category="see", minutes=60, periods=ARCTIC_CATHEDRAL):
+    return Stop(place_id=pid, name=name, category=category, start_min=start,
+                duration_min=minutes, periods=periods)
 
 
 class TestPlanDay:
-    def test_blocks_advance_by_duration_plus_travel(self):
+    def test_blocks_keep_exactly_the_times_they_were_given(self):
+        # The old plan_day derived these by accumulating durations and travel. Now they are input:
+        # a 9-minute walk into a 30-minute gap changes nothing about where the blocks sit.
         plan = plan_day(
-            [stop("a", "A", minutes=60), stop("b", "B", minutes=45)],
+            [stop("a", "A", start=600, minutes=60), stop("b", "B", start=690, minutes=30)],
             [TravelLeg(seconds=9 * 60, meters=700)],
-            weekday=1, start_min=10 * 60,
+            weekday=1,
         )
-        assert [(b.start_min, b.end_min) for b in plan.blocks] == [(600, 660), (669, 714)]
-        assert plan.finish_min == 714
+        assert [(b.start_min, b.end_min) for b in plan.blocks] == [(600, 660), (690, 720)]
+        assert plan.finish_min == 720
+        assert plan.warnings == []
+
+    def test_stops_are_checked_in_time_order_whatever_order_they_arrive_in(self):
+        plan = plan_day(
+            [stop("b", "B", start=690), stop("a", "A", start=600)],
+            [TravelLeg(seconds=300, meters=400)],
+            weekday=1,
+        )
+        assert [b.place_id for b in plan.blocks] == ["a", "b"]
+
+    def test_two_blocks_at_the_same_time_are_ordered_by_place_id(self):
+        # Overlap is a legitimate thing to say about a day, so it needs a stable sequence.
+        plan = plan_day([stop("z", "Z", start=600), stop("a", "A", start=600)], [], weekday=1)
+        assert [b.place_id for b in plan.blocks] == ["a", "z"]
 
     def test_a_single_stop_needs_no_legs(self):
-        plan = plan_day([stop("a", "A", minutes=30)], [], weekday=1, start_min=9 * 60)
+        plan = plan_day([stop("a", "A", start=540, minutes=30)], [], weekday=1)
         assert plan.blocks[0].start_min == 540
         assert plan.finish_min == 570
 
     def test_an_empty_day_is_not_an_error(self):
-        plan = plan_day([], [], weekday=1, start_min=540)
+        plan = plan_day([], [], weekday=1)
         assert plan.blocks == []
         assert plan.warnings == []
+        assert plan.finish_min == 0
 
-    def test_arriving_early_waits_and_pushes_the_rest_of_the_day(self):
-        plan = plan_day(
-            [stop("a", "Arctic Cathedral", minutes=60), stop("b", "B", minutes=30)],
-            [TravelLeg(seconds=0, meters=0)],
-            weekday=0, start_min=11 * 60, routed=False,
-        )
+    def test_a_block_pinned_before_opening_warns_and_is_not_moved(self):
+        plan = plan_day([stop("a", "Arctic Cathedral", start=11 * 60, minutes=60)], [], weekday=0)
         w = [x for x in plan.warnings if x.code == OPENS_LATER]
-        assert w[0].detail == {"name": "Arctic Cathedral", "arrive": "11:00", "opens": "13:00",
-                              "wait_min": 120}
-        assert plan.blocks[0].start_min == 13 * 60
+        assert w[0].detail == {"name": "Arctic Cathedral", "start": "11:00", "opens": "13:00",
+                               "early_min": 120}
+        # The whole point: the block stays where the user put it.
+        assert plan.blocks[0].start_min == 11 * 60
 
-    def test_closing_is_checked_against_arrival_plus_duration(self):
-        # In at 17:43 with 30 minutes needed, shut at 18:00. Arrival alone would look fine.
-        plan = plan_day([stop("a", "Uspenski", minutes=30)], [], weekday=1,
-                        start_min=17 * 60 + 43)
+    def test_closing_is_checked_against_the_end_not_the_start(self):
+        # In at 17:43 with 30 minutes needed, shut at 18:00. The start alone would look fine.
+        plan = plan_day([stop("a", "Uspenski", start=17 * 60 + 43, minutes=30)], [], weekday=1)
         w = [x for x in plan.warnings if x.code == CLOSES_BEFORE_DONE]
-        assert w[0].detail == {"name": "Uspenski", "arrive": "17:43", "need_min": 30,
+        assert w[0].detail == {"name": "Uspenski", "start": "17:43", "need_min": 30,
                                "closes": "18:00"}
 
-    def test_arriving_with_enough_time_is_silent(self):
-        plan = plan_day([stop("a", "A", minutes=30)], [], weekday=1, start_min=10 * 60)
+    def test_a_block_wholly_inside_opening_hours_is_silent(self):
+        plan = plan_day([stop("a", "A", start=10 * 60, minutes=30)], [], weekday=1)
         assert plan.warnings == []
 
     def test_a_day_the_place_is_shut(self):
-        plan = plan_day([stop("a", "Arctic Cathedral")], [], weekday=3, start_min=10 * 60)
+        plan = plan_day([stop("a", "Arctic Cathedral", start=10 * 60)], [], weekday=3)
         assert [w.code for w in plan.warnings] == [CLOSED_TODAY]
 
     def test_unfetched_and_unpublished_hours_both_warn(self):
         for periods in (None, []):
-            plan = plan_day([stop("a", "A", periods=periods)], [], weekday=1, start_min=600)
+            plan = plan_day([stop("a", "A", start=600, periods=periods)], [], weekday=1)
             assert [w.code for w in plan.warnings] == [NO_HOURS]
 
     def test_an_outdoor_stop_after_sunset(self):
-        plan = plan_day([stop("a", "Fjellheisen", category="see", periods=FJELLHEISEN)], [],
-                        weekday=1, start_min=16 * 60, sunset_min=15 * 60 + 29)
+        plan = plan_day([stop("a", "Fjellheisen", start=16 * 60, category="see",
+                              periods=FJELLHEISEN)], [], weekday=1, sunset_min=15 * 60 + 29)
         assert [w.code for w in plan.warnings] == [AFTER_SUNSET]
 
     def test_an_indoor_stop_after_sunset_is_fine(self):
-        plan = plan_day([stop("a", "Bar", category="drink", periods=FJELLHEISEN)], [],
-                        weekday=1, start_min=16 * 60, sunset_min=15 * 60 + 29)
+        plan = plan_day([stop("a", "Bar", start=16 * 60, category="drink",
+                              periods=FJELLHEISEN)], [], weekday=1, sunset_min=15 * 60 + 29)
         assert plan.warnings == []
 
     def test_polar_night_raises_no_sunset_warning(self):
-        plan = plan_day([stop("a", "Fjellheisen", periods=FJELLHEISEN)], [], weekday=1,
-                        start_min=16 * 60, sunset_min=None)
+        plan = plan_day([stop("a", "Fjellheisen", start=16 * 60, periods=FJELLHEISEN)], [],
+                        weekday=1, sunset_min=None)
         assert plan.warnings == []
 
     def test_a_zero_second_leg_on_a_routed_day_means_unreachable(self):
-        plan = plan_day([stop("a", "A"), stop("b", "B")], [TravelLeg(seconds=0, meters=0)],
-                        weekday=1, start_min=10 * 60)
+        plan = plan_day([stop("a", "A", start=600), stop("b", "B", start=700)],
+                        [TravelLeg(seconds=0, meters=0)], weekday=1)
         w = [x for x in plan.warnings if x.code == NO_ROUTE]
         assert w[0].place_id == "b"
         assert w[0].detail == {"from": "A", "to": "B"}
 
     def test_an_unrouted_day_does_not_claim_places_are_unreachable(self):
-        plan = plan_day([stop("a", "A"), stop("b", "B")], [TravelLeg(seconds=0, meters=0)],
-                        weekday=1, start_min=10 * 60, routed=False)
+        plan = plan_day([stop("a", "A", start=600), stop("b", "B", start=700)],
+                        [TravelLeg(seconds=0, meters=0)], weekday=1, routed=False)
+        assert [w.code for w in plan.warnings] == []
+
+
+class TestTravelDoesNotFit:
+    def test_a_gap_too_small_for_the_walk(self):
+        # A ends 11:00, B starts 11:00, and the walk is 25 minutes.
+        plan = plan_day(
+            [stop("a", "A", start=600, minutes=60), stop("b", "B", start=660)],
+            [TravelLeg(seconds=25 * 60, meters=1800)],
+            weekday=1,
+        )
+        w = [x for x in plan.warnings if x.code == TRAVEL_DOES_NOT_FIT]
+        assert w[0].place_id == "b"
+        assert w[0].detail == {"from": "A", "to": "B", "need_min": 25, "gap_min": 0}
+        # And nothing was moved to make it fit.
+        assert [b.start_min for b in plan.blocks] == [600, 660]
+
+    def test_a_gap_that_fits_is_silent(self):
+        plan = plan_day(
+            [stop("a", "A", start=600, minutes=60), stop("b", "B", start=690)],
+            [TravelLeg(seconds=25 * 60, meters=1800)],
+            weekday=1,
+        )
+        assert [w.code for w in plan.warnings] == []
+
+    def test_a_gap_exactly_the_length_of_the_walk_fits(self):
+        plan = plan_day(
+            [stop("a", "A", start=600, minutes=60), stop("b", "B", start=660 + 25)],
+            [TravelLeg(seconds=25 * 60, meters=1800)],
+            weekday=1,
+        )
+        assert [w.code for w in plan.warnings] == []
+
+    def test_deliberately_overlapping_blocks_report_a_negative_gap(self):
+        # Allowed and rendered side by side, but you still cannot be in both at once.
+        plan = plan_day(
+            [stop("a", "A", start=600, minutes=60), stop("b", "B", start=630)],
+            [TravelLeg(seconds=300, meters=400)],
+            weekday=1,
+        )
+        w = [x for x in plan.warnings if x.code == TRAVEL_DOES_NOT_FIT]
+        assert w[0].detail["gap_min"] == -30
+        assert w[0].detail["need_min"] == 5
+
+    def test_an_unrouted_day_makes_no_travel_claim(self):
+        plan = plan_day(
+            [stop("a", "A", start=600, minutes=60), stop("b", "B", start=660)],
+            [TravelLeg(seconds=25 * 60, meters=1800)],
+            weekday=1, routed=False,
+        )
         assert [w.code for w in plan.warnings] == []
 
 
@@ -181,16 +242,16 @@ class TestImplausibleWalk:
         assert implausible_walk(seconds=300, meters=0) is False
 
     def test_a_walking_day_warns_on_a_ferry_leg(self):
-        plan = plan_day([stop("a", "Market"), stop("b", "Fortress")],
+        plan = plan_day([stop("a", "Market", start=600), stop("b", "Fortress", start=700)],
                         [TravelLeg(seconds=380, meters=2000)],
-                        weekday=1, start_min=10 * 60, mode="walk")
+                        weekday=1, mode="walk")
         w = [x for x in plan.warnings if x.code == IMPLAUSIBLE_LEG]
         assert w[0].detail == {"from": "Market", "to": "Fortress", "kmh": 19}
 
     def test_transit_is_supposed_to_be_fast(self):
-        plan = plan_day([stop("a", "A"), stop("b", "B")],
+        plan = plan_day([stop("a", "A", start=600), stop("b", "B", start=700)],
                         [TravelLeg(seconds=380, meters=2000)],
-                        weekday=1, start_min=10 * 60, mode="transit")
+                        weekday=1, mode="transit")
         assert [w.code for w in plan.warnings] == []
 
 

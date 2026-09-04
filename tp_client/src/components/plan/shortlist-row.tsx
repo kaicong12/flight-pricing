@@ -4,7 +4,7 @@
 // output, so they are mono.
 
 import { useDraggable } from "@dnd-kit/core";
-import { Plus, X } from "lucide-react";
+import { X } from "lucide-react";
 
 import {
   PreviewCard,
@@ -17,12 +17,10 @@ import { cn } from "@/lib/utils";
 export function ShortlistRow({
   place,
   placedDay,
-  onAdd,
   onDismiss,
 }: {
   place: ShortlistPlace;
   placedDay: number | null;
-  onAdd: () => void;
   onDismiss: () => void;
 }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
@@ -61,16 +59,7 @@ export function ShortlistRow({
           >
             <X className="size-3.5" />
           </button>
-          {placedDay === null ? (
-            <button
-              type="button"
-              onClick={onAdd}
-              aria-label={`Add ${place.name} to the day`}
-              className="grid size-6.5 place-items-center rounded-full border border-border bg-surface text-ink-soft transition-colors hover:border-ink hover:text-ink outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
-            >
-              <Plus className="size-3.5" />
-            </button>
-          ) : (
+          {placedDay !== null && (
             <span className="grid h-6.5 min-w-6.5 place-items-center rounded-full bg-ok-bg px-1.5 font-mono text-[10.5px] text-ok">
               D{placedDay + 1}
             </span>

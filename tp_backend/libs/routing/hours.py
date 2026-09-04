@@ -24,13 +24,12 @@ Window = tuple[int, int] | Literal["closed"] | None
 
 @dataclass(frozen=True)
 class HoursHit:
-    """What Places knows about one place's regular hours. has_hours=False means it published none."""
+    """What Places knows about one place's regular hours. An empty `periods` means it published none."""
 
     place_id: str
     periods: list[dict]
     weekday_descriptions: list[str]
     utc_offset_minutes: int | None
-    has_hours: bool
 
 
 def window_for(periods: list[dict], weekday: int) -> Window:
@@ -84,6 +83,5 @@ def fetch_hours(place_ids: list[str], *, timeout: float = 20.0) -> dict[str, Hou
             periods=periods,
             weekday_descriptions=oh.get("weekdayDescriptions") or [],
             utc_offset_minutes=body.get("utcOffsetMinutes"),
-            has_hours=bool(periods),
         )
     return out

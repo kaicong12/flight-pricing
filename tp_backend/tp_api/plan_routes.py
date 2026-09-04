@@ -35,7 +35,6 @@ from libs.routing import (
     RoutesError,
     Stop,
     TravelLeg,
-    duration_for,
     hhmm,
     plan_day,
     sun_times,
@@ -72,8 +71,6 @@ Db = Annotated[Session, Depends(db_session)]
 Hours = Annotated[HoursLookup, Depends(hours_lookup)]
 Route = Annotated[RouteCompute, Depends(route_compute)]
 
-DEFAULT_START = time(9, 0)
-
 SOURCE_TITLE_MAX = 80
 FALLBACK_TITLE = {Source.YOUTUBE: "YouTube video", Source.REDNOTE: "RedNote post"}
 
@@ -98,6 +95,20 @@ def _check_day(trip: Trip, day_index: int) -> date:
     if not 0 <= day_index < _day_count(trip):
         raise HTTPException(422, f"day {day_index} is outside the trip")
     return trip.arrive_date + timedelta(days=day_index)
+
+
+def _available_window(trip: Trip, day_index: int) -> tuple[int, int]:
+    """Local minutes a day's blocks must fit inside.
+
+    The flight is the only hard bound: you cannot be somewhere before you land or after you leave.
+    Mirrored by availableWindow in tp_client/src/lib/plan-types.ts, which stops the drop happening.
+    """
+    first, last = 0, 24 * 60
+    if day_index == 0 and trip.arrive_time:
+        first = trip.arrive_time.hour * 60 + trip.arrive_time.minute
+    if day_index == _day_count(trip) - 1 and trip.depart_time:
+        last = trip.depart_time.hour * 60 + trip.depart_time.minute
+    return first, last
 
 
 def _mention_facts(db: Session, place_ids: Sequence[str]) -> dict[str, tuple[str | None, str | None]]:
@@ -225,7 +236,7 @@ def get_shortlist(
             primary_type=p.primary_type,
             category=cat, why_go=why_go, sources=srcs.get(p.place_id, []),
             mention_count=r.mention_count, in_itinerary=r.day_index is not None,
-            day_index=r.day_index, default_duration_min=duration_for(cat),
+            day_index=r.day_index,
         ))
 
     return ShortlistOut(total=rows[0].total if rows else 0, shown=len(places), places=places)
@@ -236,7 +247,7 @@ def _read_days(db: Session, trip: Trip) -> list[DayOut]:
         select(ItineraryItem, Place)
         .join(Place, Place.place_id == ItineraryItem.place_id)
         .where(ItineraryItem.trip_id == trip.trip_id)
-        .order_by(ItineraryItem.day_index, ItineraryItem.position)
+        .order_by(ItineraryItem.day_index, ItineraryItem.start_min, ItineraryItem.place_id)
     ).all()
     facts = _mention_facts(db, [r.Place.place_id for r in rows])
 
@@ -248,7 +259,7 @@ def _read_days(db: Session, trip: Trip) -> list[DayOut]:
             continue
         days[item.day_index].items.append(ItemOut(
             place_id=place.place_id, name=place.name, lat=place.lat, lon=place.lon,
-            position=item.position, duration_min=item.duration_min,
+            start_min=item.start_min, duration_min=item.duration_min,
             category=facts.get(place.place_id, (None, None))[0],
             primary_type=place.primary_type,
         ))
@@ -265,8 +276,8 @@ def get_itinerary(trip_id: str, db: Db) -> ItineraryOut:
 def put_itinerary(trip_id: str, body: ItineraryIn, db: Db) -> ItineraryOut:
     """Replace the listed days wholesale.
 
-    A drag is a statement about a whole sequence, so the whole sequence is what gets sent: positions
-    are renumbered densely here and a partial write cannot leave a day with gaps or collisions.
+    A drag restates a whole day, so a whole day is what gets sent. Times come from the client and are
+    stored as given — nothing here reflows a block to make one fit.
     """
     trip = _trip(db, trip_id)
 
@@ -274,6 +285,14 @@ def put_itinerary(trip_id: str, body: ItineraryIn, db: Db) -> ItineraryOut:
         raise HTTPException(422, "a day is listed twice")
     for d in body.days:
         _check_day(trip, d.day_index)
+        first, last = _available_window(trip, d.day_index)
+        for item in d.items:
+            if item.start_min < first or item.start_min + item.duration_min > last:
+                raise HTTPException(
+                    422,
+                    f"day {d.day_index} is only usable {hhmm(first)}-{hhmm(last)}: "
+                    f"{hhmm(item.start_min)} for {item.duration_min} min does not fit",
+                )
 
     place_ids = [i.place_id for d in body.days for i in d.items]
     if len(set(place_ids)) != len(place_ids):
@@ -296,9 +315,9 @@ def put_itinerary(trip_id: str, body: ItineraryIn, db: Db) -> ItineraryOut:
     db.execute(delete(ItineraryItem).where(ItineraryItem.trip_id == trip_id, or_(*conditions)))
 
     for d in body.days:
-        for position, item in enumerate(d.items):
+        for item in d.items:
             db.add(ItineraryItem(trip_id=trip_id, place_id=item.place_id, day_index=d.day_index,
-                                 position=position, duration_min=item.duration_min))
+                                 start_min=item.start_min, duration_min=item.duration_min))
     db.commit()
 
     return ItineraryOut(days=_read_days(db, trip))
@@ -361,13 +380,11 @@ def _load_hours(db: Session, place_ids: list[str], fetch: HoursLookup) -> dict[s
             pg_insert(PlaceHours)
             .values(place_id=pid, periods=hit.periods,
                     weekday_descriptions=hit.weekday_descriptions,
-                    utc_offset_minutes=hit.utc_offset_minutes, has_hours=hit.has_hours,
-                    fetched_at=now)
+                    utc_offset_minutes=hit.utc_offset_minutes, fetched_at=now)
             .on_conflict_do_update(
                 index_elements=["place_id"],
                 set_={"periods": hit.periods, "weekday_descriptions": hit.weekday_descriptions,
-                      "utc_offset_minutes": hit.utc_offset_minutes, "has_hours": hit.has_hours,
-                      "fetched_at": now})
+                      "utc_offset_minutes": hit.utc_offset_minutes, "fetched_at": now})
         )
     db.commit()
     return {
@@ -398,19 +415,20 @@ def route_day(
         select(ItineraryItem, Place)
         .join(Place, Place.place_id == ItineraryItem.place_id)
         .where(ItineraryItem.trip_id == trip_id, ItineraryItem.day_index == day_index)
-        .order_by(ItineraryItem.position)
+        .order_by(ItineraryItem.start_min, ItineraryItem.place_id)
     ).all()
 
-    # Day 0 cannot start before the flight lands; later days have no such anchor.
-    start = body.start_time or (trip.arrive_time if day_index == 0 else None) or DEFAULT_START
     provisional = provisional_reasons(day_date)
 
     if not rows:
-        return DayRouteOut(day_index=day_index, date=day_date, mode=body.mode, start_time=start,
+        return DayRouteOut(day_index=day_index, date=day_date, mode=body.mode,
                            provisional=provisional)
 
     if len(rows) > settings().max_stops_per_day:
         raise HTTPException(422, f"a day takes at most {settings().max_stops_per_day} stops")
+
+    # The day starts when its first block does. Rows are already in time order.
+    start = time(rows[0].ItineraryItem.start_min // 60, rows[0].ItineraryItem.start_min % 60)
 
     place_ids = [r.Place.place_id for r in rows]
     facts = _mention_facts(db, place_ids)
@@ -421,7 +439,6 @@ def route_day(
         next((h.utc_offset_minutes for h in hours.values() if h.utc_offset_minutes is not None),
              None),
     )
-    start_min = start.hour * 60 + start.minute
     # Transit times are time-dependent, so the departure has to be a real instant: the spike's
     # naive "<date>T<start>Z" asked for a route two hours out from what the user meant.
     depart_iso = datetime.combine(day_date, start,
@@ -455,12 +472,12 @@ def route_day(
     stops = [
         Stop(place_id=r.Place.place_id, name=r.Place.name,
              category=facts.get(r.Place.place_id, (None, None))[0],
-             duration_min=r.ItineraryItem.duration_min,
+             start_min=r.ItineraryItem.start_min, duration_min=r.ItineraryItem.duration_min,
              periods=hours[r.Place.place_id].periods if r.Place.place_id in hours else None)
         for r in rows
     ]
-    plan = plan_day(stops, legs, weekday=_google_weekday(day_date), start_min=start_min,
-                    sunset_min=sunset, routed=routed, mode=body.mode)
+    plan = plan_day(stops, legs, weekday=_google_weekday(day_date), sunset_min=sunset,
+                    routed=routed, mode=body.mode)
 
     return DayRouteOut(
         day_index=day_index, date=day_date, mode=body.mode, start_time=start,

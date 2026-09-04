@@ -22,8 +22,10 @@ from tp_api.schemas import (
     CitySuggestionOut,
     IngestOut,
     InitiatePlanRequest,
+    TaskFailure,
     TaskProgress,
     TripOut,
+    TripPatch,
     TripStatusOut,
     TripSummaryOut,
     notes_for,
@@ -78,6 +80,7 @@ def initiate_plan(body: InitiatePlanRequest, db: Db, lookup: Lookup) -> TripOut:
     trip = Trip(
         trip_id=str(uuid4()),
         city_id=city.city_id,
+        name=(body.name or "").strip() or None,
         arrive_date=body.arrive_date,
         arrive_time=body.arrive_time,
         depart_date=body.depart_date,
@@ -90,6 +93,7 @@ def initiate_plan(body: InitiatePlanRequest, db: Db, lookup: Lookup) -> TripOut:
     run = ensure_city_ingest(db, city)
     return TripOut(
         trip_id=trip.trip_id,
+        name=trip.name,
         city=CityOut.model_validate(city, from_attributes=True),
         arrive_date=trip.arrive_date,
         arrive_time=trip.arrive_time,
@@ -102,6 +106,7 @@ def initiate_plan(body: InitiatePlanRequest, db: Db, lookup: Lookup) -> TripOut:
 
 
 DONE_TASK_STATUSES = (TaskStatus.DONE, TaskStatus.SKIPPED)
+MAX_FAILURES_SHOWN = 25
 
 
 @app.get("/trips", response_model=list[TripSummaryOut])
@@ -151,6 +156,7 @@ def list_trips(db: Db) -> list[TripSummaryOut]:
         out.append(
             TripSummaryOut(
                 trip_id=trip.trip_id,
+                name=trip.name,
                 city=CityOut.model_validate(trip.city, from_attributes=True),
                 arrive_date=trip.arrive_date,
                 depart_date=trip.depart_date,
@@ -177,7 +183,7 @@ def get_trip(trip_id: str, db: Db) -> TripStatusOut:
     ).first()
 
     # Counted, not stored: the checklist is a group-by so a restarted worker can't skew it.
-    progress = []
+    progress, failures = [], []
     if run is not None:
         rows = db.execute(
             select(IngestTask.kind, IngestTask.status, func.count().label("n"))
@@ -187,8 +193,23 @@ def get_trip(trip_id: str, db: Db) -> TripStatusOut:
         ).all()
         progress = [TaskProgress(kind=r.kind, status=r.status, count=r.n) for r in rows]
 
+        # Grouped on the message too: twenty videos failing for one reason is one thing to read.
+        bad = db.execute(
+            select(IngestTask.kind, IngestTask.status, IngestTask.error_code,
+                   IngestTask.last_error, func.count().label("n"))
+            .where(IngestTask.run_id == run.run_id,
+                   IngestTask.status.in_((TaskStatus.FAILED, TaskStatus.BLOCKED)))
+            .group_by(IngestTask.kind, IngestTask.status, IngestTask.error_code,
+                      IngestTask.last_error)
+            .order_by(func.count().desc(), IngestTask.kind)
+            .limit(MAX_FAILURES_SHOWN)
+        ).all()
+        failures = [TaskFailure(kind=r.kind, status=r.status, error_code=r.error_code,
+                                last_error=r.last_error, count=r.n) for r in bad]
+
     return TripStatusOut(
         trip_id=trip.trip_id,
+        name=trip.name,
         city=CityOut.model_validate(trip.city, from_attributes=True),
         arrive_date=trip.arrive_date,
         arrive_time=trip.arrive_time,
@@ -199,6 +220,31 @@ def get_trip(trip_id: str, db: Db) -> TripStatusOut:
         notes=notes_for(trip.arrive_date),
         deleted=trip.deleted,
         progress=progress,
+        failures=failures,
+    )
+
+
+@app.patch("/trips/{trip_id}", response_model=TripOut)
+def rename_trip(trip_id: str, body: TripPatch, db: Db) -> TripOut:
+    """Rename a trip. An empty name clears it, which restores the city-name fallback."""
+    trip = db.get(Trip, trip_id)
+    if trip is None:
+        raise HTTPException(404, "no such trip")
+
+    trip.name = (body.name or "").strip() or None
+    db.commit()
+
+    return TripOut(
+        trip_id=trip.trip_id,
+        name=trip.name,
+        city=CityOut.model_validate(trip.city, from_attributes=True),
+        arrive_date=trip.arrive_date,
+        arrive_time=trip.arrive_time,
+        depart_date=trip.depart_date,
+        depart_time=trip.depart_time,
+        extra_details=trip.extra_details,
+        notes=notes_for(trip.arrive_date),
+        deleted=trip.deleted,
     )
 
 

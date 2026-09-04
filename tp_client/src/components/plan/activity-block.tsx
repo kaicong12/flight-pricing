@@ -1,133 +1,163 @@
 "use client";
 
-// One activity block. The start time is derived from the order and never edited directly — the user
-// moves the block, we recompute the clock. Duration is theirs to set.
+// One activity block, positioned on the grid at the time the user pinned it to. Drag the body to
+// move it, drag either edge to change how long you spend there.
+//
+// Warnings sit under the grid rather than inside the block: a block's height is its duration, so
+// there is no room to grow into, and the alert border already says which block is the problem.
 
-import { useSortable } from "@dnd-kit/sortable";
-import { CSS } from "@dnd-kit/utilities";
-import { GripVertical, Minus, Plus, X } from "lucide-react";
+import { useDraggable } from "@dnd-kit/core";
+import { X } from "lucide-react";
 
-import type { ItineraryItem, PlanBlock, PlanWarning } from "@/lib/plan-types";
-import { warningText } from "@/lib/plan-types";
+import type { PlacedItem, PlanBlock, PlanWarning } from "@/lib/plan-types";
+import { DAY_START_MIN, MIN_DURATION, SLOT_MIN, endOf, hhmm, resize, slotAt } from "@/lib/plan-types";
 import { cn } from "@/lib/utils";
 
-const STEP_MIN = 15;
-
 export function ActivityBlock({
-  item,
+  placed,
   block,
   warnings,
-  index,
+  slotPx,
   onRemove,
-  onDuration,
+  onResize,
 }: {
-  item: ItineraryItem;
+  placed: PlacedItem;
   block: PlanBlock | undefined;
   warnings: PlanWarning[];
-  index: number;
+  slotPx: number;
   onRemove: () => void;
-  onDuration: (minutes: number) => void;
+  onResize: (startMin: number, durationMin: number) => void;
 }) {
-  const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } =
-    useSortable({ id: `item:${item.place_id}`, data: { kind: "item", item } });
+  const { item, lane, lanes } = placed;
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
+    id: `item:${item.place_id}`,
+    data: { kind: "item", item },
+  });
 
   const broken = warnings.length > 0;
+  // At the 30-minute minimum there is only room for one line, so the times move to the title.
+  const short = item.duration_min <= MIN_DURATION;
+
+  /**
+   * Raw pointer events rather than dnd-kit, committed once on pointerup: the board re-routes on
+   * every duration change, so dispatching per pixel would spend a computeRoutes call per pixel.
+   */
+  const startResize = (edge: "top" | "bottom") => (e: React.PointerEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const grid = (e.currentTarget as HTMLElement).closest("[data-grid]")?.getBoundingClientRect();
+    if (!grid) return;
+
+    let next = { start_min: item.start_min, duration_min: item.duration_min };
+    const move = (ev: PointerEvent) => {
+      next = resize(item, edge, slotAt(ev.clientY - grid.top, slotPx));
+    };
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      if (next.start_min !== item.start_min || next.duration_min !== item.duration_min) {
+        onResize(next.start_min, next.duration_min);
+      }
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  };
 
   return (
     <div
-      ref={setNodeRef}
-      style={{ transform: CSS.Translate.toString(transform), transition }}
-      className={cn(
-        "relative rounded-card-sm border bg-surface transition-colors",
-        broken ? "border-warn-border" : "border-border",
-        isDragging && "z-10 opacity-90 shadow-lift",
-      )}
+      className="absolute"
+      style={{
+        top: ((item.start_min - DAY_START_MIN) / SLOT_MIN) * slotPx,
+        height: (item.duration_min / SLOT_MIN) * slotPx - 2,
+        left: `calc(${(lane * 100) / lanes}% + 2px)`,
+        width: `calc(${100 / lanes}% - 4px)`,
+      }}
     >
-      <div className="flex items-start gap-3 px-4 py-3.5">
-        <span className="mt-px w-11 shrink-0 font-mono text-[12.5px] text-ink-soft tabular-nums">
-          {block?.start ?? "--:--"}
-        </span>
+      <div
+        className={cn(
+          "group/block relative flex h-full flex-col overflow-hidden border px-2.5 py-1",
+          broken ? "border-alert/45 bg-alert-bg" : "border-border bg-surface",
+          isDragging && "z-10 opacity-90 shadow-lift",
+        )}
+      >
+        <ResizeHandle
+          edge="top"
+          label={`Start ${item.name} earlier or later`}
+          onPointerDown={startResize("top")}
+        />
 
-        <div className="min-w-0 flex-1">
-          <p className="text-[14px] leading-snug font-semibold tracking-[-0.01em]">
-            <span className="mr-1.5 font-mono text-[11px] text-faint">{index + 1}</span>
+        <div
+          ref={setNodeRef}
+          {...attributes}
+          {...listeners}
+          className="min-h-0 flex-1 cursor-grab touch-none outline-none focus-visible:ring-3 focus-visible:ring-ring/50 active:cursor-grabbing"
+        >
+          <p className="truncate text-[13px] leading-tight font-semibold tracking-[-0.01em]">
+            <span className="mr-1.5 font-mono text-[10.5px] font-normal text-faint tabular-nums">
+              {hhmm(item.start_min)}
+            </span>
             {item.name}
           </p>
-          <p className="mt-1 font-mono text-[11px] text-faint">
-            {[
-              item.primary_type || item.category,
-              `${item.duration_min} min`,
-              block?.open_from && block?.open_to
-                ? `open ${block.open_from}–${block.open_to}`
-                : null,
-            ]
-              .filter(Boolean)
-              .join(" · ")}
-          </p>
+          {!short && (
+            <p className="truncate font-mono text-[10.5px] text-faint">
+              {[
+                `${hhmm(item.start_min)}–${hhmm(endOf(item))}`,
+                item.primary_type || item.category,
+                block?.open_from && block?.open_to
+                  ? `open ${block.open_from}–${block.open_to}`
+                  : null,
+              ]
+                .filter(Boolean)
+                .join(" · ")}
+            </p>
+          )}
         </div>
 
-        <div className="flex shrink-0 items-center gap-0.5">
-          <StepButton
-            label={`Shorten ${item.name}`}
-            disabled={item.duration_min <= STEP_MIN}
-            onClick={() => onDuration(Math.max(STEP_MIN, item.duration_min - STEP_MIN))}
-          >
-            <Minus className="size-3" />
-          </StepButton>
-          <StepButton
-            label={`Lengthen ${item.name}`}
-            onClick={() => onDuration(item.duration_min + STEP_MIN)}
-          >
-            <Plus className="size-3" />
-          </StepButton>
-          <StepButton label={`Remove ${item.name}`} onClick={onRemove}>
-            <X className="size-3.5" />
-          </StepButton>
-          <button
-            ref={setActivatorNodeRef}
-            {...listeners}
-            {...attributes}
-            aria-label={`Reorder ${item.name}`}
-            className="grid size-6 cursor-grab touch-none place-items-center rounded text-faint transition-colors hover:text-ink active:cursor-grabbing outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
-          >
-            <GripVertical className="size-3.5" />
-          </button>
-        </div>
-      </div>
-
-      {warnings.map((w) => (
-        <div
-          key={`${w.code}:${w.place_id}`}
-          className="mx-4 mb-3.5 flex items-start gap-2.5 rounded-[13px] bg-alert-bg px-3.5 py-2.5"
+        <button
+          type="button"
+          onClick={onRemove}
+          aria-label={`Remove ${item.name}`}
+          className="absolute top-0.5 right-0.5 grid size-5 place-items-center rounded text-faint opacity-0 transition-opacity group-hover/block:opacity-100 hover:text-ink focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring/50"
         >
-          <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-alert" />
-          <p className="text-[12.5px] leading-[1.45] text-alert">{warningText(w)}</p>
-        </div>
-      ))}
+          <X className="size-3" />
+        </button>
+
+        <ResizeHandle
+          edge="bottom"
+          label={`Change how long you spend at ${item.name}`}
+          onPointerDown={startResize("bottom")}
+        />
+      </div>
     </div>
   );
 }
 
-function StepButton({
+/** Overhangs the block by 3px so the grab zone is bigger than the 8px it looks. */
+function ResizeHandle({
+  edge,
   label,
-  onClick,
-  disabled,
-  children,
+  onPointerDown,
 }: {
+  edge: "top" | "bottom";
   label: string;
-  onClick: () => void;
-  disabled?: boolean;
-  children: React.ReactNode;
+  onPointerDown: (e: React.PointerEvent) => void;
 }) {
   return (
     <button
       type="button"
-      onClick={onClick}
-      disabled={disabled}
       aria-label={label}
-      className="grid size-6 place-items-center rounded text-faint transition-colors hover:text-ink disabled:opacity-30 disabled:hover:text-faint outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+      onPointerDown={onPointerDown}
+      className={cn(
+        "absolute inset-x-0 z-10 h-2.5 cursor-ns-resize touch-none opacity-0 transition-opacity group-hover/block:opacity-100 focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring/50",
+        edge === "top" ? "-top-0.5" : "-bottom-0.5",
+      )}
     >
-      {children}
+      <span
+        className={cn(
+          "mx-auto block h-0.5 w-8 rounded-full bg-ink/25",
+          edge === "top" ? "mt-1" : "mt-1.5",
+        )}
+      />
     </button>
   );
 }
