@@ -1,14 +1,17 @@
 """The prompt registry. Every extraction records its prompt's version_key and model."""
 
+from libs.prompts.itinerary_draft import ITINERARY_DRAFT
 from libs.prompts.rednote_ocr import REDNOTE_OCR
 from libs.prompts.rednote_prescreen import REDNOTE_PRESCREEN
 from libs.prompts.rednote_text import REDNOTE_TEXT
 from libs.prompts.registry import Prompt
 from libs.prompts.youtube_transcript import YOUTUBE_TRANSCRIPT
 
-PROMPTS = {p.name: p for p in (YOUTUBE_TRANSCRIPT, REDNOTE_TEXT, REDNOTE_OCR, REDNOTE_PRESCREEN)}
+PROMPTS = {p.name: p for p in (YOUTUBE_TRANSCRIPT, REDNOTE_TEXT, REDNOTE_OCR, REDNOTE_PRESCREEN,
+                               ITINERARY_DRAFT)}
 
 __all__ = [
+    "ITINERARY_DRAFT",
     "PROMPTS",
     "REDNOTE_OCR",
     "REDNOTE_PRESCREEN",

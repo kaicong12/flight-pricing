@@ -8,7 +8,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from libs.db import City, IngestRun, IngestTask
+from libs.db import City, IngestRun, IngestTask, Trip
 from libs.db.enums import RunKind, RunStatus, Source, TaskKind
 from libs.places import CityDetails
 from libs.settings import settings
@@ -89,6 +89,46 @@ def ensure_city_ingest(session: Session, city: City) -> IngestRun | None:
     seed_search_tasks(session, run, city)
     session.commit()
     return run
+
+
+def ensure_trip_plan(session: Session, trip: Trip) -> IngestRun | None:
+    """Queue one route.plan for a trip, or None if it already has one.
+
+    Once only, ever: the draft seeds empty days and a day the user has touched is theirs, so a second
+    pass has nothing to add. Keyed on the task's payload because runs are per city, not per trip.
+    """
+    if session.scalars(
+        select(IngestTask.task_id).where(
+            IngestTask.kind == TaskKind.ROUTE_PLAN,
+            IngestTask.payload["trip_id"].astext == trip.trip_id,
+        )
+    ).first():
+        return None
+
+    run = IngestRun(run_id=str(uuid4()), city_id=trip.city_id, kind=RunKind.TRIP_PLANNING,
+                    status=RunStatus.PENDING)
+    session.add(run)
+    session.flush()
+    enqueue(session, [{
+        "run_id": run.run_id,
+        "kind": TaskKind.ROUTE_PLAN,
+        "source": Source.GEMINI,
+        "payload": {"trip_id": trip.trip_id},
+        "dedupe_key": f"{TaskKind.ROUTE_PLAN}:{trip.trip_id}",
+    }])
+    session.commit()
+    return run
+
+
+def plan_after_ingest(session: Session, run_id: str) -> int:
+    """After a city's ingestion settles, draft for every trip waiting on that city."""
+    run = session.get(IngestRun, run_id)
+    if run is None or run.kind != RunKind.CITY_INGEST or run.status != RunStatus.DONE:
+        return 0
+    trips = session.scalars(
+        select(Trip).where(Trip.city_id == run.city_id, Trip.deleted.is_(False))
+    ).all()
+    return sum(1 for t in trips if ensure_trip_plan(session, t) is not None)
 
 
 def seed_search_tasks(session: Session, run: IngestRun, city: City) -> None:

@@ -1,23 +1,22 @@
-"""The planning screen's API: a ranked shortlist, the user's ordering, and one routed day.
+"""What the planning endpoints actually do: rank a shortlist, store an ordering, route one day.
 
 The order is the user's. Nothing here reorders anything — routing follows the sequence it is given
 and the warnings say what does not work.
+
+These functions raise `HTTPException` directly rather than a private exception hierarchy the router
+would only translate one-to-one. Everything they return is already a response schema.
 """
 
-import html
 from collections import Counter
 from collections.abc import Sequence
-from datetime import UTC, date, datetime, time, timedelta, timezone
-from typing import Annotated
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+from datetime import UTC, date, datetime, time, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import delete, func, or_, select
+from fastapi import HTTPException
+from sqlalchemy import Row, delete, func, or_, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
 from libs.db import (
-    City,
     ItineraryItem,
     Place,
     PlaceHours,
@@ -40,19 +39,12 @@ from libs.routing import (
     sun_times,
 )
 from libs.settings import settings
-from tp_api.deps import (
-    HoursLookup,
-    RouteCompute,
-    db_session,
-    hours_lookup,
-    route_compute,
-)
-from tp_api.plan_schemas import (
+from tp_api.deps import HoursLookup, RouteCompute
+from tp_api.route_planning.schemas import (
     BlockOut,
     DaylightOut,
     DayOut,
     DayRouteOut,
-    DismissalIn,
     ItemOut,
     ItineraryIn,
     ItineraryOut,
@@ -64,54 +56,31 @@ from tp_api.plan_schemas import (
     WarningOut,
     provisional_reasons,
 )
+from tp_api.route_planning.utils import (
+    available_window,
+    day_count,
+    depart_instant,
+    google_weekday,
+    source_title,
+    source_url,
+    tz_minutes,
+)
 
-router = APIRouter()
 
-Db = Annotated[Session, Depends(db_session)]
-Hours = Annotated[HoursLookup, Depends(hours_lookup)]
-Route = Annotated[RouteCompute, Depends(route_compute)]
-
-SOURCE_TITLE_MAX = 80
-FALLBACK_TITLE = {Source.YOUTUBE: "YouTube video", Source.REDNOTE: "RedNote post"}
-
-
-def _trip(db: Session, trip_id: str) -> Trip:
+def get_trip(db: Session, trip_id: str) -> Trip:
     trip = db.get(Trip, trip_id)
     if trip is None:
         raise HTTPException(404, "no such trip")
     return trip
 
 
-def _day_count(trip: Trip) -> int:
-    return (trip.depart_date - trip.arrive_date).days + 1
-
-
-def _google_weekday(d: date) -> int:
-    """Places numbers weekdays from Sunday; Python numbers them from Monday."""
-    return (d.weekday() + 1) % 7
-
-
-def _check_day(trip: Trip, day_index: int) -> date:
-    if not 0 <= day_index < _day_count(trip):
+def check_day(trip: Trip, day_index: int) -> date:
+    if not 0 <= day_index < day_count(trip):
         raise HTTPException(422, f"day {day_index} is outside the trip")
     return trip.arrive_date + timedelta(days=day_index)
 
 
-def _available_window(trip: Trip, day_index: int) -> tuple[int, int]:
-    """Local minutes a day's blocks must fit inside.
-
-    The flight is the only hard bound: you cannot be somewhere before you land or after you leave.
-    Mirrored by availableWindow in tp_client/src/lib/plan-types.ts, which stops the drop happening.
-    """
-    first, last = 0, 24 * 60
-    if day_index == 0 and trip.arrive_time:
-        first = trip.arrive_time.hour * 60 + trip.arrive_time.minute
-    if day_index == _day_count(trip) - 1 and trip.depart_time:
-        last = trip.depart_time.hour * 60 + trip.depart_time.minute
-    return first, last
-
-
-def _mention_facts(db: Session, place_ids: Sequence[str]) -> dict[str, tuple[str | None, str | None]]:
+def mention_facts(db: Session, place_ids: Sequence[str]) -> dict[str, tuple[str | None, str | None]]:
     """Modal category and a why_go blurb per place.
 
     Both are opinions from mentions rather than facts from Places, so they are derived here rather
@@ -140,17 +109,7 @@ def _mention_facts(db: Session, place_ids: Sequence[str]) -> dict[str, tuple[str
             for pid in set(place_ids)}
 
 
-def _source_url(source: str, ref: str, token: str | None) -> str | None:
-    if source == Source.YOUTUBE:
-        return f"https://www.youtube.com/watch?v={ref}"
-    if source == Source.REDNOTE:
-        # The token expires, and RedNote then falls back to whatever the reader's own login can see.
-        return (f"https://www.xiaohongshu.com/explore/{ref}?xsec_token={token}" if token
-                else f"https://www.xiaohongshu.com/explore/{ref}")
-    return None
-
-
-def _mention_sources(db: Session, place_ids: Sequence[str]) -> dict[str, list[SourceRefOut]]:
+def mention_sources(db: Session, place_ids: Sequence[str]) -> dict[str, list[SourceRefOut]]:
     """The videos and notes behind each place, so a shortlist row can link back to its evidence.
 
     Each join is gated on the source, or a note_id would be matched against a video_id.
@@ -172,27 +131,19 @@ def _mention_sources(db: Session, place_ids: Sequence[str]) -> dict[str, list[So
 
     out: dict[str, list[SourceRefOut]] = {}
     for r in rows:
-        url = _source_url(r.source, r.source_ref, r.xsec_token)
+        url = source_url(r.source, r.source_ref, r.xsec_token)
         if url is None:
             continue
-        # A mention outlives the cache row it came from, and YouTube titles arrive HTML-escaped.
-        title = (r.video_title or r.note_title or (r.description or "")[:SOURCE_TITLE_MAX]
-                 or FALLBACK_TITLE[r.source])
+        title = source_title(r.source, r.video_title, r.note_title, r.description)
         out.setdefault(r.place_id, []).append(
-            SourceRefOut(source=r.source, title=html.unescape(title), url=url))
+            SourceRefOut(source=r.source, title=title, url=url))
     return out
 
 
-@router.get("/trips/{trip_id}/shortlist", response_model=ShortlistOut)
-def get_shortlist(
-    trip_id: str,
-    db: Db,
-    limit: Annotated[int, Query(ge=1, le=200)] = 40,
-    offset: Annotated[int, Query(ge=0)] = 0,
-    category: Annotated[str | None, Query(max_length=16)] = None,
-) -> ShortlistOut:
+def shortlist(db: Session, trip_id: str, limit: int, offset: int,
+              category: str | None) -> ShortlistOut:
     """The city's places, ranked by how many independent sources mentioned each one."""
-    trip = _trip(db, trip_id)
+    trip = get_trip(db, trip_id)
 
     mentions = (
         select(PlaceMention.place_id.label("place_id"), func.count().label("mention_count"))
@@ -222,8 +173,8 @@ def get_shortlist(
     rows = db.execute(stmt).all()
 
     place_ids = [r.Place.place_id for r in rows]
-    facts = _mention_facts(db, place_ids)
-    srcs = _mention_sources(db, place_ids)
+    facts = mention_facts(db, place_ids)
+    srcs = mention_sources(db, place_ids)
     if category:
         rows = [r for r in rows if facts.get(r.Place.place_id, (None, None))[0] == category]
 
@@ -242,17 +193,27 @@ def get_shortlist(
     return ShortlistOut(total=rows[0].total if rows else 0, shown=len(places), places=places)
 
 
-def _read_days(db: Session, trip: Trip) -> list[DayOut]:
-    rows = db.execute(
+def day_rows(db: Session, trip_id: str,
+             day_index: int | None = None) -> list[Row[tuple[ItineraryItem, Place]]]:
+    """One day's stored items, or the whole trip's, each joined to its place and in order."""
+    stmt = (
         select(ItineraryItem, Place)
         .join(Place, Place.place_id == ItineraryItem.place_id)
-        .where(ItineraryItem.trip_id == trip.trip_id)
+        .where(ItineraryItem.trip_id == trip_id)
         .order_by(ItineraryItem.day_index, ItineraryItem.start_min, ItineraryItem.place_id)
-    ).all()
-    facts = _mention_facts(db, [r.Place.place_id for r in rows])
+    )
+    if day_index is not None:
+        stmt = stmt.where(ItineraryItem.day_index == day_index)
+    return db.execute(stmt).all()
+
+
+def read_days(db: Session, trip: Trip) -> ItineraryOut:
+    """Every day of the trip, empty ones included, so the client never derives the dates itself."""
+    rows = day_rows(db, trip.trip_id)
+    facts = mention_facts(db, [r.Place.place_id for r in rows])
 
     days = [DayOut(day_index=i, date=trip.arrive_date + timedelta(days=i), items=[])
-            for i in range(_day_count(trip))]
+            for i in range(day_count(trip))]
     for r in rows:
         item, place = r.ItineraryItem, r.Place
         if item.day_index >= len(days):
@@ -263,29 +224,22 @@ def _read_days(db: Session, trip: Trip) -> list[DayOut]:
             category=facts.get(place.place_id, (None, None))[0],
             primary_type=place.primary_type,
         ))
-    return days
+    return ItineraryOut(days=days)
 
 
-@router.get("/trips/{trip_id}/itinerary", response_model=ItineraryOut)
-def get_itinerary(trip_id: str, db: Db) -> ItineraryOut:
-    """Every day of the trip, empty ones included, so the client never derives the dates itself."""
-    return ItineraryOut(days=_read_days(db, _trip(db, trip_id)))
-
-
-@router.put("/trips/{trip_id}/itinerary", response_model=ItineraryOut)
-def put_itinerary(trip_id: str, body: ItineraryIn, db: Db) -> ItineraryOut:
+def replace_days(db: Session, trip_id: str, body: ItineraryIn) -> ItineraryOut:
     """Replace the listed days wholesale.
 
     A drag restates a whole day, so a whole day is what gets sent. Times come from the client and are
     stored as given — nothing here reflows a block to make one fit.
     """
-    trip = _trip(db, trip_id)
+    trip = get_trip(db, trip_id)
 
     if len({d.day_index for d in body.days}) != len(body.days):
         raise HTTPException(422, "a day is listed twice")
     for d in body.days:
-        _check_day(trip, d.day_index)
-        first, last = _available_window(trip, d.day_index)
+        check_day(trip, d.day_index)
+        first, last = available_window(trip, d.day_index)
         for item in d.items:
             if item.start_min < first or item.start_min + item.duration_min > last:
                 raise HTTPException(
@@ -320,43 +274,29 @@ def put_itinerary(trip_id: str, body: ItineraryIn, db: Db) -> ItineraryOut:
                                  start_min=item.start_min, duration_min=item.duration_min))
     db.commit()
 
-    return ItineraryOut(days=_read_days(db, trip))
+    return read_days(db, trip)
 
 
-@router.post("/trips/{trip_id}/dismissals", status_code=204)
-def add_dismissal(trip_id: str, body: DismissalIn, db: Db) -> None:
+def add_dismissal(db: Session, trip_id: str, place_id: str) -> None:
     """Strike a place off this trip's shortlist — the answer to Google's duplicate listings."""
-    trip = _trip(db, trip_id)
+    trip = get_trip(db, trip_id)
     if not db.scalar(select(func.count()).select_from(Place)
-                     .where(Place.place_id == body.place_id, Place.city_id == trip.city_id)):
+                     .where(Place.place_id == place_id, Place.city_id == trip.city_id)):
         raise HTTPException(422, "not a place in this city")
     db.execute(pg_insert(TripDismissal)
-               .values(trip_id=trip_id, place_id=body.place_id)
+               .values(trip_id=trip_id, place_id=place_id)
                .on_conflict_do_nothing(index_elements=["trip_id", "place_id"]))
     db.commit()
 
 
-@router.delete("/trips/{trip_id}/dismissals/{place_id}", status_code=204)
-def remove_dismissal(trip_id: str, place_id: str, db: Db) -> None:
-    _trip(db, trip_id)
+def remove_dismissal(db: Session, trip_id: str, place_id: str) -> None:
+    get_trip(db, trip_id)
     db.execute(delete(TripDismissal).where(TripDismissal.trip_id == trip_id,
                                            TripDismissal.place_id == place_id))
     db.commit()
 
 
-def _tz_minutes(city: City, on: date, fallback: int | None) -> int:
-    """The city's UTC offset on the trip's date, so a summer plan is not shifted by winter time."""
-    if city.timezone:
-        try:
-            offset = datetime.combine(on, time(12, 0), ZoneInfo(city.timezone)).utcoffset()
-        except (ZoneInfoNotFoundError, ValueError):
-            offset = None
-        if offset is not None:
-            return int(offset.total_seconds() // 60)
-    return fallback or 0
-
-
-def _load_hours(db: Session, place_ids: list[str], fetch: HoursLookup) -> dict[str, PlaceHours]:
+def load_hours(db: Session, place_ids: list[str], fetch: HoursLookup) -> dict[str, PlaceHours]:
     """Cached hours, refetching only what is missing or past its TTL."""
     ttl = timedelta(days=settings().place_hours_ttl_days)
     cutoff = datetime.now(UTC) - ttl
@@ -393,30 +333,39 @@ def _load_hours(db: Session, place_ids: list[str], fetch: HoursLookup) -> dict[s
     }
 
 
-@router.post("/trips/{trip_id}/days/{day_index}/route", response_model=DayRouteOut)
-def route_day(
-    trip_id: str,
-    day_index: int,
-    body: RouteDayRequest,
-    db: Db,
-    fetch_hours: Hours,
-    compute: Route,
-) -> DayRouteOut:
+def _route_legs(compute: RouteCompute, place_ids: list[str], mode: str,
+                depart_iso: str) -> tuple[RouteResult, list[TravelLeg], bool]:
+    """The day's travel legs, and whether they are real. One `computeRoutes` call at most."""
+    if len(place_ids) < 2:
+        # Nothing to route between, so spend nothing.
+        return RouteResult(legs=[], polyline=None, total_seconds=0, total_meters=0), [], True
+
+    try:
+        result = compute(place_ids, mode, depart_iso)
+    except RoutesError as e:
+        raise HTTPException(502, f"routing failed: {e}") from e
+
+    legs = [TravelLeg(seconds=leg.seconds, meters=leg.meters,
+                      transit_steps=leg.transit_steps, polyline=leg.polyline)
+            for leg in result.legs]
+    if not legs:
+        # Beyond the transit horizon Routes answers 200 with nothing, which is an absent answer and
+        # not a failure. Lay the day out end to end and say the times are not travel-adjusted.
+        return result, [TravelLeg(seconds=0, meters=0) for _ in place_ids[:-1]], False
+    return result, legs, True
+
+
+def route_day(db: Session, trip_id: str, day_index: int, body: RouteDayRequest,
+              fetch_hours: HoursLookup, compute: RouteCompute) -> DayRouteOut:
     """Route one day in the order it is stored, then say what does not work.
 
     Synchronous rather than queued: routing has no budget to pace, one walking day is a single call,
     and the user is waiting on the answer. The stop cap is what bounds the worst case.
     """
-    trip = _trip(db, trip_id)
-    day_date = _check_day(trip, day_index)
+    trip = get_trip(db, trip_id)
+    day_date = check_day(trip, day_index)
     city = trip.city
-
-    rows = db.execute(
-        select(ItineraryItem, Place)
-        .join(Place, Place.place_id == ItineraryItem.place_id)
-        .where(ItineraryItem.trip_id == trip_id, ItineraryItem.day_index == day_index)
-        .order_by(ItineraryItem.start_min, ItineraryItem.place_id)
-    ).all()
+    rows = day_rows(db, trip_id, day_index)
 
     provisional = provisional_reasons(day_date)
 
@@ -431,39 +380,18 @@ def route_day(
     start = time(rows[0].ItineraryItem.start_min // 60, rows[0].ItineraryItem.start_min % 60)
 
     place_ids = [r.Place.place_id for r in rows]
-    facts = _mention_facts(db, place_ids)
-    hours = _load_hours(db, place_ids, fetch_hours)
+    facts = mention_facts(db, place_ids)
+    hours = load_hours(db, place_ids, fetch_hours)
 
-    tz_min = _tz_minutes(
+    tz_min = tz_minutes(
         city, day_date,
         next((h.utc_offset_minutes for h in hours.values() if h.utc_offset_minutes is not None),
              None),
     )
-    # Transit times are time-dependent, so the departure has to be a real instant: the spike's
-    # naive "<date>T<start>Z" asked for a route two hours out from what the user meant.
-    depart_iso = datetime.combine(day_date, start,
-                                  tzinfo=timezone(timedelta(minutes=tz_min))).isoformat()
-
-    warnings: list[PlanWarning] = []
-    routed = True
-    if len(place_ids) < 2:
-        # Nothing to route between, so spend nothing.
-        result = RouteResult(legs=[], polyline=None, total_seconds=0, total_meters=0)
-    else:
-        try:
-            result = compute(place_ids, body.mode, depart_iso)
-        except RoutesError as e:
-            raise HTTPException(502, f"routing failed: {e}") from e
-
-    legs = [TravelLeg(seconds=leg.seconds, meters=leg.meters,
-                      transit_steps=leg.transit_steps, polyline=leg.polyline)
-            for leg in result.legs]
-    if len(place_ids) > 1 and not legs:
-        # Beyond the transit horizon Routes answers 200 with nothing, which is an absent answer and
-        # not a failure. Lay the day out end to end and say the times are not travel-adjusted.
-        routed = False
-        legs = [TravelLeg(seconds=0, meters=0) for _ in place_ids[:-1]]
-        warnings.append(PlanWarning("no_route", None, {"mode": body.mode}))
+    result, legs, routed = _route_legs(compute, place_ids, body.mode,
+                                       depart_instant(day_date, start, tz_min))
+    warnings: list[PlanWarning] = ([] if routed
+                                   else [PlanWarning("no_route", None, {"mode": body.mode})])
 
     sunrise, sunset = (None, None)
     if city.lat is not None and city.lon is not None:
@@ -476,8 +404,8 @@ def route_day(
              periods=hours[r.Place.place_id].periods if r.Place.place_id in hours else None)
         for r in rows
     ]
-    plan = plan_day(stops, legs, weekday=_google_weekday(day_date), sunset_min=sunset,
-                    routed=routed, mode=body.mode)
+    plan = plan_day(stops, legs, weekday=google_weekday(day_date),
+                    sunset_min=sunset, routed=routed, mode=body.mode)
 
     return DayRouteOut(
         day_index=day_index, date=day_date, mode=body.mode, start_time=start,

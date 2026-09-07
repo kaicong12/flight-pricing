@@ -9,6 +9,7 @@ from datetime import UTC, datetime, timedelta
 
 from libs.db import session
 from libs.db.enums import ErrorCode
+from libs.ingest import plan_after_ingest
 from tp_ingestions import queue
 from tp_ingestions.errors import TaskError, Throttled
 from tp_ingestions.registry import HANDLERS, load_handlers
@@ -79,6 +80,11 @@ class Worker:
             settled = queue.finish_run_if_done(s, task.run_id)
         if settled:
             log.info("run %s -> %s", task.run_id, settled)
+            # A finished city is the cue to draft for everyone waiting on it.
+            with session() as s:
+                drafts = plan_after_ingest(s, task.run_id)
+            if drafts:
+                log.info("queued %d itinerary draft(s)", drafts)
         return True
 
     def _execute(self, task: queue.ClaimedTask) -> None:
