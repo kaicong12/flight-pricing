@@ -31,6 +31,7 @@ class TaskKind(StrEnum):
     REDNOTE_EXTRACT = "rednote.extract"
     REDNOTE_OCR = "rednote.ocr"
     PLACES_RESOLVE = "places.resolve"
+    ROUTE_PLAN = "route.plan"
 
 
 class TaskStatus(StrEnum):

@@ -8,7 +8,7 @@ from sqlalchemy import select
 from libs.db import ItineraryItem
 from libs.db.enums import Sentiment, Source
 from libs.routing import HoursHit, Leg, RouteResult
-from tp_api.plan_schemas import REGULAR_HOURS_ONLY_NOTE
+from tp_api.route_planning.schemas import REGULAR_HOURS_ONLY_NOTE
 from tp_api.schemas import TRANSIT_HORIZON_NOTE, today_utc
 
 OPEN_ALL_WEEK = [{"open": {"day": d, "hour": 9, "minute": 0},

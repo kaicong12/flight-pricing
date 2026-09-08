@@ -59,7 +59,21 @@ def test_warm_city_returns_no_ingest(client, db):
 
     assert body["ingest"] is None
     assert db.get(Trip, body["trip_id"]) is not None
-    assert db.scalar(select(func.count()).select_from(IngestTask)) == 0
+    # No discovery work, but the draft still has to be queued: a warm city settles no run, so
+    # plan_after_ingest never fires and this is the only chance to ask for one.
+    kinds = db.scalars(select(IngestTask.kind)).all()
+    assert kinds == [TaskKind.ROUTE_PLAN]
+    assert db.scalar(select(IngestTask.payload)) == {"trip_id": body["trip_id"]}
+
+
+def test_a_second_trip_on_a_warm_city_gets_its_own_draft(client, db):
+    make_city(db, last_ingested_at=datetime.now(UTC) - timedelta(days=2))
+
+    first = client.post("/initiate-plan", json=plan_body()).json()
+    second = client.post("/initiate-plan", json=plan_body()).json()
+
+    drafted = {r["trip_id"] for r in db.scalars(select(IngestTask.payload)).all()}
+    assert drafted == {first["trip_id"], second["trip_id"]}
 
 
 def test_a_place_that_is_not_a_city_is_rejected(client, lookup):

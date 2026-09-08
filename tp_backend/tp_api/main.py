@@ -12,11 +12,11 @@ from sqlalchemy.orm import Session
 
 from libs.db import IngestRun, IngestTask, Place, Trip
 from libs.db.enums import RunKind, TaskStatus
-from libs.ingest import ensure_city, ensure_city_ingest
+from libs.ingest import ensure_city, ensure_city_ingest, ensure_trip_plan
 from libs.places import NotACity, PlacesError
 from libs.settings import settings
-from tp_api import plan_routes
 from tp_api.deps import CityLookup, CitySearch, city_lookup, city_search, db_session
+from tp_api.route_planning import router as planning_router
 from tp_api.schemas import (
     CityOut,
     CitySuggestionOut,
@@ -41,7 +41,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 
 app = FastAPI(title="Trip planner API", lifespan=lifespan)
-app.include_router(plan_routes.router)
+app.include_router(planning_router)
 
 Db = Annotated[Session, Depends(db_session)]
 Lookup = Annotated[CityLookup, Depends(city_lookup)]
@@ -91,6 +91,9 @@ def initiate_plan(body: InitiatePlanRequest, db: Db, lookup: Lookup) -> TripOut:
     db.commit()
 
     run = ensure_city_ingest(db, city)
+    # A warm city queues no ingestion, so nothing would later trigger the draft.
+    if run is None:
+        ensure_trip_plan(db, trip)
     return TripOut(
         trip_id=trip.trip_id,
         name=trip.name,
