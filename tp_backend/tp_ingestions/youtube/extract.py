@@ -40,7 +40,9 @@ def youtube_extract(session: Session, task: ClaimedTask) -> dict:
         if not text:
             raise TaskError(ErrorCode.PERMANENT, f"transcript {video_id} is empty")
         video.transcript = text
-        session.flush()
+        # Committed, not flushed: a Gemini failure below would otherwise roll the transcript back and
+        # make every retry re-fetch it, which is the PoTokenRequired surface.
+        session.commit()
 
     limits.gemini().take()
     result = gemini.generate(YOUTUBE_TRANSCRIPT, YOUTUBE_TRANSCRIPT.render(transcript=text))
