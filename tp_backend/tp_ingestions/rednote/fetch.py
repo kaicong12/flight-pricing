@@ -1,4 +1,4 @@
-"""rednote.fetch — pull one note's full body from /feed, then extract it in the same transaction."""
+"""rednote.fetch — pull one note's full body from /feed, then queue its extraction separately."""
 
 import logging
 import unicodedata
@@ -7,12 +7,12 @@ from datetime import UTC, datetime
 from sqlalchemy.orm import Session
 
 from libs.db import RedNotePost
-from libs.db.enums import ErrorCode, TaskKind
+from libs.db.enums import ErrorCode, Source, TaskKind
+from libs.ingest import enqueue
 from tp_ingestions import limits
 from tp_ingestions.errors import TaskError
 from tp_ingestions.queue import ClaimedTask
 from tp_ingestions.rednote import client
-from tp_ingestions.rednote.extract import extract_note
 from tp_ingestions.registry import handles
 
 log = logging.getLogger("rednote.fetch")
@@ -72,8 +72,12 @@ def rednote_fetch(session: Session, task: ClaimedTask) -> dict:
     note.posted_at = posted_at(card)
     if card.get("title"):
         note.title = card["title"]
-    session.flush()
 
-    # A child call, not an enqueued task: the body and its extraction commit or roll back together.
+    # Its own task, not a child call: this body cost a RedNote call from a 50/h budget, so a Gemini
+    # failure must not roll it back. rednote.extract then retries against the stored body for free.
+    queued = enqueue(session, [
+        {"run_id": task.run_id, "kind": TaskKind.REDNOTE_EXTRACT, "source": Source.REDNOTE,
+         "payload": {"note_id": note_id, "city_id": task.payload.get("city_id")},
+         "dedupe_key": f"{TaskKind.REDNOTE_EXTRACT}:{note_id}"}])
     return {"note_id": note_id, "chars": len(note.description),
-            "images": len(note.image_urls), **extract_note(session, task, note)}
+            "images": len(note.image_urls), "extract_queued": queued}

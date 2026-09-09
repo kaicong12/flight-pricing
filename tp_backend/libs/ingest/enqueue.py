@@ -91,13 +91,15 @@ def ensure_city_ingest(session: Session, city: City) -> IngestRun | None:
     return run
 
 
-def ensure_trip_plan(session: Session, trip: Trip) -> IngestRun | None:
+def ensure_trip_plan(session: Session, trip: Trip, force: bool = False) -> IngestRun | None:
     """Queue one route.plan for a trip, or None if it already has one.
 
-    Once only, ever: the draft seeds empty days and a day the user has touched is theirs, so a second
-    pass has nothing to add. Keyed on the task's payload because runs are per city, not per trip.
+    Once only, ever, when automatic: the draft seeds empty days and a day the user has touched is
+    theirs, so a second pass has nothing to add. Keyed on the task's payload because runs are per
+    city, not per trip. `force` is the user asking again from the plan screen — the handler still
+    fills only empty days, so asking twice cannot overwrite anything.
     """
-    if session.scalars(
+    if not force and session.scalars(
         select(IngestTask.task_id).where(
             IngestTask.kind == TaskKind.ROUTE_PLAN,
             IngestTask.payload["trip_id"].astext == trip.trip_id,

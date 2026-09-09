@@ -1,8 +1,8 @@
-"""rednote.fetch / extract / ocr: the one-transaction guarantee, the OCR gate, the pay-once skip."""
+"""rednote.fetch / extract / ocr: the fetch-then-extract split, the OCR gate, the pay-once skip."""
 
 import pytest
 from conftest import HELSINKI, make_city
-from sqlalchemy import select
+from sqlalchemy import func, select, update
 
 from libs.db import Extraction, IngestRun, IngestTask, RedNotePost
 from libs.db.enums import (
@@ -120,8 +120,10 @@ def test_fetch_of_a_bodyless_note_is_permanent(db, run, post, monkeypatch):
     assert e.value.code == ErrorCode.PERMANENT
 
 
-def test_the_body_and_its_extraction_commit_together(db, run, post, worker, monkeypatch):
-    """A Gemini failure must leave no description and no extraction — one note, one transaction."""
+def test_a_gemini_failure_keeps_the_body_it_paid_a_rednote_call_for(db, run, post, worker,
+                                                                   monkeypatch):
+    """The fetch and the extraction are separate tasks precisely so this holds: the body survives and
+    only the free half retries. Fused, every Gemini failure re-spent a 50/h RedNote call."""
     queued_task(db, run)
     monkeypatch.setattr(fetch.client, "fetch_note", lambda n, t: CARD)
 
@@ -129,19 +131,57 @@ def test_the_body_and_its_extraction_commit_together(db, run, post, worker, monk
         raise TaskError(ErrorCode.TRANSIENT, "gemini 500")
 
     monkeypatch.setattr(extract.gemini, "generate", boom)
+    worker.run_once()  # rednote.fetch
+    worker.run_once()  # rednote.extract, which fails
+
+    db.expire_all()
+    assert db.get(RedNotePost, NOTE).description == "第一家 Tang's 很好吃"
+    assert db.scalars(select(Extraction)).all() == []
+
+    # The retry must not go back to RedNote: the body is already there to read.
+    def never(*a, **k):
+        raise AssertionError("rednote was called again for a body we already have")
+
+    monkeypatch.setattr(fetch.client, "fetch_note", never)
+    monkeypatch.setattr(extract.gemini, "generate", lambda *a, **k: result([place()]))
+    db.execute(
+        update(IngestTask)
+        .where(IngestTask.kind == TaskKind.REDNOTE_EXTRACT)
+        .values(status=TaskStatus.PENDING, run_after=func.now())
+    )
+    db.commit()
     worker.run_once()
 
     db.expire_all()
-    assert db.get(RedNotePost, NOTE).description is None
+    assert db.scalars(select(Extraction)).one().place_count == 1
+
+
+def test_a_fetch_queues_the_extraction_rather_than_running_it(db, run, post, worker, monkeypatch):
+    queued_task(db, run)
+    monkeypatch.setattr(fetch.client, "fetch_note", lambda n, t: CARD)
+
+    def never(*a, **k):
+        raise AssertionError("gemini was called inside rednote.fetch")
+
+    monkeypatch.setattr(extract.gemini, "generate", never)
+    worker.run_once()
+
+    db.expire_all()
+    assert db.get(RedNotePost, NOTE).description is not None
     assert db.scalars(select(Extraction)).all() == []
+    queued = db.scalars(
+        select(IngestTask).where(IngestTask.kind == TaskKind.REDNOTE_EXTRACT)
+    ).one()
+    assert (queued.status, queued.payload["note_id"]) == (TaskStatus.PENDING, NOTE)
 
 
-def test_a_successful_fetch_writes_both_in_one_go(db, run, post, worker, monkeypatch):
+def test_the_fetch_then_extract_pair_produces_one_extraction(db, run, post, worker, monkeypatch):
     queued_task(db, run)
     monkeypatch.setattr(fetch.client, "fetch_note", lambda n, t: CARD)
     monkeypatch.setattr(extract.gemini, "generate", lambda *a, **k: result([place()]))
 
-    worker.run_once()
+    worker.run_once()  # rednote.fetch
+    worker.run_once()  # rednote.extract
 
     db.expire_all()
     assert db.get(RedNotePost, NOTE).description is not None

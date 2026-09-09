@@ -37,10 +37,12 @@ same city join one run — a unique index on active runs per city enforces that.
 and per note. One worker, not one per source: `queue.claim` has no `kind` filter and a throttle wait
 goes back to the queue, so nothing starves.
 
-**3. Extract.** `youtube.extract` pulls a transcript; `rednote.fetch` pulls a note body and calls
-Gemini **inline as a child call**, so body and extraction commit together. OCR is a separate task,
-queued only when the note's `desc` named nothing. Output is candidate place *names* in
-`extractions` — prose and opinion only, never facts.
+**3. Extract.** The LLM is always its own step, because it is the flakiest one and must never roll
+back a paid fetch: `rednote.fetch` stores the body and queues `rednote.extract`, and
+`youtube.extract` commits the transcript before it calls Gemini. A failed extraction therefore
+retries against stored text and spends no RedNote call. OCR is a separate task too, queued only when
+the note's `desc` named nothing. Output is candidate place *names* in `extractions` — prose and
+opinion only, never facts.
 
 **4. Resolve.** `places.resolve` turns one extraction's candidates into `places` + `place_mentions`
 via Places `searchText`. **`place_id` is the identity, never the name** — that is what makes two
@@ -58,6 +60,14 @@ them into days; `PUT /trips/{id}/itinerary` replaces whole days, because a drag 
 a sequence and positions are dense and derived. `POST /trips/{id}/days/{n}/route` then routes that
 exact order through `computeRoutes`, checks it against Place Details hours and local daylight, and
 returns structured warning codes — the client owns the English.
+
+**7. Draft.** `route.plan` fills a trip's *empty* days so the plan screen opens filled — **one Gemini
+call in a loop, not an agent**: the shortlist is already a closed ranked set and `plan_day` already
+judges hours, so the model only proposes an arrangement and never goes looking. A day the user has
+touched is theirs. It is queued automatically once (warm city at `/initiate-plan`, otherwise when the
+city run settles DONE) and on demand by `POST /trips/{id}/draft`, which the plan screen's "Draft my
+days" button calls. `GET /trips/{id}` reports the task as `draft` plus a progress row, which is what
+the checklist polls — without it a draft in flight looks like a feature that does not exist.
 
 ## Budgets
 

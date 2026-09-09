@@ -55,7 +55,14 @@ export const FAILURE_TEXT: Record<string, string> = {
   transient: "Gave up after repeated errors",
 };
 
-export type TripStatus = Trip & { progress: TaskProgress[]; failures: TaskFailure[] };
+/** `draft` is the route.plan task's status, or null if this trip was never drafted. */
+export type TripStatus = Trip & {
+  progress: TaskProgress[];
+  failures: TaskFailure[];
+  draft: string | null;
+};
+
+export const DRAFT_PENDING = ["pending", "running"];
 
 export type InitiatePlanRequest = {
   city_place_id: string;

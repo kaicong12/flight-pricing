@@ -11,7 +11,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from libs.db import IngestRun, IngestTask, Place, Trip
-from libs.db.enums import RunKind, TaskStatus
+from libs.db.enums import RunKind, TaskKind, TaskStatus
 from libs.ingest import ensure_city, ensure_city_ingest, ensure_trip_plan
 from libs.places import NotACity, PlacesError
 from libs.settings import settings
@@ -112,6 +112,17 @@ DONE_TASK_STATUSES = (TaskStatus.DONE, TaskStatus.SKIPPED)
 MAX_FAILURES_SHOWN = 25
 
 
+def draft_task(db: Session, trip_id: str) -> IngestTask | None:
+    """The trip's most recent route.plan task. Keyed on the payload because a planning run is per
+    city, so the run alone cannot say which trip it drafted."""
+    return db.scalars(
+        select(IngestTask)
+        .where(IngestTask.kind == TaskKind.ROUTE_PLAN,
+               IngestTask.payload["trip_id"].astext == trip_id)
+        .order_by(IngestTask.task_id.desc())
+    ).first()
+
+
 @app.get("/trips", response_model=list[TripSummaryOut])
 def list_trips(db: Db) -> list[TripSummaryOut]:
     trips = db.scalars(
@@ -210,6 +221,12 @@ def get_trip(trip_id: str, db: Db) -> TripStatusOut:
         failures = [TaskFailure(kind=r.kind, status=r.status, error_code=r.error_code,
                                 last_error=r.last_error, count=r.n) for r in bad]
 
+    # The draft lives in a trip_planning run, which the query above deliberately excludes, so it is
+    # appended by hand. Without it the checklist shows nothing while a draft is in flight.
+    draft = draft_task(db, trip_id)
+    if draft is not None:
+        progress.append(TaskProgress(kind=draft.kind, status=draft.status, count=1))
+
     return TripStatusOut(
         trip_id=trip.trip_id,
         name=trip.name,
@@ -224,6 +241,7 @@ def get_trip(trip_id: str, db: Db) -> TripStatusOut:
         deleted=trip.deleted,
         progress=progress,
         failures=failures,
+        draft=draft.status if draft is not None else None,
     )
 
 
@@ -249,6 +267,22 @@ def rename_trip(trip_id: str, body: TripPatch, db: Db) -> TripOut:
         notes=notes_for(trip.arrive_date),
         deleted=trip.deleted,
     )
+
+
+@app.post("/trips/{trip_id}/draft", status_code=202)
+def draft_trip(trip_id: str, db: Db) -> dict[str, str | None]:
+    """Queue a draft for this trip's empty days. The handler leaves a touched day alone, so this is
+    safe to call again; the client warns first only so the user is not surprised by new blocks."""
+    trip = db.get(Trip, trip_id)
+    if trip is None or trip.deleted:
+        raise HTTPException(404, "no such trip")
+
+    pending = draft_task(db, trip_id)
+    if pending is not None and pending.status in (TaskStatus.PENDING, TaskStatus.RUNNING):
+        return {"status": pending.status}
+
+    ensure_trip_plan(db, trip, force=True)
+    return {"status": TaskStatus.PENDING}
 
 
 @app.delete("/trips/{trip_id}", status_code=204)

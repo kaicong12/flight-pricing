@@ -70,6 +70,24 @@ def test_a_completed_run_marks_the_city_ingested(worker, db, run):
     assert db.get(City, HELSINKI).last_ingested_at is not None
 
 
+def test_a_trip_planning_run_does_not_make_the_city_fresh(worker, db):
+    """A draft reads no source, so settling one must not buy the city another city_refresh_days of
+    "fresh" — that would silently suppress the next real ingestion of it."""
+    make_city(db)
+    plan_run = IngestRun(run_id="plan-1", city_id=HELSINKI, kind=RunKind.TRIP_PLANNING,
+                         status=RunStatus.PENDING)
+    db.add(plan_run)
+    db.commit()
+    add_task(db, plan_run, kind=TaskKind.ROUTE_PLAN, dedupe_key="route.plan:trip-1")
+    HANDLERS[TaskKind.ROUTE_PLAN] = lambda s, t: {"days": 3}
+
+    worker.run_once()
+
+    db.expire_all()
+    assert db.get(IngestRun, "plan-1").status == RunStatus.DONE
+    assert db.get(City, HELSINKI).last_ingested_at is None
+
+
 def test_an_unhandled_kind_is_blocked_not_failed(worker, db, run):
     task = add_task(db, run, kind=TaskKind.REDNOTE_FETCH, dedupe_key="fetch:1")
 
