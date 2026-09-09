@@ -1,7 +1,6 @@
 """Turning an extracted name into a cache key, a decision to call Google, and a confidence score.
 
-Pure functions, so they can be tuned against real extractions with no API calls — see
-`python -m tp_ingestions --resolve-preview <run_id>`.
+Pure functions, so they can be tuned against real extractions with no API calls.
 """
 
 import math

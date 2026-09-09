@@ -1,0 +1,54 @@
+# Opt-in overlay, brought up by `make observability`. Kept out of docker-compose.yml because a metrics
+# UI has no business on the box it is watching, and Prometheus grows with retention and series count
+# while that stack is sized for a 1 GiB t4g.micro. See docs/observability.md.
+
+# Same escape hatch as docker-compose.yml: behind corporate TLS interception dockerd cannot verify
+# docker.io, so point DOCKER_REGISTRY at an internal mirror. Unset is correct everywhere else.
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  prometheus:
+    image: ${DOCKER_REGISTRY:-docker.io}/prom/prometheus:v3.1.0
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      # The TSDB is the only copy of the history — the app keeps nothing. ~2 MB/day here, so 90 days
+      # is ~200 MB.
+      - --storage.tsdb.retention.time=90d
+    volumes:
+      - ./observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    # host.docker.internal is a Docker Desktop / Colima nicety; this makes it resolve on Linux too.
+    extra_hosts: ["host.docker.internal:host-gateway"]
+    # Loopback only. A public box must not serve its own dashboards to the internet.
+    ports: ["127.0.0.1:9090:9090"]
+    restart: unless-stopped
+    mem_limit: 256m
+    logging: *logging
+
+  grafana:
+    image: ${DOCKER_REGISTRY:-docker.io}/grafana/grafana:11.5.0
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin}
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_USERS_DEFAULT_THEME: dark
+    volumes:
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    # 3001, because WEB_PORT already has 3000.
+    ports: ["127.0.0.1:3001:3000"]
+    depends_on: [prometheus]
+    restart: unless-stopped
+    mem_limit: 256m
+    logging: *logging
+
+volumes:
+  prometheus-data:
+  grafana-data:
