@@ -171,7 +171,9 @@ function Slot({ day, minute, blocked }: { day: number; minute: number; blocked: 
       className={cn(
         "border-t",
         minute % 60 === 0 ? "border-border" : "border-hairline",
-        blocked && "bg-[repeating-linear-gradient(135deg,transparent_0_5px,rgba(37,43,32,0.05)_5px_6px)]",
+        // Tinted gaps, not transparent ones: at 5% ink on paper the hatch was easy to miss, and
+        // an hour the flight has taken away has to read as unusable at a glance.
+        blocked && "bg-[repeating-linear-gradient(135deg,rgba(37,43,32,0.04)_0_4px,rgba(37,43,32,0.11)_4px_6px)]",
         isOver && "bg-brand-bg",
       )}
       style={{ height: SLOT_PX }}

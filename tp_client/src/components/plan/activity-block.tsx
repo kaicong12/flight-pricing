@@ -1,7 +1,8 @@
 "use client";
 
 // One activity block, positioned on the grid at the time the user pinned it to. Drag the body to
-// move it, drag either edge to change how long you spend there.
+// move it earlier or later within its own day, drag either edge to change how long you spend there.
+// Use the X to take it off the day; there is no drag that moves it to another one.
 //
 // Warnings sit under the grid rather than inside the block: a block's height is its duration, so
 // there is no room to grow into, and the alert border already says which block is the problem.
