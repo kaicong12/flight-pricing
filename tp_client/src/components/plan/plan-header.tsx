@@ -6,15 +6,17 @@
 import { Check, Link2, RefreshCw } from "lucide-react";
 import { useState } from "react";
 
+import { DraftPlan } from "@/components/plan/draft-plan";
 import { TripName } from "@/components/trip-name";
 import type { Trip } from "@/lib/api-types";
-import type { TravelMode } from "@/lib/plan-types";
+import type { ItineraryDay, TravelMode } from "@/lib/plan-types";
 import { PROVISIONAL_TEXT, shortTime } from "@/lib/plan-types";
 import { formatRange } from "@/lib/trips";
 import { cn } from "@/lib/utils";
 
 export function PlanHeader({
   trip,
+  days,
   placeCount,
   provisional,
   mode,
@@ -24,6 +26,7 @@ export function PlanHeader({
   onReroute,
 }: {
   trip: Trip;
+  days: ItineraryDay[];
   placeCount: number;
   provisional: string[];
   mode: TravelMode;
@@ -90,6 +93,8 @@ export function PlanHeader({
             </button>
           ))}
         </div>
+
+        <DraftPlan tripId={trip.trip_id} days={days} />
 
         <button
           type="button"

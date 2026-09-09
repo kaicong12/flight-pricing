@@ -7,7 +7,7 @@ from sqlalchemy import func, select, text, update
 from sqlalchemy.orm import Session
 
 from libs.db import City, IngestRun, IngestTask
-from libs.db.enums import ErrorCode, RunStatus, TaskStatus
+from libs.db.enums import ErrorCode, RunKind, RunStatus, TaskStatus
 
 ACTIVE_TASK = (TaskStatus.PENDING, TaskStatus.RUNNING)
 ACTIVE_RUN = (RunStatus.PENDING, RunStatus.RUNNING)
@@ -142,9 +142,11 @@ def finish_run_if_done(session: Session, run_id: str) -> str | None:
     if not settled:
         return None
 
-    # Only real completed work makes a city fresh; otherwise a run that did nothing would suppress
-    # the next one for city_refresh_days.
-    if done:
+    # Only real completed discovery makes a city fresh; otherwise a run that did nothing would
+    # suppress the next one for city_refresh_days. A trip_planning run carries a city_id but reads no
+    # source at all, so it must never buy the city another 30 days of "fresh".
+    if done and session.scalar(select(IngestRun.kind).where(IngestRun.run_id == run_id)) \
+            == RunKind.CITY_INGEST:
         run_city = select(IngestRun.city_id).where(IngestRun.run_id == run_id).scalar_subquery()
         session.execute(
             update(City).where(City.city_id == run_city).values(last_ingested_at=func.now())

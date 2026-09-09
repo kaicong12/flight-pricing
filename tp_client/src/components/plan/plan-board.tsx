@@ -271,6 +271,7 @@ export function PlanBoard({
     >
       <PlanHeader
         trip={trip}
+        days={state.days}
         placeCount={state.total}
         provisional={provisional}
         mode={state.mode}

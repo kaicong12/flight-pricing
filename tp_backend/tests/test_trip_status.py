@@ -77,6 +77,68 @@ def test_progress_reflects_a_finished_run(client, db):
     assert all(p["status"] == TaskStatus.DONE for p in body["progress"])
 
 
+def test_a_trip_with_no_draft_reports_none(client):
+    created = client.post("/initiate-plan", json=plan_body()).json()
+    body = client.get(f"/trips/{created['trip_id']}").json()
+
+    assert body["draft"] is None
+    assert TaskKind.ROUTE_PLAN not in [p["kind"] for p in body["progress"]]
+
+
+def test_the_draft_shows_as_a_checklist_row_while_it_runs(client, db):
+    """The plan run is excluded from the progress query by kind, so without the explicit append the
+    checklist shows nothing at all while a draft is in flight — which reads as "not implemented"."""
+    trip_id = client.post("/initiate-plan", json=plan_body()).json()["trip_id"]
+    assert client.post(f"/trips/{trip_id}/draft").status_code == 202
+
+    body = client.get(f"/trips/{trip_id}").json()
+    assert body["draft"] == TaskStatus.PENDING
+    assert (TaskKind.ROUTE_PLAN, TaskStatus.PENDING, 1) in [
+        (p["kind"], p["status"], p["count"]) for p in body["progress"]
+    ]
+
+    db.execute(update(IngestTask)
+               .where(IngestTask.kind == TaskKind.ROUTE_PLAN)
+               .values(status=TaskStatus.RUNNING))
+    db.commit()
+    assert client.get(f"/trips/{trip_id}").json()["draft"] == TaskStatus.RUNNING
+
+
+def test_drafting_twice_does_not_queue_a_second_pending_task(client):
+    """The button is clickable again the moment the request returns, so this must be idempotent."""
+    trip_id = client.post("/initiate-plan", json=plan_body()).json()["trip_id"]
+
+    client.post(f"/trips/{trip_id}/draft")
+    client.post(f"/trips/{trip_id}/draft")
+
+    body = client.get(f"/trips/{trip_id}").json()
+    rows = [p for p in body["progress"] if p["kind"] == TaskKind.ROUTE_PLAN]
+    assert [(r["status"], r["count"]) for r in rows] == [(TaskStatus.PENDING, 1)]
+
+
+def test_a_finished_draft_can_be_asked_for_again(client, db):
+    """`force` exists for exactly this: the automatic path is once-ever, the button is not."""
+    trip_id = client.post("/initiate-plan", json=plan_body()).json()["trip_id"]
+    client.post(f"/trips/{trip_id}/draft")
+    db.execute(update(IngestTask)
+               .where(IngestTask.kind == TaskKind.ROUTE_PLAN)
+               .values(status=TaskStatus.DONE))
+    db.commit()
+
+    assert client.post(f"/trips/{trip_id}/draft").json()["status"] == TaskStatus.PENDING
+    assert db.scalars(
+        select(IngestTask.status).where(IngestTask.kind == TaskKind.ROUTE_PLAN)
+    ).all() == [TaskStatus.DONE, TaskStatus.PENDING]
+
+
+def test_drafting_a_missing_or_deleted_trip_is_a_404(client):
+    trip_id = client.post("/initiate-plan", json=plan_body()).json()["trip_id"]
+    client.delete(f"/trips/{trip_id}")
+
+    assert client.post("/trips/nope/draft").status_code == 404
+    assert client.post(f"/trips/{trip_id}/draft").status_code == 404
+
+
 def test_name_defaults_to_null_so_the_client_can_fall_back(client):
     created = client.post("/initiate-plan", json=plan_body()).json()
     assert created["name"] is None
