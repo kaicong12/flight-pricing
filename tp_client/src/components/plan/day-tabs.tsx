@@ -4,6 +4,7 @@
 // screen at a time, so its tab is the only place a cross-day drag can land.
 
 import { useDroppable } from "@dnd-kit/core";
+import { useEffect, useRef } from "react";
 
 import type { ItineraryDay } from "@/lib/plan-types";
 import { formatDayTab } from "@/lib/plan-types";
@@ -19,10 +20,12 @@ export function DayTabs({
   onSelect: (day: number) => void;
 }) {
   return (
+    // One row that scrolls: a fortnight wrapped onto three rows pushed the day itself off screen.
+    // overflow-y stays hidden because a scrolling box turns the tabs' -mb-px into vertical overflow.
     <div
       role="tablist"
       aria-label="Trip days"
-      className="flex flex-wrap items-center gap-1 border-b border-border px-5"
+      className="flex items-center gap-1 overflow-x-auto overflow-y-hidden border-b border-border px-5"
     >
       {days.map((day) => (
         <DayTab
@@ -49,16 +52,26 @@ function DayTab({
     id: `tab:${day.day_index}`,
     data: { kind: "day", day: day.day_index },
   });
+  const node = useRef<HTMLButtonElement | null>(null);
+
+  // Selecting a day by dropping onto it, or landing on a trip whose active day is far along, would
+  // otherwise leave the selected tab outside the scrolled row.
+  useEffect(() => {
+    if (active) node.current?.scrollIntoView({ inline: "nearest", block: "nearest" });
+  }, [active]);
 
   return (
     <button
-      ref={setNodeRef}
+      ref={(el) => {
+        node.current = el;
+        setNodeRef(el);
+      }}
       type="button"
       role="tab"
       aria-selected={active}
       onClick={onSelect}
       className={cn(
-        "-mb-px flex h-11 items-center gap-2 border-b-2 px-2.5 text-[13.5px] font-medium transition-colors outline-none focus-visible:ring-3 focus-visible:ring-ring/50",
+        "-mb-px flex h-11 shrink-0 items-center gap-2 whitespace-nowrap border-b-2 px-2.5 text-[13.5px] font-medium transition-colors outline-none focus-visible:ring-3 focus-visible:ring-ring/50",
         active
           ? "border-ink text-ink"
           : "border-transparent text-muted-foreground hover:text-ink",
