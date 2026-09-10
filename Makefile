@@ -13,17 +13,32 @@ KEEP_DATA ?= 1
 BACKEND := tp_backend
 CLIENT  := tp_client
 ALEMBIC := uv run alembic -c libs/db/alembic.ini
+# The deploy stack plus a local database. Named explicitly rather than as docker-compose.override.yml,
+# which every `docker compose` command would merge — including the deploy box's.
+LOCAL_STACK := -f docker-compose.yml -f docker-compose.local.yml
+# Host port for the local database, for DBeaver and psql. 5432 is a native Postgres here and 5433 is
+# another project's, so 5434 — override if that one is taken too.
+DEV_DB_PORT ?= 5434
+# Host ports for the observability UIs. GRAFANA_PORT is not 3001 by default here because another
+# project's dev server on 3001 silently wins localhost and serves you its 404 page instead.
+GRAFANA_PORT    ?= 3002
+PROMETHEUS_PORT ?= 9090
+LOKI_PORT       ?= 3100
+OBS_PORTS := GRAFANA_PORT=$(GRAFANA_PORT) PROMETHEUS_PORT=$(PROMETHEUS_PORT) LOKI_PORT=$(LOKI_PORT)
 
-.PHONY: help install dev api web worker migrate revision test lint build clean observability \
-        observability-down
+.PHONY: help install dev dev-container dev-container-down api web worker migrate revision test lint \
+        build clean observability observability-down
 
 help:
-	@echo "make dev        api + worker + web, one Ctrl-C stops all three"
+	@echo "make dev        api + worker + web on the host, with reload; one Ctrl-C stops all three"
+	@echo "make dev-container   the same stack in containers, as deployed — no reload, but real"
+	@echo "                     container networking and its logs reach Loki. 'make web' alongside."
+	@echo "make dev-container-down   stop it"
 	@echo "make api        backend only (migrate, then api + worker)"
 	@echo "make web        web app only, against API_PORT"
 	@echo "make worker     the ingestion worker on its own"
-	@echo "make observability   prometheus + grafana, scraping the API's /metrics"
-	@echo "make observability-down   stop them; add KEEP_DATA=0 to discard the metric history"
+	@echo "make observability   prometheus + loki + alloy + grafana"
+	@echo "make observability-down   stop them; add KEEP_DATA=0 to discard the history"
 	@echo "make install    uv sync + npm ci"
 	@echo "make migrate    alembic upgrade head"
 	@echo "make revision m='what changed'   autogenerate a migration"
@@ -80,17 +95,36 @@ web:
 worker:
 	cd $(BACKEND) && uv run python -m tp_ingestions
 
+# The deployed stack, on your machine: the same docker-compose.yml the box runs, so container
+# networking, the image's own dependencies and Alloy's log collection are all the real thing. No
+# reload — the image is what ships. Use `make dev` when you want reload instead.
+#
+# The web app is deliberately not here: tp_client is on Vercel, so leaving it on the host with
+# `make web` is the faithful arrangement, not a shortcut.
+dev-container:
+	@test -f .env || (echo "!! no repo-root .env — the API keys come from there" && exit 1)
+	@echo "==> api http://localhost:$(API_PORT)   (run 'make web' in another terminal)"
+	@echo "    db  localhost:$(DEV_DB_PORT)  tp/tp/trip_planner — its own database, not 'make dev's"
+	DEV_DB_PORT=$(DEV_DB_PORT) docker compose $(LOCAL_STACK) up --build
+
+# Keeps dev-db, so the local database survives. KEEP_DATA=0 discards it.
+dev-container-down:
+	DEV_DB_PORT=$(DEV_DB_PORT) docker compose $(LOCAL_STACK) down $(if $(filter 0,$(KEEP_DATA)),--volumes)
+
 # Separate from `make dev` so the one command you use all day never needs a docker daemon.
 observability:
 	@echo "==> Starting Observability stack..."
-	docker compose -f docker-compose.observability.yml up -d
-	@echo "==> Grafana  http://localhost:3001  (dashboard: API latency)"
-	@echo "    Prometheus http://localhost:9090/targets"
+	$(OBS_PORTS) docker compose -f docker-compose.observability.yml up -d
+	@echo "==> Grafana  http://localhost:$(GRAFANA_PORT)  (dashboard: API latency; Explore for logs)"
+	@echo "    Prometheus http://localhost:$(PROMETHEUS_PORT)/targets"
 	@echo "    Scrapes host.docker.internal:8000, so run 'make dev' or 'make api' alongside."
+	@echo "    Logs are collected from containers, so {service=\"api\"} fills up under"
+	@echo "    'make dev-container'. Under 'make dev' the processes are on the host and your"
+	@echo "    terminal is the log viewer."
 
 observability-down:
 	@echo "==> Stopping Observability stack..."
-	docker compose -f docker-compose.observability.yml down $(if $(filter 0,$(KEEP_DATA)),--volumes)
+	$(OBS_PORTS) docker compose -f docker-compose.observability.yml down $(if $(filter 0,$(KEEP_DATA)),--volumes)
 	@test "$(KEEP_DATA)" = "0" \
 	    && echo "==> volumes removed, metric history discarded" \
 	    || echo "==> volumes kept, metric history survives the next 'make observability'"

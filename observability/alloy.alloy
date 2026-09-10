@@ -1,0 +1,53 @@
+// Stream this host's container logs into Loki. See docs/observability.md.
+
+// The Docker socket rather than /var/lib/docker/containers/*/*-json.log: that path only exists on a
+// Linux host, and tailing it yields a container id, which changes on every restart. Discovery is what
+// supplies a label that does not.
+discovery.docker "containers" {
+  host = "unix:///var/run/docker.sock"
+  // 2s, not the 15s default: migrate runs alembic and exits in about that long, and a container that
+  // is gone before the first poll is never tailed at all. A failed migration is exactly the thing
+  // worth having here, so the cost — one extra Docker API call every couple of seconds — is worth it.
+  // It narrows the race rather than closing it; a container that exits instantly is still missed.
+  refresh_interval = "2s"
+}
+
+discovery.relabel "services" {
+  targets = discovery.docker.containers.targets
+
+  // This host's daemon shows every container on it, so on a laptop that is also running other
+  // projects their logs would land here too. Keep this project's own.
+  rule {
+    source_labels = ["__meta_docker_container_label_com_docker_compose_project"]
+    regex         = coalesce(sys.env("COMPOSE_PROJECT_NAME"), "flight-pricing")
+    action        = "keep"
+  }
+
+  // compose stamps this on everything it starts, and it survives a restart where the id does not.
+  rule {
+    source_labels = ["__meta_docker_container_label_com_docker_compose_service"]
+    target_label  = "service"
+  }
+
+  // An allowlist, not a denylist of the observability stack: a service added to docker-compose.yml
+  // later is then not collected until it is named here, rather than silently the moment it starts.
+  // Both rules are needed — service names are not unique across projects, so this one alone would
+  // also take another project's "api".
+  rule {
+    source_labels = ["service"]
+    regex         = "api|worker|migrate"
+    action        = "keep"
+  }
+}
+
+loki.source.docker "containers" {
+  host       = "unix:///var/run/docker.sock"
+  targets    = discovery.relabel.services.output
+  forward_to = [loki.write.local.receiver]
+}
+
+loki.write "local" {
+  endpoint {
+    url = "http://loki:3100/loki/api/v1/push"
+  }
+}
