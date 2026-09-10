@@ -1,9 +1,9 @@
 "use client";
 
-// Day tabs, which are also the drop target for moving a block to another day: only one day is on
-// screen at a time, so its tab is the only place a cross-day drag can land.
+// Day tabs. Deliberately not drop targets: a block belongs to the day it is on, and dragging it
+// only moves it in time. Moving one to another day is remove-then-add-back, so switching tabs
+// mid-drag cannot silently reschedule it.
 
-import { useDroppable } from "@dnd-kit/core";
 import { useEffect, useRef } from "react";
 
 import type { ItineraryDay } from "@/lib/plan-types";
@@ -48,24 +48,17 @@ function DayTab({
   active: boolean;
   onSelect: () => void;
 }) {
-  const { setNodeRef, isOver } = useDroppable({
-    id: `tab:${day.day_index}`,
-    data: { kind: "day", day: day.day_index },
-  });
   const node = useRef<HTMLButtonElement | null>(null);
 
-  // Selecting a day by dropping onto it, or landing on a trip whose active day is far along, would
-  // otherwise leave the selected tab outside the scrolled row.
+  // Landing on a trip whose active day is far along would otherwise leave the selected tab outside
+  // the scrolled row.
   useEffect(() => {
     if (active) node.current?.scrollIntoView({ inline: "nearest", block: "nearest" });
   }, [active]);
 
   return (
     <button
-      ref={(el) => {
-        node.current = el;
-        setNodeRef(el);
-      }}
+      ref={node}
       type="button"
       role="tab"
       aria-selected={active}
@@ -75,7 +68,6 @@ function DayTab({
         active
           ? "border-ink text-ink"
           : "border-transparent text-muted-foreground hover:text-ink",
-        isOver && "border-brand bg-brand-bg text-brand",
       )}
     >
       {formatDayTab(day.date)}

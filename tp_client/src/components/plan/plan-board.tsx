@@ -213,14 +213,16 @@ export function PlanBoard({
     const overData = over.data.current as
       | { kind?: string; day?: number; minute?: number }
       | undefined;
-    if (overData?.day === undefined) return;
+    // A half-hour slot is the only thing that takes a drop, and only the active day draws any, so
+    // every drop names both a time and the day already on screen.
+    if (overData?.kind !== "slot" || overData.day === undefined || overData.minute === undefined) {
+      return;
+    }
 
     const targetDay = overData.day;
-    // A slot names its time. A day tab does not, so a cross-day drop keeps the block's own time.
-    const slotMin = overData.kind === "slot" ? overData.minute : undefined;
+    const slotMin = overData.minute;
 
     if (activeId.startsWith("shortlist:")) {
-      if (slotMin === undefined) return;
       const place = (active.data.current as { place: ShortlistPlace }).place;
       const room = availableWindow(trip, targetDay, state.days.length).to - slotMin;
       dispatch({
@@ -234,25 +236,15 @@ export function PlanBoard({
           Math.min(DEFAULT_DURATION, Math.floor(room / SLOT_MIN) * SLOT_MIN),
         ),
       });
-      if (targetDay !== state.activeDay) dispatch({ type: "activeDay", day: targetDay });
       return;
     }
 
     const placeId = activeId.slice("item:".length);
     const fromDay = dayOf(state, placeId);
     if (fromDay === null) return;
-    const moving = state.days
-      .find((d) => d.day_index === fromDay)
-      ?.items.find((i) => i.place_id === placeId);
-    if (!moving) return;
 
-    dispatch({
-      type: "pin",
-      placeId,
-      fromDay,
-      toDay: targetDay,
-      startMin: slotMin ?? moving.start_min,
-    });
+    // toDay is the block's own day, never the drop's: dragging changes when, never which day.
+    dispatch({ type: "pin", placeId, fromDay, toDay: fromDay, startMin: slotMin });
   }
 
   if (!day) return null;
@@ -345,7 +337,22 @@ export function PlanBoard({
  */
 const collisionDetection: typeof pointerWithin = (args) => {
   const hit = pointerWithin(args);
-  return hit.length > 0 ? hit : closestCenter(args);
+  if (hit.length > 0) return hit;
+
+  // A blocked hour is not a droppable, so closestCenter is what keeps a drop on the hatched part of
+  // the grid forgiving. Off the grid altogether — a day tab, say — that same fallback would snap to
+  // whichever slot happened to be nearest and silently retime the block, so a stray drag has to
+  // mean nothing instead. A keyboard drag has no pointer and keeps the fallback.
+  const pointer = args.pointerCoordinates;
+  if (!pointer) return closestCenter(args);
+  const grid = document.querySelector("[data-grid]")?.getBoundingClientRect();
+  const onGrid =
+    grid !== undefined &&
+    pointer.x >= grid.left &&
+    pointer.x <= grid.right &&
+    pointer.y >= grid.top &&
+    pointer.y <= grid.bottom;
+  return onGrid ? closestCenter(args) : [];
 };
 
 function labelFor(state: PlanState, dragId: string): string {
