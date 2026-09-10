@@ -128,8 +128,11 @@ config, no second copy to drift.
 
 **Logs are the exception to that.** `dev.sh` runs uvicorn and the worker as host processes, so there is
 no container for Alloy to read and `make dev` sends nothing to Loki — your terminal is the log viewer
-locally, which is also why the format stays human-readable on a TTY. Loki fills up from the deployed
-stack, or from `docker compose up` locally.
+locally, which is also why the format stays human-readable on a TTY.
+
+`make dev-container` is what fills Loki up locally: the same `docker-compose.yml` the box runs, so
+`{service="api"}` and `{service="worker"}` answer for real. It has no reload, which is the point — the
+image is what ships. See *Two ways to run it* in `docs/deploy.md`.
 
 Grafana's dashboards and datasources are provisioned from the files in `observability/grafana/`, so
 they are diffable and the UI is read-only. Edit the JSON, not the browser.

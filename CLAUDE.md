@@ -88,7 +88,10 @@ account must not become one budget per host.
 | `spikes/<topic>/` | Throwaway exploration. `routes_planning` is superseded by `libs/routing` |
 
 `make dev` runs everything locally — migrate + api + worker via `./dev.sh`, plus the web app — and one
-Ctrl-C stops all of it. `make help` lists the rest. `docker-compose.yml` runs the three backend
+Ctrl-C stops all of it. `make dev-container` runs the same backend from `docker-compose.yml` instead,
+with `docker-compose.local.yml` adding the `db` service RDS provides in production: no reload, but real
+container DNS and its logs reach Loki. `DATABASE_URL` is the only difference between the two stacks.
+`make help` lists the rest. `docker-compose.yml` runs the three backend
 services on a t4g.micro against RDS; `tp_client` is on Vercel, so there is no `web` service. See
 `docs/deploy.md`.
 

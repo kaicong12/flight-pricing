@@ -1,0 +1,67 @@
+# Local-only layer over docker-compose.yml, used by `make dev-container`. It adds the one thing the
+# deploy box does not need: a database. In production DATABASE_URL names a managed Postgres, and that
+# env var is the whole seam — nothing else differs.
+#
+# Deliberately NOT called docker-compose.override.yml. That filename is merged automatically by every
+# `docker compose` command, so the deploy box would pick it out of the checkout and start a Postgres
+# nobody asked for. This one only applies when named with -f.
+
+services:
+  db:
+    image: ${DOCKER_REGISTRY:-docker.io}/postgres:17
+    environment:
+      POSTGRES_USER: tp
+      POSTGRES_PASSWORD: tp
+      POSTGRES_DB: trip_planner
+    # For DBeaver and psql only. api, worker and migrate reach db:5432 over the compose network and
+    # never come through here. Not 5432, which a native Postgres holds; overridable because whichever
+    # number is picked, some other project is eventually already on it.
+    ports: ["127.0.0.1:${DEV_DB_PORT:-5434}:5432"]
+    volumes:
+      - dev-db:/var/lib/postgresql/data
+    # migrate starts on service_healthy, or alembic races an initdb that has not finished yet.
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tp -d trip_planner"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+      start_period: 5s
+    restart: unless-stopped
+    mem_limit: 256m
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # `db` is a hostname on the compose network, which is why no host.docker.internal is involved.
+  migrate:
+    environment:
+      DATABASE_URL: postgresql+psycopg://tp:tp@db:5432/trip_planner
+    depends_on:
+      db:
+        condition: service_healthy
+
+  api:
+    environment:
+      DATABASE_URL: postgresql+psycopg://tp:tp@db:5432/trip_planner
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+  worker:
+    environment:
+      DATABASE_URL: postgresql+psycopg://tp:tp@db:5432/trip_planner
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+volumes:
+  # Postgres's own data directory, in its own binary format. A named volume rather than a bind mount:
+  # the image runs as uid 999, and on macOS the shared-filesystem layer is both slow and a known way
+  # to corrupt a database. Read the tables over 5433, not off the disk.
+  dev-db:

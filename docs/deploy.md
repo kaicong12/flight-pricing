@@ -5,6 +5,35 @@ one worker. Postgres is RDS, so there is no `db` service — `DATABASE_URL` come
 `tp_client` is on Vercel, so there is no `web` service either; point Vercel's `TP_API_URL` at this
 API's public URL.
 
+## Two ways to run it locally
+
+| | `make dev` | `make dev-container` |
+|---|---|---|
+| Runs as | host processes | containers, from `docker-compose.yml` |
+| Reload | yes | **no** — the image is what ships |
+| Database | whatever `.env`'s `DATABASE_URL` names | a `db` service, on `localhost:$DEV_DB_PORT` (5434) |
+| Logs to Loki | no, there is no container to read | yes, `{service="api"}` |
+
+`make dev` is the one you use all day. `make dev-container` is for the questions only the real topology
+answers: container DNS, the image's own dependencies, what the log pipeline actually collects.
+
+`docker-compose.local.yml` is the only difference between the two container stacks, and it exists for
+one reason — the deploy box has RDS and a laptop does not. **`DATABASE_URL` is the entire seam**: the
+override points it at `db:5432`, a hostname compose resolves on its own network, the same way `alloy`
+reaches `loki`. Nothing else changes, and `docker-compose.yml` stays a description of the box.
+
+It is deliberately not named `docker-compose.override.yml`, which every `docker compose` command merges
+automatically — the deploy box would find it in the checkout and start a Postgres nobody asked for.
+
+The `db` service publishes `127.0.0.1:${DEV_DB_PORT:-5434}:5432` for DBeaver and `psql` only; the API
+does not go through it. 5432 is usually a native Postgres and 5433 tends to be some other project's,
+hence 5434 and hence the override. Its data lives in the `dev-db` **named volume** — Postgres's own
+binary format, so read the tables over the port, never off the disk. A bind mount there fails on uid
+permissions and, on macOS, is a known way to corrupt a database.
+
+Two databases now exist on your machine and they look identical in DBeaver, so name the connections:
+`5432` is `make dev`'s, `5434` is `make dev-container`'s. A trip created in one is not in the other.
+
 ## Build off the box
 
 `docker compose build` on the instance is not an option. `next build` and `uv sync` both need more
