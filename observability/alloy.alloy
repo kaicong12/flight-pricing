@@ -25,11 +25,14 @@ discovery.relabel "services" {
     target_label  = "service"
   }
 
-  // The observability stack logging about ingesting its own logs is a loop worth not having.
+  // An allowlist, not a denylist of the observability stack: a service added to docker-compose.yml
+  // later is then not collected until it is named here, rather than silently the moment it starts.
+  // Both rules are needed — service names are not unique across projects, so this one alone would
+  // also take another project's "api".
   rule {
     source_labels = ["service"]
-    regex         = "|alloy|loki|grafana|prometheus"
-    action        = "drop"
+    regex         = "api|worker|migrate"
+    action        = "keep"
   }
 }
 
