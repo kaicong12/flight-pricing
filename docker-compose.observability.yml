@@ -26,7 +26,7 @@ services:
     # host.docker.internal is a Docker Desktop / Colima nicety; this makes it resolve on Linux too.
     extra_hosts: ["host.docker.internal:host-gateway"]
     # Loopback only. A public box must not serve its own dashboards to the internet.
-    ports: ["127.0.0.1:9090:9090"]
+    ports: ["127.0.0.1:${PROMETHEUS_PORT:-9090}:9090"]
     restart: unless-stopped
     mem_limit: 256m
     logging: *logging
@@ -39,7 +39,7 @@ services:
       - loki-data:/loki
     # Loki is pushed to, not scraped, so unlike Prometheus it must be reachable while the app runs.
     # Still loopback: alloy and grafana reach it over the compose network, not this port.
-    ports: ["127.0.0.1:3100:3100"]
+    ports: ["127.0.0.1:${LOKI_PORT:-3100}:3100"]
     restart: unless-stopped
     mem_limit: 384m
     logging: *logging
@@ -76,8 +76,9 @@ services:
       - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
       - ./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
       - grafana-data:/var/lib/grafana
-    # 3001, because WEB_PORT already has 3000.
-    ports: ["127.0.0.1:3001:3000"]
+    # Not 3000, which WEB_PORT has. Overridable because 3001 is a popular choice — another
+    # project's dev server on it silently wins localhost and you get its 404 page, not Grafana.
+    ports: ["127.0.0.1:${GRAFANA_PORT:-3001}:3000"]
     depends_on: [prometheus, loki]
     restart: unless-stopped
     mem_limit: 256m

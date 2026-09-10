@@ -118,10 +118,18 @@ make dev              # or make api — the API must be up to be scraped
 make observability
 ```
 
-Grafana is on <http://localhost:3001> with the *API latency* dashboard already provisioned and both
+Grafana is on <http://localhost:3002> with the *API latency* dashboard already provisioned and both
 datasources wired; Prometheus is on <http://localhost:9090/targets>, which is where you confirm the
-scrape is actually working. All of it binds to loopback only, so a public box does not serve them. Stop
-them with:
+scrape is actually working. All of it binds to loopback only, so a public box does not serve them.
+
+Every one of those host ports is overridable — `GRAFANA_PORT`, `PROMETHEUS_PORT`, `LOKI_PORT` — and
+Grafana's default is 3002 rather than the more obvious 3001 for a reason worth knowing: when another
+process already holds a port, docker's publish loses the race **silently**. The container reports
+`Up`, `docker ps` shows the mapping, and the URL serves the other project's app. It looks like Grafana
+is broken when it is simply unreachable. If a dashboard URL returns someone else's 404 page, check
+`lsof -nP -iTCP:<port> -sTCP:LISTEN` before anything else.
+
+Stop them with:
 
 ```bash
 make observability-down                 # keeps both volumes, so history survives the next start
