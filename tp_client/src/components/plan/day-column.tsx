@@ -146,7 +146,9 @@ export function DayColumn({
             ws.map((w) => (
               <li key={`${placeId}:${w.code}`} className="flex gap-2.5 py-0.5">
                 <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-alert" />
-                <p className="text-[12.5px] leading-[1.45] text-alert">{warningText(w)}</p>
+                <p className="text-[12.5px] leading-[1.45] text-alert">
+                  {warningText(w, byPlace.get(placeId)?.name)}
+                </p>
               </li>
             )),
           )}
