@@ -1,5 +1,6 @@
 """The planning API. Creates a trip, then makes sure its city has been ingested."""
 
+import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Annotated
@@ -10,6 +11,7 @@ from fastapi import Depends, FastAPI, HTTPException, Query
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from libs import logs
 from libs.db import IngestRun, IngestTask, Place, Trip
 from libs.db.enums import RunKind, TaskKind, TaskStatus
 from libs.ingest import ensure_city, ensure_city_ingest, ensure_trip_plan
@@ -44,6 +46,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 app = FastAPI(title="Trip planner API", lifespan=lifespan)
 app.include_router(planning_router)
 metrics.install(app)
+logs.install()
+
+# uvicorn already logs a line per request, so nothing here repeats method, path or status. These are
+# the decisions behind a response that an access log cannot show.
+log = logging.getLogger("tp_api")
 
 Db = Annotated[Session, Depends(db_session)]
 Lookup = Annotated[CityLookup, Depends(city_lookup)]
@@ -65,6 +72,7 @@ def search_cities_endpoint(
     try:
         found = search(q, limit)
     except PlacesError as e:
+        log.warning("city search failed q=%r: %s", q, e)
         raise HTTPException(502, f"city search failed: {e}") from e
     return [CitySuggestionOut.model_validate(s, from_attributes=True) for s in found]
 
@@ -74,8 +82,10 @@ def initiate_plan(body: InitiatePlanRequest, db: Db, lookup: Lookup) -> TripOut:
     try:
         details = lookup(body.city_place_id)
     except NotACity as e:
+        log.warning("initiate-plan rejected place_id=%s: not a city: %s", body.city_place_id, e)
         raise HTTPException(422, f"not a city: {e}") from e
     except PlacesError as e:
+        log.warning("initiate-plan places lookup failed place_id=%s: %s", body.city_place_id, e)
         raise HTTPException(502, f"places lookup failed: {e}") from e
 
     city = ensure_city(db, details)
@@ -96,6 +106,10 @@ def initiate_plan(body: InitiatePlanRequest, db: Db, lookup: Lookup) -> TripOut:
     # A warm city queues no ingestion, so nothing would later trigger the draft.
     if run is None:
         ensure_trip_plan(db, trip)
+    # Which of the two paths a trip took is invisible from the response alone, and it decides whether
+    # anything is coming: a warm city's plan screen fills from a draft, a cold one's from a run.
+    log.info("initiate-plan trip=%s city=%s place_id=%s ingest=%s", trip.trip_id[:8], city.name,
+             city.city_id, f"run:{run.run_id} {run.status}" if run else "warm, draft queued")
     return TripOut(
         trip_id=trip.trip_id,
         name=trip.name,
@@ -281,9 +295,11 @@ def draft_trip(trip_id: str, db: Db) -> dict[str, str | None]:
 
     pending = draft_task(db, trip_id)
     if pending is not None and pending.status in (TaskStatus.PENDING, TaskStatus.RUNNING):
+        log.info("draft trip=%s not queued, one is already %s", trip_id[:8], pending.status)
         return {"status": pending.status}
 
     ensure_trip_plan(db, trip, force=True)
+    log.info("draft trip=%s queued", trip_id[:8])
     return {"status": TaskStatus.PENDING}
 
 

@@ -92,10 +92,13 @@ Ctrl-C stops all of it. `make help` lists the rest. `docker-compose.yml` runs th
 services on a t4g.micro against RDS; `tp_client` is on Vercel, so there is no `web` service. See
 `docs/deploy.md`.
 
-`make observability` adds Prometheus + Grafana as an opt-in overlay, scraping one histogram —
-`http_request_duration_seconds` — off the API's `/metrics`. The app stores nothing: Prometheus owns
-the history, so its volume is the thing that must survive. `route` is the route template, never the
-path. See `docs/observability.md`.
+`make observability` adds Prometheus + Loki + Alloy + Grafana as an opt-in overlay. Prometheus scrapes
+one histogram — `http_request_duration_seconds` — off the API's `/metrics`; Alloy pushes every
+container's stdout into Loki. The app stores neither: those two volumes are what must survive.
+**Metrics are pulled, logs are pushed** — so Prometheus tolerates a closed laptop and Loki does not.
+`route` is the route template and `service` is the compose service name, never a path or a container
+id: labels are indexed, so an unbounded one is what takes either store down. `libs/logs.py` writes
+JSON off a TTY and text on one, because `| json` is free at query time. See `docs/observability.md`.
 
 Run the worker as `python -m tp_ingestions`, **not `--once`**: a throttle wait goes back to the queue
 via `run_after` and `drain()` exits as soon as nothing is due.

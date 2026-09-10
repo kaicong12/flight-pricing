@@ -1,0 +1,46 @@
+// Stream this host's container logs into Loki. See docs/observability.md.
+
+// The Docker socket rather than /var/lib/docker/containers/*/*-json.log: that path only exists on a
+// Linux host, and tailing it yields a container id, which changes on every restart. Discovery is what
+// supplies a label that does not.
+discovery.docker "containers" {
+  host             = "unix:///var/run/docker.sock"
+  refresh_interval = "15s"
+}
+
+discovery.relabel "services" {
+  targets = discovery.docker.containers.targets
+
+  // This host's daemon shows every container on it, so on a laptop that is also running other
+  // projects their logs would land here too. Keep this project's own.
+  rule {
+    source_labels = ["__meta_docker_container_label_com_docker_compose_project"]
+    regex         = coalesce(sys.env("COMPOSE_PROJECT_NAME"), "flight-pricing")
+    action        = "keep"
+  }
+
+  // compose stamps this on everything it starts, and it survives a restart where the id does not.
+  rule {
+    source_labels = ["__meta_docker_container_label_com_docker_compose_service"]
+    target_label  = "service"
+  }
+
+  // The observability stack logging about ingesting its own logs is a loop worth not having.
+  rule {
+    source_labels = ["service"]
+    regex         = "|alloy|loki|grafana|prometheus"
+    action        = "drop"
+  }
+}
+
+loki.source.docker "containers" {
+  host       = "unix:///var/run/docker.sock"
+  targets    = discovery.relabel.services.output
+  forward_to = [loki.write.local.receiver]
+}
+
+loki.write "local" {
+  endpoint {
+    url = "http://loki:3100/loki/api/v1/push"
+  }
+}

@@ -84,9 +84,11 @@ worker:
 observability:
 	@echo "==> Starting Observability stack..."
 	docker compose -f docker-compose.observability.yml up -d
-	@echo "==> Grafana  http://localhost:3001  (dashboard: API latency)"
+	@echo "==> Grafana  http://localhost:3001  (dashboard: API latency; Explore for logs)"
 	@echo "    Prometheus http://localhost:9090/targets"
 	@echo "    Scrapes host.docker.internal:8000, so run 'make dev' or 'make api' alongside."
+	@echo "    Logs come from containers only — 'make dev' runs host processes, so read those in your"
+	@echo "    terminal. Try {service=\"api\"} in Explore against the deployed stack."
 
 observability-down:
 	@echo "==> Stopping Observability stack..."

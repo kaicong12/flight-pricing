@@ -1,0 +1,46 @@
+# Single-binary Loki: one process, filesystem storage, no object store. See docs/observability.md.
+
+auth_enabled: false
+
+server:
+  http_listen_port: 3100
+  # Loki is chatty at info, and its own logs are not the ones being collected here.
+  log_level: warn
+
+common:
+  instance_addr: 127.0.0.1
+  path_prefix: /loki
+  storage:
+    filesystem:
+      chunks_directory: /loki/chunks
+      rules_directory: /loki/rules
+  replication_factor: 1
+  ring:
+    kvstore:
+      store: inmemory
+
+schema_config:
+  configs:
+    # tsdb + v13 is what allows structured metadata, which is where trace ids go when traces land.
+    - from: 2024-01-01
+      store: tsdb
+      object_store: filesystem
+      schema: v13
+      index:
+        prefix: index_
+        period: 24h
+
+limits_config:
+  # 90 days, the same window Prometheus keeps, so a spike and its logs expire together.
+  retention_period: 2160h
+  # A container that restarts can replay a few old lines; rejecting them loses the crash that caused it.
+  reject_old_samples: false
+
+compactor:
+  working_directory: /loki/compactor
+  delete_request_store: filesystem
+  # Without this, retention_period is advisory and the disk grows forever.
+  retention_enabled: true
+
+analytics:
+  reporting_enabled: false

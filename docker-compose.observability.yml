@@ -31,6 +31,40 @@ services:
     mem_limit: 256m
     logging: *logging
 
+  loki:
+    image: ${DOCKER_REGISTRY:-docker.io}/grafana/loki:3.3.0
+    command: ["-config.file=/etc/loki/loki.yml"]
+    volumes:
+      - ./observability/loki.yml:/etc/loki/loki.yml:ro
+      - loki-data:/loki
+    # Loki is pushed to, not scraped, so unlike Prometheus it must be reachable while the app runs.
+    # Still loopback: alloy and grafana reach it over the compose network, not this port.
+    ports: ["127.0.0.1:3100:3100"]
+    restart: unless-stopped
+    mem_limit: 384m
+    logging: *logging
+
+  alloy:
+    image: ${DOCKER_REGISTRY:-docker.io}/grafana/alloy:v1.5.1
+    environment:
+      # Which compose project's containers to collect. compose defaults it to the directory name, and
+      # alloy.alloy falls back to that same default when it is unset.
+      COMPOSE_PROJECT_NAME: ${COMPOSE_PROJECT_NAME:-}
+    command:
+      - run
+      - --storage.path=/var/lib/alloy/data
+      - /etc/alloy/config.alloy
+    volumes:
+      - ./observability/alloy.alloy:/etc/alloy/config.alloy:ro
+      # Read-only: alloy only lists containers and reads their logs. It is still the whole daemon —
+      # the reason this overlay stays off any box that is not yours.
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - alloy-data:/var/lib/alloy/data
+    depends_on: [loki]
+    restart: unless-stopped
+    mem_limit: 192m
+    logging: *logging
+
   grafana:
     image: ${DOCKER_REGISTRY:-docker.io}/grafana/grafana:11.5.0
     environment:
@@ -44,11 +78,16 @@ services:
       - grafana-data:/var/lib/grafana
     # 3001, because WEB_PORT already has 3000.
     ports: ["127.0.0.1:3001:3000"]
-    depends_on: [prometheus]
+    depends_on: [prometheus, loki]
     restart: unless-stopped
     mem_limit: 256m
     logging: *logging
 
 volumes:
   prometheus-data:
+  # Loki's chunks and its WAL. Same durability boundary as prometheus-data: the app keeps nothing.
+  loki-data:
+  # Alloy's read positions. Losing it re-reads each container's log from the start, which duplicates
+  # lines rather than losing them.
+  alloy-data:
   grafana-data:
