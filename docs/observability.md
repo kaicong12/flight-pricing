@@ -79,6 +79,12 @@ all, and now logs the decisions an access log cannot show: whether a city was wa
 why a Places call became a 502, whether a draft was queued or already running. uvicorn still logs a
 line per request, so none of these repeat method, path or status.
 
+`install()` also clears uvicorn's own handlers and sets them to propagate. uvicorn attaches handlers to
+`uvicorn.access` and `uvicorn.error` that do not reach the root logger, so without this the access log
+stays plain text and `| json` fails on **most** of what the API emits — measured at 1 line parsing and
+18 failing before the takeover, and 11 of 11 after. `tests/test_logs.py` locks it down. Both processes
+call the same `install()` for the same reason: one store, one parser expression.
+
 `fileConfig` in `libs/db/migrations/env.py` passes `disable_existing_loggers=False`. Alembic's default
 is `True`, which disables every logger already created — harmless while `migrate` is its own container,
 fatal the first time a migration runs in the same process as the app.
@@ -150,6 +156,11 @@ they are diffable and the UI is read-only. Edit the JSON, not the browser.
   is counted but a handler that raises outright is not. Fine for now; the error-rate panel is about
   the errors the API means to return.
 - **Alerting.** No Alertmanager. The dashboard is for looking at, not for paging.
+- **`migrate`'s logs never reach Loki.** It runs alembic and exits in about two seconds, which
+  outruns Alloy's discovery poll — a container gone before the first poll is never tailed at all.
+  Dropping `refresh_interval` to 2s narrows the race without closing it. A failed migration is exactly
+  what you would want here, so until this is solved read it with `docker compose logs migrate`. The
+  real fix is a shipper that reads the log files rather than discovering live containers.
 - **No logs dashboard.** Loki is wired as a datasource and answered from Explore; nothing in
   `observability/grafana/dashboards/` shows a log panel next to the latency panels yet. That, plus a
   data link from `p95 by route` to the matching `{service="api"}` query, is the correlation this was

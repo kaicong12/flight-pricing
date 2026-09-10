@@ -4,8 +4,12 @@
 // Linux host, and tailing it yields a container id, which changes on every restart. Discovery is what
 // supplies a label that does not.
 discovery.docker "containers" {
-  host             = "unix:///var/run/docker.sock"
-  refresh_interval = "15s"
+  host = "unix:///var/run/docker.sock"
+  // 2s, not the 15s default: migrate runs alembic and exits in about that long, and a container that
+  // is gone before the first poll is never tailed at all. A failed migration is exactly the thing
+  // worth having here, so the cost — one extra Docker API call every couple of seconds — is worth it.
+  // It narrows the race rather than closing it; a container that exits instantly is still missed.
+  refresh_interval = "2s"
 }
 
 discovery.relabel "services" {

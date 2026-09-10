@@ -49,6 +49,21 @@ def test_install_picks_json_off_a_tty_and_text_on_one():
     assert formatter.format(record()).endswith("INFO    tp_api           hello world")
 
 
+def test_uvicorns_own_loggers_are_taken_over(capfd):
+    """Without this the access log stays plain text and `| json` fails on most of what the API emits,
+    because uvicorn keeps its own handlers and does not propagate."""
+    logs.install(json_logs=True)
+
+    for name in logs.UVICORN_LOGGERS:
+        logger = logging.getLogger(name)
+        assert logger.handlers == [], f"{name} kept a handler of its own"
+        assert logger.propagate is True, f"{name} does not reach the root formatter"
+
+    logging.getLogger("uvicorn.access").info('%s - "%s" %d', "1.2.3.4", "GET /health", 200)
+    line = capfd.readouterr().err.strip().splitlines()[-1]
+    assert json.loads(line)["logger"] == "uvicorn.access"
+
+
 def test_a_cold_city_logs_the_run_it_queued(client, caplog):
     with caplog.at_level(logging.INFO, logger="tp_api"):
         r = client.post("/initiate-plan", json=plan_body())
