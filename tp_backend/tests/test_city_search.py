@@ -3,8 +3,9 @@
 import pytest
 from fastapi.testclient import TestClient
 
+from libs.db import User
 from libs.places import CitySuggestion, PlacesError
-from tp_api.deps import city_search
+from tp_api.deps import city_search, current_user
 from tp_api.main import app
 
 SUGGESTIONS = [
@@ -23,7 +24,11 @@ def search():
 
 @pytest.fixture
 def api(search):
+    """No database: these cover query validation. The endpoint being closed is covered in
+    test_auth.py, so the signed-in user here is a stub rather than a real session row."""
     app.dependency_overrides[city_search] = lambda: (lambda q, limit: search["fn"](q, limit))
+    app.dependency_overrides[current_user] = lambda: User(user_id="u", google_sub="s",
+                                                          email="f@example.com")
     with TestClient(app) as c:
         yield c
     app.dependency_overrides.clear()

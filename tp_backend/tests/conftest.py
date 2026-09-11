@@ -2,7 +2,7 @@
 
 import importlib
 import os
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -12,7 +12,15 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 
-from libs.db import City, Place, PlaceMention, RedNotePost, YouTubeVideo
+from libs.db import (
+    City,
+    Place,
+    PlaceMention,
+    RedNotePost,
+    User,
+    UserSession,
+    YouTubeVideo,
+)
 from libs.db.enums import Confidence, ExtractedFrom, Sentiment, Source
 from libs.places import CityDetails
 from libs.routing import Leg, RouteResult
@@ -24,7 +32,7 @@ from tp_ingestions.throttle import Throttler
 
 TABLES = ["itinerary_items", "trip_dismissals", "place_hours", "place_mentions", "places",
           "place_queries", "ingest_tasks", "ingest_runs", "extractions", "rednote_posts",
-          "youtube_videos", "throttle_calls", "trips", "cities"]
+          "youtube_videos", "throttle_calls", "sessions", "user_trips", "users", "trips", "cities"]
 
 HELSINKI = "ChIJkQYhlscLkkYRY_fiO4S9Ts0"
 
@@ -135,7 +143,20 @@ def routes():
 
 
 @pytest.fixture
-def client(db, lookup, hours, routes):
+def user(db):
+    """A signed-in account. Real rows, not an overridden dependency, because trip access is a join."""
+    u = User(user_id="u-test", google_sub="sub-test", email="friend@example.com", name="A Friend",
+             picture="https://lh3.googleusercontent.com/a/test=s96-c")
+    db.add(u)
+    db.add(UserSession(token="test-session-token", user_id=u.user_id,
+                       expires_at=datetime.now(UTC) + timedelta(days=1)))
+    db.commit()
+    return u
+
+
+@pytest.fixture
+def anon_client(db, lookup, hours, routes):
+    """A client with no session, for asserting an endpoint is actually closed."""
     app.dependency_overrides[db_session] = lambda: db
     app.dependency_overrides[city_lookup] = lambda: (lambda pid: lookup["fn"](pid))
     app.dependency_overrides[hours_lookup] = lambda: (lambda pids: hours["fn"](pids))
@@ -144,6 +165,12 @@ def client(db, lookup, hours, routes):
     with TestClient(app) as c:
         yield c
     app.dependency_overrides.clear()
+
+
+@pytest.fixture
+def client(anon_client, user):
+    anon_client.headers["Authorization"] = "Bearer test-session-token"
+    return anon_client
 
 
 def _test_url() -> str:
