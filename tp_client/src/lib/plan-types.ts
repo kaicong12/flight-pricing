@@ -102,33 +102,42 @@ export type DayRoute = {
   provisional: string[];
 };
 
-/** One block does not work. Phrased as what to do about it, since the user owns the order. */
-export function warningText(w: PlanWarning): string {
+/** One block does not work. Phrased as what to do about it, since the user owns the order.
+ *
+ * `name` is the block the warning is about, prefixed so a list of them says which is which — three
+ * warnings that all open "Starts 18:00" are unreadable otherwise. Left off where the caller has no
+ * name to give: a day-wide warning names no place, and an unrouted day has no block to look up. The
+ * messages therefore never repeat the name themselves.
+ */
+export function warningText(w: PlanWarning, name?: string): string {
   const d = w.detail;
-  switch (w.code) {
-    case "closed":
-      return `${d.name} is closed on this date.`;
-    case "opens_later":
-      return `Pinned ${d.start}, but it opens ${d.opens} — ${d.early_min} min too early.`;
-    case "closes_before_done":
-      return `Starts ${d.start}, needs ${d.need_min} min, closes ${d.closes}. Move it earlier.`;
-    case "travel_does_not_fit":
-      return Number(d.gap_min) < 0
-        ? `Overlaps ${d.from}, and the ${d.need_min} min trip between them is not possible.`
-        : `Only ${d.gap_min} min after ${d.from}, but it is a ${d.need_min} min trip.`;
-    case "after_sunset":
-      return `Starts ${d.start}, after sunset at ${d.sunset}. Worth doing in daylight.`;
-    case "no_hours":
-      return `No opening hours published for ${d.name} — unverified.`;
-    case "no_route":
-      return d.from
-        ? `No route found from ${d.from} to ${d.to}.`
-        : "No travel times available, so these times ignore getting between places.";
-    case "implausible_leg":
-      return `The ${d.kmh} km/h leg to ${d.to} probably crosses water on a scheduled boat — check the timetable, the time shown assumes no wait.`;
-    default:
-      return w.code;
-  }
+  const text = (() => {
+    switch (w.code) {
+      case "closed":
+        return "Closed on this date.";
+      case "opens_later":
+        return `Pinned ${d.start}, but it opens ${d.opens} — ${d.early_min} min too early.`;
+      case "closes_before_done":
+        return `Starts ${d.start}, needs ${d.need_min} min, closes ${d.closes}. Move it earlier.`;
+      case "travel_does_not_fit":
+        return Number(d.gap_min) < 0
+          ? `Overlaps ${d.from}, and the ${d.need_min} min trip between them is not possible.`
+          : `Only ${d.gap_min} min after ${d.from}, but it is a ${d.need_min} min trip.`;
+      case "after_sunset":
+        return `Starts ${d.start}, after sunset at ${d.sunset}. Worth doing in daylight.`;
+      case "no_hours":
+        return "No opening hours published — unverified.";
+      case "no_route":
+        return d.from
+          ? `No route found from ${d.from} to ${d.to}.`
+          : "No travel times available, so these times ignore getting between places.";
+      case "implausible_leg":
+        return `The ${d.kmh} km/h leg to ${d.to} probably crosses water on a scheduled boat — check the timetable, the time shown assumes no wait.`;
+      default:
+        return w.code;
+    }
+  })();
+  return name ? `${name} — ${text}` : text;
 }
 
 /** Whole-plan caveats, as opposed to one broken block. */
