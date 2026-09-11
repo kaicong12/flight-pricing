@@ -72,6 +72,60 @@ class City(Base):
     trips: Mapped[list["Trip"]] = relationship(back_populates="city")
 
 
+class User(Base):
+    """Someone who has signed in with Google.
+
+    Keyed on our own uuid rather than Google's `sub`, even though `sub` is the identity: sharing a
+    trip with a friend who has never signed in needs a row before any `sub` exists.
+    """
+
+    __tablename__ = "users"
+
+    user_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    google_sub: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
+    email: Mapped[str] = mapped_column(String(320), nullable=False)
+    # Google documents both as "might be provided", and picture URLs rotate, so both are refreshed
+    # on every sign-in rather than trusted from the first one.
+    name: Mapped[str | None] = mapped_column(String(120))
+    picture: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = _ts(nullable=False, server_default=func.now())
+    updated_at: Mapped[datetime] = _ts(nullable=False, server_default=func.now(),
+                                       onupdate=func.now())
+
+
+class UserTrip(Base):
+    """Who can see a trip. Access is only ever this table — `trips` has no owner column.
+
+    No role column yet: one owner and proposed edits is the next feature, not this one.
+    """
+
+    __tablename__ = "user_trips"
+    __table_args__ = (Index("ix_user_trips_user", "user_id"),)
+
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.user_id", ondelete="CASCADE"),
+                                         primary_key=True)
+    trip_id: Mapped[str] = mapped_column(ForeignKey("trips.trip_id", ondelete="CASCADE"),
+                                         primary_key=True)
+    created_at: Mapped[datetime] = _ts(nullable=False, server_default=func.now())
+
+
+class UserSession(Base):
+    """One signed-in browser. Opaque token, so signing out revokes by deleting the row.
+
+    Not named Session: `sqlalchemy.orm.Session` is in scope wherever this is used.
+    """
+
+    __tablename__ = "sessions"
+
+    token: Mapped[str] = mapped_column(String(64), primary_key=True)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.user_id", ondelete="CASCADE"),
+                                         nullable=False)
+    expires_at: Mapped[datetime] = _ts(nullable=False)
+    created_at: Mapped[datetime] = _ts(nullable=False, server_default=func.now())
+
+    user: Mapped[User] = relationship()
+
+
 class Trip(Base):
     """One person's plan for a city. Dates and times are local wall clock; the zone is city.timezone.
 

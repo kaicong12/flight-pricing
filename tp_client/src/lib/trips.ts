@@ -1,6 +1,8 @@
 // The trips list: tp_api's GET /trips shaped for the card, which wants display strings.
+//
+// Pure, and it has to stay that way: client components import the formatters from here, so one
+// server-only import (tp_api reads cookies) would drag `next/headers` into the browser bundle.
 
-import { getJson } from "@/lib/tp-api";
 import { TERMINAL_STATUSES, type City, type Trip } from "@/lib/api-types";
 
 export type TripListItem = Pick<Trip, "trip_id" | "name" | "city" | "arrive_date" | "depart_date" | "ingest" | "notes"> & {
@@ -102,8 +104,8 @@ function localToday(): string {
   return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
 }
 
-export async function listTrips(): Promise<TripSummary[]> {
-  const body = await getJson<unknown>("/trips");
+/** A GET /trips body, ordered and shaped for the cards. Tolerates a null or malformed body. */
+export function toTripList(body: unknown): TripSummary[] {
   const items = Array.isArray(body) ? (body as TripListItem[]).filter((t) => t?.trip_id) : [];
   return byStartDate(items.map(summarise), localToday());
 }

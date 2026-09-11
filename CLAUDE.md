@@ -11,6 +11,7 @@ route that exact sequence and warn about anything that doesn't work.
 | Audience | Private group of friends |
 | Output | Ordered activity blocks + a route drawn on a map |
 | Collaboration | One owner; others propose edits; owner approves |
+| Auth | Google sign-in. Opaque session token in Postgres, not a JWT — sign out revokes |
 | Flights | Input only in v1 |
 | Cities | Any city on demand — async ingestion, client polls |
 | Stack | Next.js + Postgres, TypeScript web, **Python worker** (keeps the spike scripts) |
@@ -26,6 +27,14 @@ browser → Next route handler → tp_api → Postgres queue → tp_ingestions w
                                   ↑                                                 │
                                   └──────────── client polls /trips/{id} ───────────┘
 ```
+
+**0. Sign in.** `tp_client` holds the session in an httpOnly cookie and forwards it as a bearer on
+every proxied call; `tp_api` owns the Google exchange, because the client secret and the database
+are both on that side. **The id_token's signature is deliberately not verified** — the code is
+exchanged by us, over TLS, authenticated with our own client secret, which is the case Google says
+needs no validation. That is what keeps a JWT library out of the dependencies. `place_id` is a
+venue's identity and Google's `sub` is a person's, but `users.user_id` is our own uuid: sharing a
+trip with a friend who has never signed in needs a row before any `sub` exists.
 
 **1. Create.** `POST /initiate-plan` resolves the city through Google Places, writes a `trips` row,
 and calls `ensure_city_ingest`. A city ingested within `city_refresh_days` (30) is warm and queues
@@ -84,8 +93,8 @@ account must not become one budget per host.
 | `tp_backend/tp_api` | The API |
 | `tp_backend/tp_ingestions` | The worker, through `places.resolve` |
 | `tp_backend/libs/routing` | Routing, hours, daylight and day validation. Pure except `routes.py`/`hours.py` |
-| `tp_client` | `/` (form), `/trips` (list), `/trip/{trip_id}` (checklist), `/trip/{trip_id}/plan` (shortlist + days + map) |
-| `spikes/<topic>/` | Throwaway exploration. `routes_planning` is superseded by `libs/routing` |
+| `tp_client` | `/login`, `/` (form), `/trips` (list), `/trip/{trip_id}` (checklist), `/trip/{trip_id}/plan` (shortlist + days + map) |
+| `spikes/<topic>/` | Throwaway exploration. `routes_planning` is superseded by `libs/routing`, `google_auth` by `libs/auth.py` |
 
 `make dev` runs everything locally — migrate + api + worker via `./dev.sh`, plus the web app — and one
 Ctrl-C stops all of it. `make dev-container` runs the same backend from `docker-compose.yml` instead,
@@ -108,7 +117,9 @@ via `run_after` and `drain()` exits as soon as nothing is due.
 
 Proven live on Tromsø, Bergen, Porto and Singapore (~36 tasks each). Tromsø's 122 candidates became
 84 `searchText` calls and 58 places with 90 mentions. The plan screen is proven against Tromsø
-end to end: real walking legs, real opening hours, and a `closes_before_done` warning.
+end to end: real walking legs, real opening hours, and a `closes_before_done` warning. The trips
+themselves were deleted when `user_trips` arrived, since they predate any owner — the cities and
+places are city-scoped and stayed, so re-creating a Tromsø trip is warm and re-tests the same path.
 
 # Sources
 
@@ -166,5 +177,10 @@ rather than presenting an early plan as final.
    be covered; a revision-handling bug in it wedged re-routing and only a browser caught it.
 7. **No pinned arrival times.** Durations are editable; block start times are always derived. The
    design's "booked 17:00" affordance needs a per-item locked time.
-8. **`packageManager` says yarn but `package-lock.json` is what is committed.** Pick one — Vercel
-   reads `packageManager`, so the mismatch decides the deploy's resolver.
+8. **Expired `sessions` rows are never collected.** Sign-out deletes its own row and a lapsed token
+   stops resolving, but nothing sweeps the table. One `DELETE ... WHERE expires_at < now()` on a
+   schedule, whenever the row count starts to matter.
+9. **The Google hop itself is only verified by hand.** Everything either side of it is covered —
+   `tests/test_auth.py` asserts the open-route set, so a new endpoint added without a session
+   dependency fails the suite — but nobody can click Google's consent screen in CI.
+10. **Sign-in has no rate limit.** `POST /auth/google` and `GET /auth/url` are open by necessity.

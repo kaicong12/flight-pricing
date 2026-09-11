@@ -13,6 +13,7 @@ from tp_api.deps import (
     RouteCompute,
     db_session,
     hours_lookup,
+    require_trip_access,
     route_compute,
 )
 from tp_api.route_planning import service
@@ -25,7 +26,8 @@ from tp_api.route_planning.schemas import (
     ShortlistOut,
 )
 
-router = APIRouter()
+# Every route here is under /trips/{trip_id}, so one router-wide gate covers all of them.
+router = APIRouter(dependencies=[Depends(require_trip_access)])
 
 Db = Annotated[Session, Depends(db_session)]
 Hours = Annotated[HoursLookup, Depends(hours_lookup)]

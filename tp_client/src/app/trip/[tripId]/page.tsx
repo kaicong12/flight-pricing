@@ -8,6 +8,7 @@ import { AppHeader } from "@/components/app-header";
 import { DeleteTrip } from "@/components/delete-trip";
 import { TripProgress } from "@/components/trip-progress";
 import { NOTE_TEXT, type TripStatus } from "@/lib/api-types";
+import { currentUser } from "@/lib/session";
 import { getJson } from "@/lib/tp-api";
 import { formatRange, nightCount } from "@/lib/trips";
 
@@ -32,7 +33,7 @@ export default async function TripPage({ params }: PageProps<"/trip/[tripId]">) 
 
   return (
     <div className="min-h-dvh bg-page pb-24">
-      <AppHeader />
+      <AppHeader user={await currentUser()} />
       <main className="mx-auto w-full max-w-[820px] px-7 pt-11">
         <Link
           href="/trips"
