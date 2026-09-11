@@ -4,6 +4,7 @@ import Link from "next/link";
 
 import { AppHeader } from "@/components/app-header";
 import { TripCard } from "@/components/trip-card";
+import { currentUser } from "@/lib/session";
 import { getJson } from "@/lib/tp-api";
 import { toTripList } from "@/lib/trips";
 
@@ -16,7 +17,7 @@ export default async function TripsPage() {
 
   return (
     <div className="min-h-dvh bg-page pb-24">
-      <AppHeader />
+      <AppHeader user={await currentUser()} />
       {trips.length === 0 ? <Empty /> : <List trips={trips} ingesting={ingesting} />}
     </div>
   );
