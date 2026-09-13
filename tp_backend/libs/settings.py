@@ -26,6 +26,15 @@ class Settings(BaseSettings):
     # Every prompt resolves its model through this, so swapping it when a model's free tier runs out
     # needs no code change. It lands in extractions.model, which is part of the re-extraction key.
     gemini_model: str = "gemini-3.5-flash-lite"
+    # Sign-in. The redirect URI is registered on the client in Cloud Console and must match
+    # byte-for-byte, trailing slash included. No default on purpose: a localhost one would let a
+    # deploy with the variable unset build a consent URL pointing at localhost and fail as a
+    # redirect_uri_mismatch, instead of saying it is not configured.
+    google_auth_client_id: str | None = None
+    google_auth_client_secret: str | None = None
+    google_auth_redirect_uri: str | None = None
+    session_ttl_days: int = 30
+
     city_refresh_days: int = 30
     # searchText's locationRestriction is a rectangle, not a circle, and this is its half-width.
     places_search_radius_m: int = 50000

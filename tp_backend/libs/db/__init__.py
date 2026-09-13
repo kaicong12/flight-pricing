@@ -15,6 +15,9 @@ from libs.db.models import (
     ThrottleCall,
     Trip,
     TripDismissal,
+    User,
+    UserSession,
+    UserTrip,
     YouTubeVideo,
 )
 from libs.db.session import SessionLocal, engine, session
@@ -35,6 +38,9 @@ __all__ = [
     "ThrottleCall",
     "Trip",
     "TripDismissal",
+    "User",
+    "UserSession",
+    "UserTrip",
     "YouTubeVideo",
     "engine",
     "session",

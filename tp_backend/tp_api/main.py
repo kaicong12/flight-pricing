@@ -12,13 +12,22 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from libs import logs
-from libs.db import IngestRun, IngestTask, Place, Trip
+from libs.db import IngestRun, IngestTask, Place, Trip, User, UserTrip
 from libs.db.enums import RunKind, TaskKind, TaskStatus
 from libs.ingest import ensure_city, ensure_city_ingest, ensure_trip_plan
 from libs.places import NotACity, PlacesError
 from libs.settings import settings
 from tp_api import metrics
-from tp_api.deps import CityLookup, CitySearch, city_lookup, city_search, db_session
+from tp_api.auth_routes import router as auth_router
+from tp_api.deps import (
+    CityLookup,
+    CitySearch,
+    city_lookup,
+    city_search,
+    current_user,
+    db_session,
+    require_trip_access,
+)
 from tp_api.route_planning import router as planning_router
 from tp_api.schemas import (
     CityOut,
@@ -44,6 +53,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 
 app = FastAPI(title="Trip planner API", lifespan=lifespan)
+app.include_router(auth_router)
 app.include_router(planning_router)
 metrics.install(app)
 logs.install()
@@ -55,6 +65,8 @@ log = logging.getLogger("tp_api")
 Db = Annotated[Session, Depends(db_session)]
 Lookup = Annotated[CityLookup, Depends(city_lookup)]
 Search = Annotated[CitySearch, Depends(city_search)]
+Me = Annotated[User, Depends(current_user)]
+TripAccess = [Depends(require_trip_access)]
 
 
 @app.get("/health")
@@ -65,6 +77,7 @@ def health() -> dict[str, str]:
 
 @app.get("/cities/search", response_model=list[CitySuggestionOut])
 def search_cities_endpoint(
+    user: Me,
     search: Search,
     q: Annotated[str, Query(min_length=2, max_length=100)],
     limit: Annotated[int, Query(ge=1, le=10)] = 5,
@@ -78,7 +91,7 @@ def search_cities_endpoint(
 
 
 @app.post("/initiate-plan", response_model=TripOut)
-def initiate_plan(body: InitiatePlanRequest, db: Db, lookup: Lookup) -> TripOut:
+def initiate_plan(body: InitiatePlanRequest, db: Db, lookup: Lookup, user: Me) -> TripOut:
     try:
         details = lookup(body.city_place_id)
     except NotACity as e:
@@ -100,6 +113,7 @@ def initiate_plan(body: InitiatePlanRequest, db: Db, lookup: Lookup) -> TripOut:
         extra_details=body.extra_details,
     )
     db.add(trip)
+    db.add(UserTrip(user_id=user.user_id, trip_id=trip.trip_id))
     db.commit()
 
     run = ensure_city_ingest(db, city)
@@ -140,9 +154,12 @@ def draft_task(db: Session, trip_id: str) -> IngestTask | None:
 
 
 @app.get("/trips", response_model=list[TripSummaryOut])
-def list_trips(db: Db) -> list[TripSummaryOut]:
+def list_trips(db: Db, user: Me) -> list[TripSummaryOut]:
     trips = db.scalars(
-        select(Trip).where(Trip.deleted.is_(False)).order_by(Trip.created_at.desc())
+        select(Trip)
+        .join(UserTrip, UserTrip.trip_id == Trip.trip_id)
+        .where(UserTrip.user_id == user.user_id, Trip.deleted.is_(False))
+        .order_by(Trip.created_at.desc())
     ).all()
     if not trips:
         return []
@@ -200,7 +217,7 @@ def list_trips(db: Db) -> list[TripSummaryOut]:
     return out
 
 
-@app.get("/trips/{trip_id}", response_model=TripStatusOut)
+@app.get("/trips/{trip_id}", response_model=TripStatusOut, dependencies=TripAccess)
 def get_trip(trip_id: str, db: Db) -> TripStatusOut:
     trip = db.get(Trip, trip_id)
     if trip is None:
@@ -261,7 +278,7 @@ def get_trip(trip_id: str, db: Db) -> TripStatusOut:
     )
 
 
-@app.patch("/trips/{trip_id}", response_model=TripOut)
+@app.patch("/trips/{trip_id}", response_model=TripOut, dependencies=TripAccess)
 def rename_trip(trip_id: str, body: TripPatch, db: Db) -> TripOut:
     """Rename a trip. An empty name clears it, which restores the city-name fallback."""
     trip = db.get(Trip, trip_id)
@@ -285,7 +302,7 @@ def rename_trip(trip_id: str, body: TripPatch, db: Db) -> TripOut:
     )
 
 
-@app.post("/trips/{trip_id}/draft", status_code=202)
+@app.post("/trips/{trip_id}/draft", status_code=202, dependencies=TripAccess)
 def draft_trip(trip_id: str, db: Db) -> dict[str, str | None]:
     """Queue a draft for this trip's empty days. The handler leaves a touched day alone, so this is
     safe to call again; the client warns first only so the user is not surprised by new blocks."""
@@ -303,7 +320,7 @@ def draft_trip(trip_id: str, db: Db) -> dict[str, str | None]:
     return {"status": TaskStatus.PENDING}
 
 
-@app.delete("/trips/{trip_id}", status_code=204)
+@app.delete("/trips/{trip_id}", status_code=204, dependencies=TripAccess)
 def delete_trip(trip_id: str, db: Db) -> None:
     """Hide a trip from the list. Soft, so its days and dismissals survive; idempotent."""
     trip = db.get(Trip, trip_id)

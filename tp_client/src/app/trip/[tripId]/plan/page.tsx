@@ -8,6 +8,7 @@ import { AppHeader } from "@/components/app-header";
 import { PlanBoard } from "@/components/plan/plan-board";
 import type { TripStatus } from "@/lib/api-types";
 import type { Itinerary, Shortlist } from "@/lib/plan-types";
+import { currentUser } from "@/lib/session";
 import { getJson } from "@/lib/tp-api";
 
 export const dynamic = "force-dynamic";
@@ -37,7 +38,7 @@ export default async function PlanPage({ params }: PageProps<"/trip/[tripId]/pla
 
   return (
     <div className="min-h-dvh bg-page pb-16">
-      <AppHeader />
+      <AppHeader user={await currentUser()} />
       <main className="mx-auto w-full max-w-[1560px] px-7 pt-9">
         <Link
           href={`/trip/${id}`}

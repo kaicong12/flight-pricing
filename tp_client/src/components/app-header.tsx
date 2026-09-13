@@ -6,6 +6,8 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
+import { UserMenu } from "@/components/user-menu";
+import type { User } from "@/lib/api-types";
 import { cn } from "@/lib/utils";
 
 const NAV = [
@@ -13,7 +15,7 @@ const NAV = [
   { href: "/", label: "New trip" },
 ];
 
-export function AppHeader() {
+export function AppHeader({ user }: { user: User | null }) {
   const pathname = usePathname();
 
   return (
@@ -39,9 +41,7 @@ export function AppHeader() {
           ))}
         </nav>
       </div>
-      <div className="grid size-7 shrink-0 place-items-center rounded-full bg-[#d7cfba] text-[11px] font-semibold text-ink-soft">
-        KC
-      </div>
+      {user ? <UserMenu user={user} /> : null}
     </header>
   );
 }

@@ -4,24 +4,26 @@ import Link from "next/link";
 
 import { AppHeader } from "@/components/app-header";
 import { TripCard } from "@/components/trip-card";
-import { listTrips } from "@/lib/trips";
+import { currentUser } from "@/lib/session";
+import { getJson } from "@/lib/tp-api";
+import { toTripList } from "@/lib/trips";
 
 export const metadata = { title: "Trips" };
 export const dynamic = "force-dynamic";
 
 export default async function TripsPage() {
-  const trips = await listTrips();
+  const trips = toTripList(await getJson<unknown>("/trips"));
   const ingesting = trips.filter((t) => t.status === "ingesting").length;
 
   return (
     <div className="min-h-dvh bg-page pb-24">
-      <AppHeader />
+      <AppHeader user={await currentUser()} />
       {trips.length === 0 ? <Empty /> : <List trips={trips} ingesting={ingesting} />}
     </div>
   );
 }
 
-function List({ trips, ingesting }: { trips: Awaited<ReturnType<typeof listTrips>>; ingesting: number }) {
+function List({ trips, ingesting }: { trips: ReturnType<typeof toTripList>; ingesting: number }) {
   return (
     <main className="mx-auto max-w-[1180px] px-7 pt-11">
       <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-4">
