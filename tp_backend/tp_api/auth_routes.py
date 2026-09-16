@@ -69,7 +69,6 @@ def sign_in_with_google(body: GoogleCallback, db: Db) -> SessionOut:
         raise HTTPException(401, str(e)) from e
 
     user = upsert_user(db, who)
-    db.flush()
     session = start_session(db, user)
     db.commit()
     log.info("signed in user=%s new=%s", user.email, user.created_at == user.updated_at)

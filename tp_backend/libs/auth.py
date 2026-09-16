@@ -15,7 +15,8 @@ from urllib.parse import urlencode
 from uuid import uuid4
 
 import httpx
-from sqlalchemy import select
+from sqlalchemy import func
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
 from libs.db import User, UserSession
@@ -100,15 +101,24 @@ def exchange_code(code: str) -> GoogleIdentity:
 
 
 def upsert_user(db: Session, who: GoogleIdentity) -> User:
-    """The google sub is the identity; name and picture are refreshed because both drift."""
-    user = db.scalars(select(User).where(User.google_sub == who.sub)).first()
-    if user is None:
-        user = User(user_id=str(uuid4()), google_sub=who.sub, email=who.email)
-        db.add(user)
-    user.email = who.email
-    user.name = who.name
-    user.picture = who.picture
-    return user
+    """The google sub is the identity; name and picture are refreshed because both drift.
+
+    One statement rather than select-then-insert: a first sign-in in two tabs at once has both
+    transactions seeing no row, and the loser would hit uq on google_sub. updated_at is set here
+    because the mapper's onupdate does not reach an ON CONFLICT clause.
+    """
+    return db.scalars(
+        pg_insert(User)
+        .values(user_id=str(uuid4()), google_sub=who.sub, email=who.email, name=who.name,
+                picture=who.picture)
+        .on_conflict_do_update(
+            index_elements=["google_sub"],
+            set_={"email": who.email, "name": who.name, "picture": who.picture,
+                  "updated_at": func.now()})
+        .returning(User)
+        # Without this the identity map wins and a second sign-in returns the stale profile.
+        .execution_options(populate_existing=True)
+    ).one()
 
 
 def start_session(db: Session, user: User) -> UserSession:

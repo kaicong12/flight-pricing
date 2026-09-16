@@ -2,6 +2,8 @@
 
 import base64
 import json
+import threading
+import time
 from datetime import UTC, datetime, timedelta
 from urllib.parse import parse_qs, urlparse
 
@@ -9,6 +11,7 @@ import pytest
 from conftest import plan_body
 from fastapi.routing import APIRoute
 from sqlalchemy import select
+from sqlalchemy.orm import sessionmaker
 
 from libs.auth import AuthError, GoogleIdentity, exchange_code, upsert_user, user_for_token
 from libs.db import User, UserSession, UserTrip
@@ -112,6 +115,32 @@ class TestUpsert:
         assert again.user_id == first.user_id
         assert db.scalars(select(User)).all() == [again]
         assert (again.email, again.name, again.picture) == ("new@example.com", "Renamed", None)
+
+    def test_two_first_sign_ins_at_once_leave_one_row(self, db, engine):
+        """Two tabs, two transactions, neither seeing the other's row: the loser must not 500. The
+        second session has to run in a thread, because it blocks on the first one's uncommitted row."""
+        other = sessionmaker(bind=engine, expire_on_commit=False, future=True)()
+        outcome = []
+
+        def second_tab():
+            try:
+                upsert_user(other, WHO)
+                other.commit()
+                outcome.append(None)
+            except Exception as e:  # noqa: BLE001 — reported through the assert below
+                outcome.append(e)
+            finally:
+                other.close()
+
+        upsert_user(db, WHO)
+        t = threading.Thread(target=second_tab)
+        t.start()
+        time.sleep(0.3)
+        db.commit()
+        t.join(10)
+
+        assert outcome == [None]
+        assert len(db.scalars(select(User)).all()) == 1
 
 
 REDIRECT = "http://localhost:3000/api/auth/callback"
