@@ -16,7 +16,7 @@ from sqlalchemy.orm import sessionmaker
 from libs.auth import AuthError, GoogleIdentity, exchange_code, upsert_user, user_for_token
 from libs.db import User, UserSession, UserTrip
 from libs.settings import Settings
-from tp_api.deps import current_user, require_trip_access
+from tp_api.deps import current_user, require_admin, require_edit, require_trip_access
 from tp_api.main import app
 
 WHO = GoogleIdentity(sub="118…420", email="friend@example.com", name="A Friend",
@@ -27,6 +27,14 @@ WHO = GoogleIdentity(sub="118…420", email="friend@example.com", name="A Friend
 # database.
 OPEN_ROUTES = {("GET", "/auth/url"), ("POST", "/auth/google"),
                ("GET", "/health"), ("GET", "/metrics")}
+
+# Writes with no static role gate. Each is a decision with a reason, not an oversight.
+UNGATED_WRITES = {
+    ("POST", "/trips/{trip_id}/days/{day_index}/route"):
+        "stores nothing, and a viewer who cannot route sees no line on the map",
+    ("DELETE", "/trips/{trip_id}/members/{user_id}"):
+        "owner-or-self, so the check needs the target and lives in the handler",
+}
 
 
 def _api_routes(routes):
@@ -58,6 +66,15 @@ class TestEveryEndpointIsClosed:
         for r in _api_routes(app.routes):
             if "{trip_id}" in r.path:
                 assert require_trip_access.__name__ in _dep_names(r.dependant), r.path
+
+    def test_every_trip_write_checks_a_capability(self):
+        """A new endpoint that forgets its role gate fails here rather than shipping open."""
+        gates = {require_edit.__name__, require_admin.__name__}
+        for r in _api_routes(app.routes):
+            for m in r.methods - {"GET", "HEAD"}:
+                if "{trip_id}" not in r.path or (m, r.path) in UNGATED_WRITES:
+                    continue
+                assert gates & set(_dep_names(r.dependant)), f"{m} {r.path}"
 
 
 class TestSession:

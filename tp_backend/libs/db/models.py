@@ -37,6 +37,7 @@ from libs.db.enums import (
     Source,
     TaskKind,
     TaskStatus,
+    TripRole,
 )
 
 
@@ -94,19 +95,27 @@ class User(Base):
 
 
 class UserTrip(Base):
-    """Who can see a trip. Access is only ever this table — `trips` has no owner column.
+    """Who can see a trip and what they may do. Access is only ever this table.
 
-    No role column yet: owner/editor/viewer is the next feature, not this one.
+    The partial unique index is what holds "exactly one owner" — nothing in the API mints a second.
     """
 
     __tablename__ = "user_trips"
-    __table_args__ = (Index("ix_user_trips_user", "user_id"),)
+    __table_args__ = (
+        _in("role", TripRole),
+        Index("ix_user_trips_user", "user_id"),
+        Index("uq_user_trips_owner", "trip_id", unique=True,
+              postgresql_where=text("role = 'owner'")),
+    )
 
     user_id: Mapped[str] = mapped_column(ForeignKey("users.user_id", ondelete="CASCADE"),
                                          primary_key=True)
     trip_id: Mapped[str] = mapped_column(ForeignKey("trips.trip_id", ondelete="CASCADE"),
                                          primary_key=True)
+    role: Mapped[str] = mapped_column(String(16), nullable=False)
     created_at: Mapped[datetime] = _ts(nullable=False, server_default=func.now())
+
+    user: Mapped[User] = relationship()
 
 
 class UserSession(Base):

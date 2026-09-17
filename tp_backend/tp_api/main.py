@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 
 from libs import logs
 from libs.db import IngestRun, IngestTask, Place, Trip, User, UserTrip
-from libs.db.enums import RunKind, TaskKind, TaskStatus
+from libs.db.enums import RunKind, TaskKind, TaskStatus, TripRole
 from libs.ingest import ensure_city, ensure_city_ingest, ensure_trip_plan
 from libs.places import NotACity, PlacesError
 from libs.settings import settings
@@ -26,6 +26,8 @@ from tp_api.deps import (
     city_search,
     current_user,
     db_session,
+    require_admin,
+    require_edit,
     require_trip_access,
 )
 from tp_api.route_planning import router as planning_router
@@ -41,6 +43,8 @@ from tp_api.schemas import (
     TripStatusOut,
     TripSummaryOut,
 )
+from tp_api.sharing import router as sharing_router
+from tp_api.sharing import users_router
 
 
 @asynccontextmanager
@@ -54,6 +58,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 app = FastAPI(title="Trip planner API", lifespan=lifespan)
 app.include_router(auth_router)
 app.include_router(planning_router)
+app.include_router(sharing_router)
+app.include_router(users_router)
 metrics.install(app)
 logs.install()
 
@@ -66,6 +72,8 @@ Lookup = Annotated[CityLookup, Depends(city_lookup)]
 Search = Annotated[CitySearch, Depends(city_search)]
 Me = Annotated[User, Depends(current_user)]
 TripAccess = [Depends(require_trip_access)]
+TripEdit = [Depends(require_edit)]
+TripAdmin = [Depends(require_admin)]
 
 
 @app.get("/health")
@@ -112,7 +120,7 @@ def initiate_plan(body: InitiatePlanRequest, db: Db, lookup: Lookup, user: Me) -
         extra_details=body.extra_details,
     )
     db.add(trip)
-    db.add(UserTrip(user_id=user.user_id, trip_id=trip.trip_id))
+    db.add(UserTrip(user_id=user.user_id, trip_id=trip.trip_id, role=TripRole.OWNER))
     db.commit()
 
     run = ensure_city_ingest(db, city)
@@ -153,12 +161,14 @@ def draft_task(db: Session, trip_id: str) -> IngestTask | None:
 
 @app.get("/trips", response_model=list[TripSummaryOut])
 def list_trips(db: Db, user: Me) -> list[TripSummaryOut]:
-    trips = db.scalars(
-        select(Trip)
+    rows = db.execute(
+        select(Trip, UserTrip.role)
         .join(UserTrip, UserTrip.trip_id == Trip.trip_id)
         .where(UserTrip.user_id == user.user_id, Trip.deleted.is_(False))
         .order_by(Trip.created_at.desc())
     ).all()
+    trips = [t for t, _ in rows]
+    roles = {t.trip_id: role for t, role in rows}
     if not trips:
         return []
 
@@ -206,6 +216,7 @@ def list_trips(db: Db, user: Me) -> list[TripSummaryOut]:
                 arrive_date=trip.arrive_date,
                 depart_date=trip.depart_date,
                 ingest=IngestOut(run_id=run.run_id, status=run.status) if run else None,
+                your_role=roles[trip.trip_id],
                 tasks_done=done,
                 tasks_total=total,
                 place_count=places.get(trip.city_id, 0),
@@ -214,8 +225,9 @@ def list_trips(db: Db, user: Me) -> list[TripSummaryOut]:
     return out
 
 
-@app.get("/trips/{trip_id}", response_model=TripStatusOut, dependencies=TripAccess)
-def get_trip(trip_id: str, db: Db) -> TripStatusOut:
+@app.get("/trips/{trip_id}", response_model=TripStatusOut)
+def get_trip(trip_id: str, db: Db, role: Annotated[str, Depends(require_trip_access)],
+             ) -> TripStatusOut:
     trip = db.get(Trip, trip_id)
     if trip is None:
         raise HTTPException(404, "no such trip")
@@ -268,13 +280,14 @@ def get_trip(trip_id: str, db: Db) -> TripStatusOut:
         extra_details=trip.extra_details,
         ingest=IngestOut(run_id=run.run_id, status=run.status) if run else None,
         deleted=trip.deleted,
+        your_role=role,
         progress=progress,
         failures=failures,
         draft=draft.status if draft is not None else None,
     )
 
 
-@app.patch("/trips/{trip_id}", response_model=TripOut, dependencies=TripAccess)
+@app.patch("/trips/{trip_id}", response_model=TripOut, dependencies=TripAdmin)
 def rename_trip(trip_id: str, body: TripPatch, db: Db) -> TripOut:
     """Rename a trip. An empty name clears it, which restores the city-name fallback."""
     trip = db.get(Trip, trip_id)
@@ -297,7 +310,7 @@ def rename_trip(trip_id: str, body: TripPatch, db: Db) -> TripOut:
     )
 
 
-@app.post("/trips/{trip_id}/draft", status_code=202, dependencies=TripAccess)
+@app.post("/trips/{trip_id}/draft", status_code=202, dependencies=TripEdit)
 def draft_trip(trip_id: str, db: Db) -> dict[str, str | None]:
     """Queue a draft for this trip's empty days. The handler leaves a touched day alone, so this is
     safe to call again; the client warns first only so the user is not surprised by new blocks."""
@@ -315,7 +328,7 @@ def draft_trip(trip_id: str, db: Db) -> dict[str, str | None]:
     return {"status": TaskStatus.PENDING}
 
 
-@app.delete("/trips/{trip_id}", status_code=204, dependencies=TripAccess)
+@app.delete("/trips/{trip_id}", status_code=204, dependencies=TripAdmin)
 def delete_trip(trip_id: str, db: Db) -> None:
     """Hide a trip from the list. Soft, so its days and dismissals survive; idempotent."""
     trip = db.get(Trip, trip_id)
