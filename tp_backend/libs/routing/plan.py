@@ -7,7 +7,7 @@ Every block carries its own start time. Nothing here derives a time and nothing 
 the user put it at 14:00, so it stays at 14:00 and the warnings say what does not work.
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 from libs.routing.hours import CLOSED, Window, window_for
 
@@ -28,13 +28,6 @@ CLOSES_BEFORE_DONE = "closes_before_done"
 AFTER_SUNSET = "after_sunset"
 NO_HOURS = "no_hours"
 NO_ROUTE = "no_route"
-IMPLAUSIBLE_LEG = "implausible_leg"
-TRAVEL_DOES_NOT_FIT = "travel_does_not_fit"
-
-# Faster than anyone walks, so the leg is really crossing water. Google routes the Suomenlinna
-# ferry as a walk at 19 km/h with no wait and no timetable, tagged only as a toll — and the tag is
-# not reliable enough to ask for. Implied speed catches every scheduled crossing instead.
-MAX_WALK_KMH = 9.0
 
 
 @dataclass(frozen=True)
@@ -51,10 +44,7 @@ class Stop:
 
 @dataclass(frozen=True)
 class TravelLeg:
-    seconds: int
     meters: int
-    transit_steps: list[str] = field(default_factory=list)
-    polyline: str | None = None
 
 
 @dataclass(frozen=True)
@@ -88,13 +78,6 @@ def hhmm(minutes: float) -> str:
     return f"{m // 60 % 24:02d}:{m % 60:02d}"
 
 
-def implausible_walk(seconds: int, meters: int) -> bool:
-    """Whether a walking leg is too fast to be walked, and so is really a boat."""
-    if seconds <= 0 or meters <= 0:
-        return False
-    return (meters / seconds) * 3.6 > MAX_WALK_KMH
-
-
 def in_time_order(stops: list[Stop]) -> list[Stop]:
     """The day's sequence. place_id breaks a tie, because two blocks may share a start time."""
     return sorted(stops, key=lambda s: (s.start_min, s.place_id))
@@ -107,14 +90,13 @@ def plan_day(
     weekday: int,
     sunset_min: float | None = None,
     routed: bool = True,
-    mode: str = "walk",
 ) -> DayPlan:
     """Validate a day of pinned blocks.
 
-    `stops` may arrive in any order; `legs[i]` is the travel between the i-th and (i+1)-th stop
+    `stops` may arrive in any order; `legs[i]` is the distance between the i-th and (i+1)-th stop
     **in time order**, which is what the caller routed. `weekday` is Google's 0=Sunday.
-    `routed=False` means no travel times were available, so the travel checks are skipped rather
-    than guessed at — the caller says so with its own warning.
+    `routed=False` means the day was never routed, so a missing leg is not reported as unreachable —
+    the caller says so with its own warning.
     """
     ordered = in_time_order(stops)
     blocks: list[Block] = []
@@ -154,23 +136,9 @@ def plan_day(
         if nxt is None or not routed or i >= len(legs):
             continue
 
-        leg = legs[i]
-        if leg.seconds == 0:
+        if legs[i].meters == 0:
             warnings.append(PlanWarning(NO_ROUTE, nxt.place_id, {
                 "from": stop.name, "to": nxt.name}))
-            continue
-        if mode == "walk" and implausible_walk(leg.seconds, leg.meters):
-            warnings.append(PlanWarning(IMPLAUSIBLE_LEG, nxt.place_id, {
-                "from": stop.name, "to": nxt.name,
-                "kmh": round((leg.meters / leg.seconds) * 3.6)}))
-
-        # The whole point of pinning: a gap too small for the walk is reported, never closed. A
-        # negative gap is two blocks the user deliberately overlapped, which is the same failure.
-        need_min = round(leg.seconds / 60)
-        gap_min = nxt.start_min - end_min
-        if need_min > gap_min:
-            warnings.append(PlanWarning(TRAVEL_DOES_NOT_FIT, nxt.place_id, {
-                "from": stop.name, "to": nxt.name, "need_min": need_min, "gap_min": gap_min}))
 
     finish = max((b.end_min for b in blocks), default=0)
     return DayPlan(blocks=blocks, warnings=warnings, finish_min=finish)

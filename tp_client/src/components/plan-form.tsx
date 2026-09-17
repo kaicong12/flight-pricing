@@ -23,19 +23,9 @@ const STEPS = [
   "You get a shortlist ranked by independent mentions. You choose the order.",
 ];
 
-// Routes API answers ROUTE_NOT_FOUND for transit beyond ~100 days, so the caveat is knowable
-// from the date the user just typed — before they commit, not after.
-const TRANSIT_HORIZON_DAYS = 100;
-
 /** Empty strings would fail time parsing upstream, so they go as null. */
 function orNull(value: string): string | null {
   return value.trim() === "" ? null : value;
-}
-
-function pastTransitHorizon(date: string): boolean {
-  if (date === "") return false;
-  const days = (Date.parse(`${date}T00:00:00`) - Date.now()) / 86_400_000;
-  return days > TRANSIT_HORIZON_DAYS;
 }
 
 export function PlanForm() {
@@ -156,16 +146,6 @@ export function PlanForm() {
             />
             <p className="mt-1.5 text-xs text-faint">One sentence is enough. 500 characters max.</p>
           </div>
-
-          {pastTransitHorizon(arriveDate) && (
-            <div className="mt-6.5 flex items-center gap-3.5 rounded-[13px] border border-warn-border bg-warn-bg px-4 py-3.5">
-              <span className="size-1.5 shrink-0 rounded-full bg-warn" />
-              <p className="text-[13px] leading-[1.5] text-warn">
-                That is past the transit routing horizon, so this plan will use walking times only.
-                We will re-check nearer the date.
-              </p>
-            </div>
-          )}
 
           {error && (
             <p role="alert" className="mt-6 text-sm text-destructive">

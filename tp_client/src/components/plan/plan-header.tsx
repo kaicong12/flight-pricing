@@ -9,7 +9,7 @@ import { useState } from "react";
 import { DraftPlan } from "@/components/plan/draft-plan";
 import { TripName } from "@/components/trip-name";
 import type { Trip } from "@/lib/api-types";
-import type { ItineraryDay, TravelMode } from "@/lib/plan-types";
+import type { ItineraryDay } from "@/lib/plan-types";
 import { PROVISIONAL_TEXT, shortTime } from "@/lib/plan-types";
 import { formatRange } from "@/lib/trips";
 import { cn } from "@/lib/utils";
@@ -19,20 +19,16 @@ export function PlanHeader({
   days,
   placeCount,
   provisional,
-  mode,
   stale,
   routing,
-  onMode,
   onReroute,
 }: {
   trip: Trip;
   days: ItineraryDay[];
   placeCount: number;
   provisional: string[];
-  mode: TravelMode;
   stale: boolean;
   routing: boolean;
-  onMode: (mode: TravelMode) => void;
   onReroute: () => void;
 }) {
   const [copied, setCopied] = useState(false);
@@ -77,23 +73,6 @@ export function PlanHeader({
       </div>
 
       <div className="flex items-center gap-2">
-        <div className="flex h-9 items-center rounded-full bg-page p-0.5">
-          {(["walk", "transit"] as const).map((m) => (
-            <button
-              key={m}
-              type="button"
-              onClick={() => onMode(m)}
-              aria-pressed={mode === m}
-              className={cn(
-                "flex h-8 items-center rounded-full px-3 text-[13px] font-medium transition-colors outline-none focus-visible:ring-3 focus-visible:ring-ring/50",
-                mode === m ? "bg-surface text-ink shadow-card" : "text-muted-foreground hover:text-ink",
-              )}
-            >
-              {m === "walk" ? "Walk" : "Transit"}
-            </button>
-          ))}
-        </div>
-
         <DraftPlan tripId={trip.trip_id} days={days} />
 
         <button

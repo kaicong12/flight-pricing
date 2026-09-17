@@ -5,7 +5,7 @@
 
 import { TERMINAL_STATUSES, type City, type Trip } from "@/lib/api-types";
 
-export type TripListItem = Pick<Trip, "trip_id" | "name" | "city" | "arrive_date" | "depart_date" | "ingest" | "notes"> & {
+export type TripListItem = Pick<Trip, "trip_id" | "name" | "city" | "arrive_date" | "depart_date" | "ingest"> & {
   tasks_done: number;
   tasks_total: number;
   place_count: number;
@@ -20,7 +20,6 @@ export type TripSummary = {
   start_date: string;
   dates: string;
   status: "ingesting" | "ready";
-  provisional: boolean;
   thumb_label: string;
   thumb_note: string;
   progress_text: string;
@@ -67,7 +66,6 @@ function summarise(item: TripListItem): TripSummary {
     start_date: item.arrive_date,
     dates: formatRange(item.arrive_date, item.depart_date),
     status,
-    provisional: (item.notes ?? []).includes("transit_horizon"),
     thumb_label: item.city?.name ?? "",
     thumb_note: nights === 1 ? "1 night" : `${nights} nights`,
     progress_text: progressText(item, status),

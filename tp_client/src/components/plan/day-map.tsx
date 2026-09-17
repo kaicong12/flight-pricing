@@ -17,7 +17,7 @@ import {
 import { useEffect, useRef } from "react";
 
 import type { DayRoute, ItineraryDay } from "@/lib/plan-types";
-import { formatDistance, formatMinutes } from "@/lib/plan-types";
+import { formatDistance } from "@/lib/plan-types";
 import { decodePolyline } from "@/lib/polyline";
 
 // A style URL, not a key — swappable without a deploy if the tile host goes away. OpenStreetMap
@@ -132,10 +132,9 @@ export function DayMap({
         );
       });
 
-      // Walking gives one polyline for the day; transit gives one per leg.
       const lines = stale
         ? []
-        : [route?.polyline, ...(route?.legs ?? []).map((l) => l.polyline)]
+        : [route?.polyline]
             .filter((p): p is string => Boolean(p))
             .map(decodePolyline)
             .filter((coords) => coords.length > 1);
@@ -194,8 +193,7 @@ export function DayMap({
         </span>
         {route && !stale && route.routed && (
           <span className="flex h-7 items-center rounded-full bg-white/92 px-3 font-mono text-[11px] text-ink-soft shadow-card">
-            {formatDistance(route.total_distance_m)} · {formatMinutes(route.total_travel_s)}{" "}
-            {route.mode === "transit" ? "transit" : "walking"}
+            {formatDistance(route.total_distance_m)} walking
           </span>
         )}
         {stale && day.items.length > 1 && (

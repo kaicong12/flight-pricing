@@ -43,7 +43,6 @@ export type Trip = {
   depart_time: string | null;
   extra_details: string | null;
   ingest: Ingest | null;
-  notes: string[];
   deleted: boolean;
 };
 
@@ -85,11 +84,6 @@ export type InitiatePlanRequest = {
 // FastAPI's error body: a string for HTTPException, a list for a 422.
 export type ApiError = {
   detail?: string | { loc: (string | number)[]; msg: string }[];
-};
-
-export const NOTE_TEXT: Record<string, string> = {
-  transit_horizon:
-    "Planned beyond the transit routing horizon, walking times only — re-check nearer the date.",
 };
 
 export const TERMINAL_STATUSES = ["done", "failed", "needs_credentials"];

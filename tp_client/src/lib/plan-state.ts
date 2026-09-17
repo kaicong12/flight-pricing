@@ -12,7 +12,6 @@ import type {
   ItineraryItem,
   Shortlist,
   ShortlistPlace,
-  TravelMode,
 } from "@/lib/plan-types";
 
 export type PlanState = {
@@ -22,7 +21,6 @@ export type PlanState = {
   total: number;
   dismissed: string[];
   activeDay: number;
-  mode: TravelMode;
   routes: Record<number, DayRoute>;
   /** Edited since it was last routed, so the legs no longer describe it. */
   stale: number[];
@@ -40,7 +38,6 @@ export type PlanAction =
   | { type: "pin"; placeId: string; fromDay: number; toDay: number; startMin: number }
   | { type: "duration"; day: number; placeId: string; minutes: number }
   | { type: "activeDay"; day: number }
-  | { type: "mode"; mode: TravelMode }
   | { type: "dismiss"; placeId: string }
   | { type: "routed"; route: DayRoute }
   | { type: "routeFailed"; day: number }
@@ -163,10 +160,6 @@ export function planReducer(state: PlanState, action: PlanAction): PlanState {
     case "activeDay":
       return { ...state, activeDay: action.day };
 
-    // Changing mode invalidates every computed route, not just the visible one.
-    case "mode":
-      return { ...state, mode: action.mode, routes: {}, stale: state.days.map((d) => d.day_index) };
-
     case "dismiss":
       return {
         ...state,
@@ -242,7 +235,6 @@ export function placedDays(state: PlanState): Map<string, number> {
 export function initialState(
   itinerary: Itinerary,
   shortlist: Shortlist,
-  mode: TravelMode,
 ): PlanState {
   // Open on a day that has something on it, so a plan built on day 2 does not look like an empty
   // plan on day 1.
@@ -253,7 +245,6 @@ export function initialState(
     total: shortlist.total,
     dismissed: [],
     activeDay: firstUsed?.day_index ?? 0,
-    mode,
     routes: {},
     stale: itinerary.days.filter((d) => d.items.length > 0).map((d) => d.day_index),
     unsaved: [],

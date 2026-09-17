@@ -40,7 +40,6 @@ from tp_api.schemas import (
     TripPatch,
     TripStatusOut,
     TripSummaryOut,
-    notes_for,
 )
 
 
@@ -134,7 +133,6 @@ def initiate_plan(body: InitiatePlanRequest, db: Db, lookup: Lookup, user: Me) -
         depart_time=trip.depart_time,
         extra_details=trip.extra_details,
         ingest=IngestOut(run_id=run.run_id, status=run.status) if run else None,
-        notes=notes_for(trip.arrive_date),
     )
 
 
@@ -211,7 +209,6 @@ def list_trips(db: Db, user: Me) -> list[TripSummaryOut]:
                 tasks_done=done,
                 tasks_total=total,
                 place_count=places.get(trip.city_id, 0),
-                notes=notes_for(trip.arrive_date),
             )
         )
     return out
@@ -270,7 +267,6 @@ def get_trip(trip_id: str, db: Db) -> TripStatusOut:
         depart_time=trip.depart_time,
         extra_details=trip.extra_details,
         ingest=IngestOut(run_id=run.run_id, status=run.status) if run else None,
-        notes=notes_for(trip.arrive_date),
         deleted=trip.deleted,
         progress=progress,
         failures=failures,
@@ -297,7 +293,6 @@ def rename_trip(trip_id: str, body: TripPatch, db: Db) -> TripOut:
         depart_date=trip.depart_date,
         depart_time=trip.depart_time,
         extra_details=trip.extra_details,
-        notes=notes_for(trip.arrive_date),
         deleted=trip.deleted,
     )
 

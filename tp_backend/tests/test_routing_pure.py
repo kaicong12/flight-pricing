@@ -2,20 +2,18 @@
 
 from datetime import date
 
-from libs.routing import hhmm, implausible_walk, plan_day, sun_times, window_for
+from libs.routing import hhmm, plan_day, sun_times, window_for
 from libs.routing.hours import CLOSED
 from libs.routing.plan import (
     AFTER_SUNSET,
     CLOSED_TODAY,
     CLOSES_BEFORE_DONE,
     DEFAULT_DURATION,
-    IMPLAUSIBLE_LEG,
     MIN_DURATION,
     NO_HOURS,
     NO_ROUTE,
     OPENS_LATER,
     SLOT_MIN,
-    TRAVEL_DOES_NOT_FIT,
     Stop,
     TravelLeg,
 )
@@ -91,7 +89,7 @@ class TestPlanDay:
         # a 9-minute walk into a 30-minute gap changes nothing about where the blocks sit.
         plan = plan_day(
             [stop("a", "A", start=600, minutes=60), stop("b", "B", start=690, minutes=30)],
-            [TravelLeg(seconds=9 * 60, meters=700)],
+            [TravelLeg(meters=700)],
             weekday=1,
         )
         assert [(b.start_min, b.end_min) for b in plan.blocks] == [(600, 660), (690, 720)]
@@ -101,7 +99,7 @@ class TestPlanDay:
     def test_stops_are_checked_in_time_order_whatever_order_they_arrive_in(self):
         plan = plan_day(
             [stop("b", "B", start=690), stop("a", "A", start=600)],
-            [TravelLeg(seconds=300, meters=400)],
+            [TravelLeg(meters=400)],
             weekday=1,
         )
         assert [b.place_id for b in plan.blocks] == ["a", "b"]
@@ -165,93 +163,16 @@ class TestPlanDay:
                         weekday=1, sunset_min=None)
         assert plan.warnings == []
 
-    def test_a_zero_second_leg_on_a_routed_day_means_unreachable(self):
+    def test_a_zero_distance_leg_on_a_routed_day_means_unreachable(self):
         plan = plan_day([stop("a", "A", start=600), stop("b", "B", start=700)],
-                        [TravelLeg(seconds=0, meters=0)], weekday=1)
+                        [TravelLeg(meters=0)], weekday=1)
         w = [x for x in plan.warnings if x.code == NO_ROUTE]
         assert w[0].place_id == "b"
         assert w[0].detail == {"from": "A", "to": "B"}
 
     def test_an_unrouted_day_does_not_claim_places_are_unreachable(self):
         plan = plan_day([stop("a", "A", start=600), stop("b", "B", start=700)],
-                        [TravelLeg(seconds=0, meters=0)], weekday=1, routed=False)
-        assert [w.code for w in plan.warnings] == []
-
-
-class TestTravelDoesNotFit:
-    def test_a_gap_too_small_for_the_walk(self):
-        # A ends 11:00, B starts 11:00, and the walk is 25 minutes.
-        plan = plan_day(
-            [stop("a", "A", start=600, minutes=60), stop("b", "B", start=660)],
-            [TravelLeg(seconds=25 * 60, meters=1800)],
-            weekday=1,
-        )
-        w = [x for x in plan.warnings if x.code == TRAVEL_DOES_NOT_FIT]
-        assert w[0].place_id == "b"
-        assert w[0].detail == {"from": "A", "to": "B", "need_min": 25, "gap_min": 0}
-        # And nothing was moved to make it fit.
-        assert [b.start_min for b in plan.blocks] == [600, 660]
-
-    def test_a_gap_that_fits_is_silent(self):
-        plan = plan_day(
-            [stop("a", "A", start=600, minutes=60), stop("b", "B", start=690)],
-            [TravelLeg(seconds=25 * 60, meters=1800)],
-            weekday=1,
-        )
-        assert [w.code for w in plan.warnings] == []
-
-    def test_a_gap_exactly_the_length_of_the_walk_fits(self):
-        plan = plan_day(
-            [stop("a", "A", start=600, minutes=60), stop("b", "B", start=660 + 25)],
-            [TravelLeg(seconds=25 * 60, meters=1800)],
-            weekday=1,
-        )
-        assert [w.code for w in plan.warnings] == []
-
-    def test_deliberately_overlapping_blocks_report_a_negative_gap(self):
-        # Allowed and rendered side by side, but you still cannot be in both at once.
-        plan = plan_day(
-            [stop("a", "A", start=600, minutes=60), stop("b", "B", start=630)],
-            [TravelLeg(seconds=300, meters=400)],
-            weekday=1,
-        )
-        w = [x for x in plan.warnings if x.code == TRAVEL_DOES_NOT_FIT]
-        assert w[0].detail["gap_min"] == -30
-        assert w[0].detail["need_min"] == 5
-
-    def test_an_unrouted_day_makes_no_travel_claim(self):
-        plan = plan_day(
-            [stop("a", "A", start=600, minutes=60), stop("b", "B", start=660)],
-            [TravelLeg(seconds=25 * 60, meters=1800)],
-            weekday=1, routed=False,
-        )
-        assert [w.code for w in plan.warnings] == []
-
-
-class TestImplausibleWalk:
-    def test_the_suomenlinna_shape(self):
-        # Google routes the ferry as a walk: ~2 km in ~6.5 min is 19 km/h.
-        assert implausible_walk(seconds=380, meters=2000) is True
-
-    def test_a_real_walk_is_plausible(self):
-        # 700 m in 9 min is 4.7 km/h.
-        assert implausible_walk(seconds=540, meters=700) is False
-
-    def test_zero_values_are_not_claims(self):
-        assert implausible_walk(seconds=0, meters=500) is False
-        assert implausible_walk(seconds=300, meters=0) is False
-
-    def test_a_walking_day_warns_on_a_ferry_leg(self):
-        plan = plan_day([stop("a", "Market", start=600), stop("b", "Fortress", start=700)],
-                        [TravelLeg(seconds=380, meters=2000)],
-                        weekday=1, mode="walk")
-        w = [x for x in plan.warnings if x.code == IMPLAUSIBLE_LEG]
-        assert w[0].detail == {"from": "Market", "to": "Fortress", "kmh": 19}
-
-    def test_transit_is_supposed_to_be_fast(self):
-        plan = plan_day([stop("a", "A", start=600), stop("b", "B", start=700)],
-                        [TravelLeg(seconds=380, meters=2000)],
-                        weekday=1, mode="transit")
+                        [TravelLeg(meters=0)], weekday=1, routed=False)
         assert [w.code for w in plan.warnings] == []
 
 

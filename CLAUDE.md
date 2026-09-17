@@ -66,9 +66,11 @@ work is worth more than the row.
 **6. Plan.** `GET /trips/{id}/shortlist` ranks the city's places by mention count and returns each
 mention as a link back to the video or note that named it. The user drags
 them into days; `PUT /trips/{id}/itinerary` replaces whole days, because a drag is a statement about
-a sequence and positions are dense and derived. `POST /trips/{id}/days/{n}/route` then routes that
-exact order through `computeRoutes`, checks it against Place Details hours and local daylight, and
-returns structured warning codes — the client owns the English.
+a sequence and positions are dense and derived. `POST /trips/{id}/days/{n}/route` then draws that
+exact order with `computeRoutes` (WALK, one call), checks it against Place Details hours and local
+daylight, and returns structured warning codes — the client owns the English. **Travel time is not a
+constraint**: the route gives a polyline and how far apart the places are, and nothing validates
+whether the gap between two blocks is enough to get there.
 
 **7. Draft.** `route.plan` fills a trip's *empty* days so the plan screen opens filled — **one Gemini
 call in a loop, not an agent**: the shortlist is already a closed ranked set and `plan_day` already
@@ -117,7 +119,7 @@ via `run_after` and `drain()` exits as soon as nothing is due.
 
 Proven live on Tromsø, Bergen, Porto and Singapore (~36 tasks each). Tromsø's 122 candidates became
 84 `searchText` calls and 58 places with 90 mentions. The plan screen is proven against Tromsø
-end to end: real walking legs, real opening hours, and a `closes_before_done` warning. The trips
+end to end: a real drawn route, real opening hours, and a `closes_before_done` warning. The trips
 themselves were deleted when `user_trips` arrived, since they predate any owner — the cities and
 places are city-scoped and stayed, so re-creating a Tromsø trip is warm and re-tests the same path.
 
@@ -128,7 +130,7 @@ places are city-scoped and stayed, so re-creating a Tromsø trip is warm and re-
 | Discovery | **YouTube** — transcripts primary, chapters as spelling anchor, comments |
 | Food + POI | **RedNote/Xiaohongshu** — private web API, confirmed usable |
 | Identity + facts | **Google Places** `searchText` → `place_id`, then Place Details for hours |
-| Routing + map | **Routes API `computeRoutes`** — polyline, per-leg times, transit steps |
+| Routing + map | **Routes API `computeRoutes`** — WALK only: polyline and per-leg distance |
 | Daylight | Computed locally (NOAA), no API |
 | Thin-city fallback | **Wikivoyage**, labelled guidebook-grade |
 | Later | Reddit, behind a disabled flag |
@@ -153,21 +155,20 @@ prune it when things change — it is not a research log. Visual language is
 
 # What constrains the roadmap
 
-Transit routing has a ~100-day horizon and future holiday hours are unfetchable, so a trip planned in
-August cannot be fully accurate for December. The UI needs a re-check-nearer-the-date affordance
-rather than presenting an early plan as final.
+Future holiday hours are unfetchable, so a trip planned in August cannot be fully accurate for
+December. The UI needs a re-check-nearer-the-date affordance rather than presenting an early plan as
+final.
 
 # Open items
 
 1. **Restrict the API key** to Places + Routes + YouTube + Gemini. (Routes itself is enabled and
-   verified live, WALK and TRANSIT both.)
+   verified live on WALK.)
 2. **Confirm Places and Routes pricing** and whether caching lat/lon is permitted. Resolution is the
    biggest spender: 84 `searchText` calls on one city. `place_hours` now caches opening hours on a
    7-day TTL (`place_hours_ttl_days`), which is a judgement call about the terms, not a settled one.
 3. **Day routes are not cached.** Every first view of a day spends one `computeRoutes` call, so a
-   page reload re-pays. The fix is a `day_routes` row keyed on a hash of (mode, date, ordered
-   place_ids) so an unchanged order is free and a reordered day is marked stale rather than re-routed
-   on a GET.
+   page reload re-pays. The fix is a `day_routes` row keyed on a hash of the ordered place_ids, so an
+   unchanged order is free and a reordered day is marked stale rather than re-routed on a GET.
 4. **Test transcript fetching from cloud egress**, not just a laptop. The failure mode to watch for
    on EC2 is `PoTokenRequired`.
 5. **The generic-noun and chain stoplists in `tp_ingestions/places/names.py` are Norway-leaning.**

@@ -1,8 +1,7 @@
 """GET /trips: the landing screen's list."""
 
-from datetime import timedelta
 
-from conftest import plan_body, today_utc
+from conftest import plan_body
 from sqlalchemy import update
 
 from libs.db import IngestRun, IngestTask, Place
@@ -56,15 +55,6 @@ def test_place_count_comes_from_the_city(client, db):
     db.commit()
 
     assert client.get("/trips").json()[0]["place_count"] == 3
-
-
-def test_a_far_future_trip_carries_the_transit_horizon_note(client):
-    arrive = today_utc() + timedelta(days=200)
-    client.post("/initiate-plan", json=plan_body(
-        arrive_date=arrive.isoformat(),
-        depart_date=(arrive + timedelta(days=2)).isoformat()))
-
-    assert client.get("/trips").json()[0]["notes"] == ["transit_horizon"]
 
 
 def test_a_second_trip_in_the_same_city_shares_one_run(client, db):

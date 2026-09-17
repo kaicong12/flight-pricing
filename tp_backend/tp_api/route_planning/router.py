@@ -22,7 +22,6 @@ from tp_api.route_planning.schemas import (
     DismissalIn,
     ItineraryIn,
     ItineraryOut,
-    RouteDayRequest,
     ShortlistOut,
 )
 
@@ -69,9 +68,8 @@ def remove_dismissal(trip_id: str, place_id: str, db: Db) -> None:
 def route_day(
     trip_id: str,
     day_index: int,
-    body: RouteDayRequest,
     db: Db,
     fetch_hours: Hours,
     compute: Route,
 ) -> DayRouteOut:
-    return service.route_day(db, trip_id, day_index, body, fetch_hours, compute)
+    return service.route_day(db, trip_id, day_index, fetch_hours, compute)

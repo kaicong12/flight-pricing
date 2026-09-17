@@ -35,7 +35,6 @@ import type {
   Itinerary,
   Shortlist,
   ShortlistPlace,
-  TravelMode,
 } from "@/lib/plan-types";
 import { DEFAULT_DURATION, MIN_DURATION, SLOT_MIN, availableWindow } from "@/lib/plan-types";
 
@@ -63,7 +62,7 @@ export function PlanBoard({
   const [state, dispatch] = useReducer(
     planReducer,
     undefined,
-    () => initialState(initialItinerary, initialShortlist, "walk") satisfies PlanState,
+    () => initialState(initialItinerary, initialShortlist) satisfies PlanState,
   );
   const [category, setCategory] = useState<string | null>(null);
   const [dragging, setDragging] = useState<string | null>(null);
@@ -139,8 +138,6 @@ export function PlanBoard({
       try {
         const r = await fetch(`/api/trips/${trip.trip_id}/route-day?day=${activeDay}`, {
           method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ mode: state.mode }),
           signal: controller.signal,
         });
         if (r.ok) dispatch({ type: "routed", route: (await r.json()) as DayRoute });
@@ -155,7 +152,7 @@ export function PlanBoard({
       clearTimeout(timer);
       controller.abort();
     };
-  }, [needsRoute, activeDay, state.mode, trip.trip_id]);
+  }, [needsRoute, activeDay, trip.trip_id]);
 
   // Shortlist paging and category filtering.
   const settled = loaded.category === category;
@@ -266,10 +263,8 @@ export function PlanBoard({
         days={state.days}
         placeCount={state.total}
         provisional={provisional}
-        mode={state.mode}
         stale={isStale}
         routing={routingDay !== null}
-        onMode={(mode: TravelMode) => dispatch({ type: "mode", mode })}
         onReroute={() => dispatch({ type: "invalidate", day: state.activeDay })}
       />
 
@@ -294,7 +289,6 @@ export function PlanBoard({
           <DayColumn
             day={day}
             route={route}
-            mode={state.mode}
             stale={isStale}
             available={availableWindow(trip, state.activeDay, state.days.length)}
             onRemove={(placeId) =>

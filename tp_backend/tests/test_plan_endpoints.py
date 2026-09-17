@@ -9,7 +9,7 @@ from libs.db import ItineraryItem
 from libs.db.enums import Sentiment, Source
 from libs.routing import HoursHit, Leg, RouteResult
 from tp_api.route_planning.schemas import REGULAR_HOURS_ONLY_NOTE
-from tp_api.schemas import TRANSIT_HORIZON_NOTE, today_utc
+from tp_api.schemas import today_utc
 
 OPEN_ALL_WEEK = [{"open": {"day": d, "hour": 9, "minute": 0},
                   "close": {"day": d, "hour": 18, "minute": 0}} for d in range(7)]
@@ -480,7 +480,6 @@ class TestRouteDay:
         assert [(b["start"], b["end"]) for b in body["blocks"]] == [("15:00", "16:00"),
                                                                     ("16:30", "17:30")]
         assert body["start_time"] == "15:00:00"
-        assert body["legs"][0]["seconds"] == 600
         assert body["legs"][0]["meters"] == 800
         assert body["legs"][0]["from_place_id"] == "p1"
         assert body["legs"][0]["to_place_id"] == "p2"
@@ -490,7 +489,7 @@ class TestRouteDay:
         seed(db, ("p1", "A", 1))
         put_day(client, trip, ["p1"])
         called = []
-        routes["fn"] = lambda ids, mode, iso: called.append(ids) or RouteResult([], None, 0, 0)
+        routes["fn"] = lambda ids: called.append(ids) or RouteResult([], None, 0)
 
         body = client.post(f"/trips/{trip}/days/0/route", json={"start_time": "09:00"}).json()
 
@@ -577,27 +576,15 @@ class TestRouteDay:
         body = client.post(f"/trips/{trip}/days/1/route", json={}).json()
         assert body["start_time"] is None
 
-    def test_transit_steps_reach_the_client(self, client, db, routes):
-        trip = make_trip(client)
-        seed(db, ("p1", "A", 1), ("p2", "B", 1))
-        put_day(client, trip, ["p1", "p2"])
-        routes["fn"] = lambda ids, mode, iso: RouteResult(
-            legs=[Leg(seconds=1122, meters=6000, transit_steps=["M1: Kamppi → Ruoholahti"],
-                      polyline="abc")],
-            polyline=None, total_seconds=1122, total_meters=6000)
-
-        body = client.post(f"/trips/{trip}/days/0/route", json={"mode": "transit"}).json()
-        assert body["legs"][0]["transit_steps"] == ["M1: Kamppi → Ruoholahti"]
-        assert body["legs"][0]["polyline"] == "abc"
 
     def test_no_route_at_all_degrades_instead_of_failing(self, client, db, routes):
-        """Beyond the transit horizon Routes answers 200 with nothing. That is not a 502."""
+        """Routes can answer 200 with nothing. That is not a 502."""
         trip = make_trip(client)
         seed(db, ("p1", "A", 1), ("p2", "B", 1))
         put_day(client, trip, ["p1", "p2"])
-        routes["fn"] = lambda ids, mode, iso: RouteResult([], None, 0, 0)
+        routes["fn"] = lambda ids: RouteResult([], None, 0)
 
-        r = client.post(f"/trips/{trip}/days/0/route", json={"mode": "transit"})
+        r = client.post(f"/trips/{trip}/days/0/route")
 
         assert r.status_code == 200
         body = r.json()
@@ -610,7 +597,7 @@ class TestRouteDay:
         trip = make_trip(client)
         seed(db, ("p1", "A", 1), ("p2", "B", 1))
         put_day(client, trip, ["p1", "p2"])
-        routes["fn"] = lambda ids, mode, iso: RouteResult([], None, 0, 0)
+        routes["fn"] = lambda ids: RouteResult([], None, 0)
 
         body = client.post(f"/trips/{trip}/days/0/route", json={}).json()
         assert [w["code"] for w in body["warnings"]].count("no_route") == 1
@@ -621,7 +608,7 @@ class TestRouteDay:
         seed(db, ("p1", "A", 1), ("p2", "B", 1))
         put_day(client, trip, ["p1", "p2"])
 
-        def boom(ids, mode, iso):
+        def boom(ids):
             raise RoutesError("computeRoutes returned 403")
 
         routes["fn"] = boom
@@ -641,18 +628,14 @@ class TestRouteDay:
         body = client.post(f"/trips/{trip}/days/0/route", json={}).json()
         assert [w["code"] for w in body["warnings"]] == ["no_hours"]
 
-    def test_an_unknown_mode_is_rejected(self, client):
-        trip = make_trip(client)
-        r = client.post(f"/trips/{trip}/days/0/route", json={"mode": "helicopter"})
-        assert r.status_code == 422
 
     def test_the_route_follows_the_stored_order_not_the_request(self, client, db, routes):
         trip = make_trip(client)
         seed(db, ("p1", "A", 1), ("p2", "B", 1), ("p3", "C", 1))
         put_day(client, trip, ["p3", "p1", "p2"])
         asked = []
-        routes["fn"] = lambda ids, mode, iso: asked.append(list(ids)) or RouteResult(
-            [Leg(0, 0, [])] * 2, None, 0, 0)
+        routes["fn"] = lambda ids: asked.append(list(ids)) or RouteResult(
+            [Leg(0)] * 2, None, 0)
 
         client.post(f"/trips/{trip}/days/0/route", json={})
         assert asked == [["p3", "p1", "p2"]]
@@ -671,12 +654,6 @@ class TestProvisional:
         body = client.post(f"/trips/{trip}/days/0/route", json={}).json()
         assert body["provisional"] == [REGULAR_HOURS_ONLY_NOTE]
 
-    def test_beyond_the_transit_horizon_it_is_walking_only_as_well(self, client, db):
-        arrive = today_utc() + timedelta(days=200)
-        trip = make_trip(client, arrive_date=arrive.isoformat(),
-                         depart_date=(arrive + timedelta(days=2)).isoformat())
-        body = client.post(f"/trips/{trip}/days/0/route", json={}).json()
-        assert body["provisional"] == [TRANSIT_HORIZON_NOTE, REGULAR_HOURS_ONLY_NOTE]
 
 
 def test_health_needs_no_database(client):

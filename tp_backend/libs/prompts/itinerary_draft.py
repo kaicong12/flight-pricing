@@ -52,8 +52,7 @@ You decide the clock. For every place give:
 
 Both must be multiples of 30. Every block must fit inside its day's usable range above:
 start_min is at or after the range's first minute, and start_min + duration_min is at or before its
-last. A day's blocks must not overlap, and you must leave a gap between them for getting across
-town — 10 to 20 minutes on foot in the centre, and an hour each way for anything listed far out.
+last. A day's blocks must not overlap.
 
 "km" is straight-line distance from the city centre. Past about 5km a place is an excursion that
 eats most of a day. Things that need darkness belong after sunset; things that need daylight do not.
@@ -66,4 +65,4 @@ traveller rather than for coverage — leaving a famous place out is correct if 
 it. Never invent an index.
 {feedback}"""
 
-ITINERARY_DRAFT = Prompt(name="itinerary_draft", version="v1", template=TEMPLATE, schema=SCHEMA)
+ITINERARY_DRAFT = Prompt(name="itinerary_draft", version="v2", template=TEMPLATE, schema=SCHEMA)

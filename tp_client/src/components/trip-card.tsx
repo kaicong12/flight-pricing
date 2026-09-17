@@ -54,11 +54,6 @@ export function TripCard({ trip }: { trip: TripSummary }) {
               {trip.progress_text}
             </span>
           )}
-          {trip.provisional && (
-            <span className="inline-flex h-6 items-center rounded-full bg-warn-bg px-2.5 text-xs font-medium text-warn">
-              Provisional
-            </span>
-          )}
         </div>
       </div>
     </Link>
