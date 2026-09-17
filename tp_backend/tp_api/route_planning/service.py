@@ -49,7 +49,6 @@ from tp_api.route_planning.schemas import (
     ItineraryIn,
     ItineraryOut,
     LegOut,
-    RouteDayRequest,
     ShortlistOut,
     ShortlistPlaceOut,
     SourceRefOut,
@@ -59,7 +58,6 @@ from tp_api.route_planning.schemas import (
 from tp_api.route_planning.utils import (
     available_window,
     day_count,
-    depart_instant,
     google_weekday,
     source_title,
     source_url,
@@ -333,29 +331,27 @@ def load_hours(db: Session, place_ids: list[str], fetch: HoursLookup) -> dict[st
     }
 
 
-def _route_legs(compute: RouteCompute, place_ids: list[str], mode: str,
-                depart_iso: str) -> tuple[RouteResult, list[TravelLeg], bool]:
-    """The day's travel legs, and whether they are real. One `computeRoutes` call at most."""
+def _route_legs(compute: RouteCompute,
+                place_ids: list[str]) -> tuple[RouteResult, list[TravelLeg], bool]:
+    """The day's legs, and whether they are real. One `computeRoutes` call at most."""
     if len(place_ids) < 2:
         # Nothing to route between, so spend nothing.
-        return RouteResult(legs=[], polyline=None, total_seconds=0, total_meters=0), [], True
+        return RouteResult(legs=[], polyline=None, total_meters=0), [], True
 
     try:
-        result = compute(place_ids, mode, depart_iso)
+        result = compute(place_ids)
     except RoutesError as e:
         raise HTTPException(502, f"routing failed: {e}") from e
 
-    legs = [TravelLeg(seconds=leg.seconds, meters=leg.meters,
-                      transit_steps=leg.transit_steps, polyline=leg.polyline)
-            for leg in result.legs]
+    legs = [TravelLeg(meters=leg.meters) for leg in result.legs]
     if not legs:
-        # Beyond the transit horizon Routes answers 200 with nothing, which is an absent answer and
-        # not a failure. Lay the day out end to end and say the times are not travel-adjusted.
-        return result, [TravelLeg(seconds=0, meters=0) for _ in place_ids[:-1]], False
+        # Routes can answer 200 with nothing, which is an absent answer and not a failure. Say the
+        # day has no distances rather than guessing at them.
+        return result, [TravelLeg(meters=0) for _ in place_ids[:-1]], False
     return result, legs, True
 
 
-def route_day(db: Session, trip_id: str, day_index: int, body: RouteDayRequest,
+def route_day(db: Session, trip_id: str, day_index: int,
               fetch_hours: HoursLookup, compute: RouteCompute) -> DayRouteOut:
     """Route one day in the order it is stored, then say what does not work.
 
@@ -370,8 +366,7 @@ def route_day(db: Session, trip_id: str, day_index: int, body: RouteDayRequest,
     provisional = provisional_reasons(day_date)
 
     if not rows:
-        return DayRouteOut(day_index=day_index, date=day_date, mode=body.mode,
-                           provisional=provisional)
+        return DayRouteOut(day_index=day_index, date=day_date, provisional=provisional)
 
     if len(rows) > settings().max_stops_per_day:
         raise HTTPException(422, f"a day takes at most {settings().max_stops_per_day} stops")
@@ -388,10 +383,8 @@ def route_day(db: Session, trip_id: str, day_index: int, body: RouteDayRequest,
         next((h.utc_offset_minutes for h in hours.values() if h.utc_offset_minutes is not None),
              None),
     )
-    result, legs, routed = _route_legs(compute, place_ids, body.mode,
-                                       depart_instant(day_date, start, tz_min))
-    warnings: list[PlanWarning] = ([] if routed
-                                   else [PlanWarning("no_route", None, {"mode": body.mode})])
+    result, legs, routed = _route_legs(compute, place_ids)
+    warnings: list[PlanWarning] = [] if routed else [PlanWarning("no_route", None, {})]
 
     sunrise, sunset = (None, None)
     if city.lat is not None and city.lon is not None:
@@ -405,22 +398,19 @@ def route_day(db: Session, trip_id: str, day_index: int, body: RouteDayRequest,
         for r in rows
     ]
     plan = plan_day(stops, legs, weekday=google_weekday(day_date),
-                    sunset_min=sunset, routed=routed, mode=body.mode)
+                    sunset_min=sunset, routed=routed)
 
     return DayRouteOut(
-        day_index=day_index, date=day_date, mode=body.mode, start_time=start,
+        day_index=day_index, date=day_date, start_time=start,
         blocks=[BlockOut(place_id=b.place_id, name=b.name, start=hhmm(b.start_min),
                          end=hhmm(b.end_min), duration_min=b.duration_min,
                          open_from=hhmm(b.open_from) if b.open_from is not None else None,
                          open_to=hhmm(b.open_to) if b.open_to is not None else None)
                 for b in plan.blocks],
-        legs=[LegOut(from_place_id=place_ids[i], to_place_id=place_ids[i + 1],
-                     seconds=leg.seconds, meters=leg.meters,
-                     transit_steps=leg.transit_steps, polyline=leg.polyline)
+        legs=[LegOut(from_place_id=place_ids[i], to_place_id=place_ids[i + 1], meters=leg.meters)
               for i, leg in enumerate(legs) if i + 1 < len(place_ids)],
         polyline=result.polyline,
         total_distance_m=result.total_meters,
-        total_travel_s=result.total_seconds,
         routed=routed,
         daylight=(DaylightOut(sunrise=hhmm(sunrise), sunset=hhmm(sunset))
                   if sunrise is not None and sunset is not None else None),

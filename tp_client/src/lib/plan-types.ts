@@ -1,8 +1,6 @@
 // Mirrors tp_api/plan_schemas.py by hand — there is no codegen step. Warnings arrive as codes; the
 // English for them lives here.
 
-export type TravelMode = "walk" | "transit";
-
 // The grid a block is dragged against. Must match SLOT_MIN in tp_api/plan_schemas.py and the
 // ck_itinerary_duration CHECK, or the server rejects what the user just dragged.
 export const SLOT_MIN = 30;
@@ -73,10 +71,7 @@ export type PlanBlock = {
 export type PlanLeg = {
   from_place_id: string;
   to_place_id: string;
-  seconds: number;
   meters: number;
-  transit_steps: string[];
-  polyline: string | null;
 };
 
 export type PlanWarning = {
@@ -88,14 +83,12 @@ export type PlanWarning = {
 export type DayRoute = {
   day_index: number;
   date: string;
-  mode: TravelMode;
   /** The first block's time. Null on an empty day. */
   start_time: string | null;
   blocks: PlanBlock[];
   legs: PlanLeg[];
   polyline: string | null;
   total_distance_m: number;
-  total_travel_s: number;
   routed: boolean;
   daylight: { sunrise: string; sunset: string } | null;
   warnings: PlanWarning[];
@@ -119,10 +112,6 @@ export function warningText(w: PlanWarning, name?: string): string {
         return `Pinned ${d.start}, but it opens ${d.opens} — ${d.early_min} min too early.`;
       case "closes_before_done":
         return `Starts ${d.start}, needs ${d.need_min} min, closes ${d.closes}. Move it earlier.`;
-      case "travel_does_not_fit":
-        return Number(d.gap_min) < 0
-          ? `Overlaps ${d.from}, and the ${d.need_min} min trip between them is not possible.`
-          : `Only ${d.gap_min} min after ${d.from}, but it is a ${d.need_min} min trip.`;
       case "after_sunset":
         return `Starts ${d.start}, after sunset at ${d.sunset}. Worth doing in daylight.`;
       case "no_hours":
@@ -130,9 +119,7 @@ export function warningText(w: PlanWarning, name?: string): string {
       case "no_route":
         return d.from
           ? `No route found from ${d.from} to ${d.to}.`
-          : "No travel times available, so these times ignore getting between places.";
-      case "implausible_leg":
-        return `The ${d.kmh} km/h leg to ${d.to} probably crosses water on a scheduled boat — check the timetable, the time shown assumes no wait.`;
+          : "No route could be drawn for this day.";
       default:
         return w.code;
     }
@@ -142,16 +129,11 @@ export function warningText(w: PlanWarning, name?: string): string {
 
 /** Whole-plan caveats, as opposed to one broken block. */
 export const PROVISIONAL_TEXT: Record<string, string> = {
-  transit_horizon: "walking times only",
   regular_hours_only: "regular hours only",
 };
 
 export function formatDistance(meters: number): string {
   return meters < 1000 ? `${meters} m` : `${(meters / 1000).toFixed(1)} km`;
-}
-
-export function formatMinutes(seconds: number): string {
-  return `${Math.round(seconds / 60)} min`;
 }
 
 /** "Thu 4 Dec" — the day tabs. */

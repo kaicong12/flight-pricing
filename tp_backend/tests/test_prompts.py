@@ -8,7 +8,7 @@ from libs.db.models import Extraction
 from libs.prompts import PROMPTS
 
 DIGESTS = {
-    "itinerary_draft": "f1703cee798b76af",
+    "itinerary_draft": "cb24cd6b263295f2",
     "rednote_ocr": "57de1d4b19894962",
     "rednote_prescreen": "8bad0dc0352eec68",
     "rednote_text": "ba283dbfdd4032f8",

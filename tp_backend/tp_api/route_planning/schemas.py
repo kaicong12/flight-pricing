@@ -8,7 +8,7 @@ from datetime import date, time, timedelta
 
 from pydantic import BaseModel, Field
 
-from tp_api.schemas import TRANSIT_HORIZON_DAYS, TRANSIT_HORIZON_NOTE, today_utc
+from tp_api.schemas import today_utc
 
 MAX_STOPS_PER_DAY = 25
 
@@ -20,9 +20,6 @@ MIN_DURATION = SLOT_MIN
 # validated against them and labelled rather than presented as final.
 SPECIAL_HOURS_HORIZON_DAYS = 7
 REGULAR_HOURS_ONLY_NOTE = "regular_hours_only"
-
-WALK = "walk"
-TRANSIT = "transit"
 
 
 class SourceRefOut(BaseModel):
@@ -109,10 +106,7 @@ class BlockOut(BaseModel):
 class LegOut(BaseModel):
     from_place_id: str
     to_place_id: str
-    seconds: int
     meters: int
-    transit_steps: list[str] = []
-    polyline: str | None = None
 
 
 class WarningOut(BaseModel):
@@ -126,24 +120,16 @@ class DaylightOut(BaseModel):
     sunset: str
 
 
-class RouteDayRequest(BaseModel):
-    """No start time: every block carries its own, so there is nothing left for the day to say."""
-
-    mode: str = Field(default=WALK, pattern=f"^({WALK}|{TRANSIT})$")
-
-
 class DayRouteOut(BaseModel):
     day_index: int
     date: date
-    mode: str
     # The first block's time, echoed back. None on an empty day.
     start_time: time | None = None
     blocks: list[BlockOut] = []
     legs: list[LegOut] = []
     polyline: str | None = None
     total_distance_m: int = 0
-    total_travel_s: int = 0
-    # False when no travel times were available, so the times are laid end to end and optimistic.
+    # False when the day was never routed, so there are no distances and no route to draw.
     routed: bool = True
     daylight: DaylightOut | None = None
     warnings: list[WarningOut] = []
@@ -153,13 +139,9 @@ class DayRouteOut(BaseModel):
 def provisional_reasons(trip_date: date) -> list[str]:
     """Why a plan for this date cannot be presented as final.
 
-    Both reasons are properties of how far out the date is, not of the plan's contents, so a trip
-    booked months ahead is always provisional however good its ordering.
+    A property of how far out the date is, not of the plan's contents, so a trip booked months ahead
+    is always provisional however good its ordering.
     """
-    today = today_utc()
-    out = []
-    if trip_date > today + timedelta(days=TRANSIT_HORIZON_DAYS):
-        out.append(TRANSIT_HORIZON_NOTE)
-    if trip_date > today + timedelta(days=SPECIAL_HOURS_HORIZON_DAYS):
-        out.append(REGULAR_HOURS_ONLY_NOTE)
-    return out
+    if trip_date > today_utc() + timedelta(days=SPECIAL_HOURS_HORIZON_DAYS):
+        return [REGULAR_HOURS_ONLY_NOTE]
+    return []

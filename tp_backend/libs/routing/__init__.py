@@ -13,11 +13,10 @@ from libs.routing.plan import (
     Stop,
     TravelLeg,
     hhmm,
-    implausible_walk,
     in_time_order,
     plan_day,
 )
-from libs.routing.routes import Leg, RouteResult, RoutesError, compute_transit, compute_walk
+from libs.routing.routes import Leg, RouteResult, RoutesError, compute_walk
 
 __all__ = [
     "CLOSED",
@@ -34,11 +33,9 @@ __all__ = [
     "RoutesError",
     "Stop",
     "TravelLeg",
-    "compute_transit",
     "compute_walk",
     "fetch_hours",
     "hhmm",
-    "implausible_walk",
     "in_time_order",
     "plan_day",
     "sun_times",

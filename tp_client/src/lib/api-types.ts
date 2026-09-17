@@ -33,6 +33,12 @@ export type TaskProgress = {
   count: number;
 };
 
+/** owner administers and edits, editor edits the plan, viewer reads. */
+export type TripRole = "owner" | "editor" | "viewer";
+
+/** A trip's member: a User plus what they may do with it. */
+export type Member = User & { role: TripRole };
+
 export type Trip = {
   trip_id: string;
   name: string | null;
@@ -43,8 +49,8 @@ export type Trip = {
   depart_time: string | null;
   extra_details: string | null;
   ingest: Ingest | null;
-  notes: string[];
   deleted: boolean;
+  your_role: TripRole;
 };
 
 export type TaskFailure = {
@@ -85,11 +91,6 @@ export type InitiatePlanRequest = {
 // FastAPI's error body: a string for HTTPException, a list for a 422.
 export type ApiError = {
   detail?: string | { loc: (string | number)[]; msg: string }[];
-};
-
-export const NOTE_TEXT: Record<string, string> = {
-  transit_horizon:
-    "Planned beyond the transit routing horizon, walking times only — re-check nearer the date.",
 };
 
 export const TERMINAL_STATUSES = ["done", "failed", "needs_credentials"];

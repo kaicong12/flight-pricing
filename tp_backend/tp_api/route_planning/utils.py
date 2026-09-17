@@ -4,7 +4,7 @@ No database and no HTTP — everything here is a function of its arguments.
 """
 
 import html
-from datetime import date, datetime, time, timedelta, timezone
+from datetime import date, datetime, time
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from libs.db import City, Trip
@@ -47,15 +47,6 @@ def tz_minutes(city: City, on: date, fallback: int | None) -> int:
         if offset is not None:
             return int(offset.total_seconds() // 60)
     return fallback or 0
-
-
-def depart_instant(on: date, start: time, tz_min: int) -> str:
-    """When the day begins, as an offset-aware ISO string.
-
-    Transit times are time-dependent, so this has to be a real instant: the spike's naive
-    "<date>T<start>Z" asked for a route two hours out from what the user meant.
-    """
-    return datetime.combine(on, start, tzinfo=timezone(timedelta(minutes=tz_min))).isoformat()
 
 
 def source_url(source: str, ref: str, token: str | None) -> str | None:

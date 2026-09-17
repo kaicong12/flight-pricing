@@ -6,12 +6,6 @@ from pydantic import BaseModel, Field, model_validator
 
 MAX_TRIP_DAYS = 14
 
-# Routes API TRANSIT returns ROUTE_NOT_FOUND beyond roughly this far out, so a plan made earlier
-# can only be routed on walking times.
-TRANSIT_HORIZON_DAYS = 100
-TRANSIT_HORIZON_NOTE = "transit_horizon"
-
-
 def today_utc() -> date:
     """Trip dates are local to the city, so compare against UTC and allow a day of slack."""
     return datetime.now(UTC).date()
@@ -88,11 +82,12 @@ class TripOut(BaseModel):
     depart_time: time | None = None
     extra_details: str | None = None
     ingest: IngestOut | None = None
-    notes: list[str] = []
     deleted: bool = False
 
 
 class TripStatusOut(TripOut):
+    # What the caller may do with this trip, so the UI can hide what would only 403.
+    your_role: str
     progress: list[TaskProgress] = []
     failures: list[TaskFailure] = []
     # The route.plan task's status, or None if this trip was never drafted. The client polls on it.
@@ -106,14 +101,9 @@ class TripSummaryOut(BaseModel):
     arrive_date: date
     depart_date: date
     ingest: IngestOut | None = None
+    your_role: str
     tasks_done: int = 0
     tasks_total: int = 0
     place_count: int = 0
-    notes: list[str] = []
 
 
-def notes_for(arrive: date) -> list[str]:
-    """Warnings the client must show. Never a reason to reject the trip."""
-    if arrive > today_utc() + timedelta(days=TRANSIT_HORIZON_DAYS):
-        return [TRANSIT_HORIZON_NOTE]
-    return []

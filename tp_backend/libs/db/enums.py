@@ -86,3 +86,11 @@ class CredentialState(StrEnum):
     OK = "ok"
     EXPIRED = "expired"
     MISSING = "missing"
+
+
+class TripRole(StrEnum):
+    """What a member may do with a trip. Ranked: owner > editor > viewer."""
+
+    OWNER = "owner"
+    EDITOR = "editor"
+    VIEWER = "viewer"

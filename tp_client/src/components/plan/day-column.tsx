@@ -7,7 +7,7 @@
 
 import { useDroppable } from "@dnd-kit/core";
 
-import type { DayRoute, ItineraryDay, PlanWarning, TravelMode } from "@/lib/plan-types";
+import type { DayRoute, ItineraryDay, PlanWarning } from "@/lib/plan-types";
 import {
   DAY_END_MIN,
   DAY_START_MIN,
@@ -15,7 +15,6 @@ import {
   SLOT_MIN,
   formatDayTab,
   formatDistance,
-  formatMinutes,
   hhmm,
   layout,
   warningText,
@@ -30,16 +29,16 @@ const SLOTS = Math.round((DAY_END_MIN - DAY_START_MIN) / SLOT_MIN);
 export function DayColumn({
   day,
   route,
-  mode,
   stale,
+  readOnly,
   available,
   onRemove,
   onResize,
 }: {
   day: ItineraryDay;
   route: DayRoute | undefined;
-  mode: TravelMode;
   stale: boolean;
+  readOnly: boolean;
   /** Minutes the flight leaves usable. Outside it, a slot is shown but takes no drop. */
   available: { from: number; to: number };
   onRemove: (placeId: string) => void;
@@ -63,16 +62,12 @@ export function DayColumn({
         <h3 className="text-[15px] font-semibold tracking-[-0.01em]">
           Day {day.day_index + 1} · {formatDayTab(day.date)}
         </h3>
-        <span className="font-mono text-[10.5px] tracking-[0.05em] text-faint uppercase">
-          {mode}
-        </span>
       </div>
 
       <p className="mt-1 font-mono text-[11px] text-faint">
         {[
           `${day.items.length} ${day.items.length === 1 ? "block" : "blocks"}`,
-          routed && route ? `${formatDistance(route.total_distance_m)} ${mode}ing` : null,
-          routed && route ? formatMinutes(route.total_travel_s) : null,
+          routed && route ? `${formatDistance(route.total_distance_m)} walking` : null,
           routed && warningCount > 0
             ? `${warningCount} ${warningCount === 1 ? "warning" : "warnings"}`
             : null,
@@ -131,6 +126,7 @@ export function DayColumn({
               block={byPlace.get(p.item.place_id)}
               warnings={perPlace.get(p.item.place_id) ?? []}
               slotPx={SLOT_PX}
+              readOnly={readOnly}
               onRemove={() => onRemove(p.item.place_id)}
               onResize={(startMin, durationMin) =>
                 onResize(p.item.place_id, startMin, durationMin)

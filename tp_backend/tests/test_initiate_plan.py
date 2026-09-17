@@ -10,8 +10,6 @@ from libs.db.enums import TaskKind
 from libs.places import NotACity, PlacesError
 from tp_api.schemas import (
     MAX_TRIP_DAYS,
-    TRANSIT_HORIZON_DAYS,
-    TRANSIT_HORIZON_NOTE,
     today_utc,
 )
 
@@ -24,7 +22,6 @@ def test_creates_trip_city_run_and_search_tasks(client, db):
     assert body["city"] == {"city_id": HELSINKI, "name": "Helsinki", "country": "FI",
                            "timezone": "Europe/Helsinki"}
     assert body["ingest"]["status"] == "pending"
-    assert body["notes"] == []
 
     trip = db.get(Trip, body["trip_id"])
     assert trip.city_id == HELSINKI
@@ -118,15 +115,6 @@ def test_overlong_trip_is_rejected(client):
 
 def test_overlong_extra_details_is_rejected(client):
     assert client.post("/initiate-plan", json=plan_body(extra_details="x" * 501)).status_code == 422
-
-
-def test_a_trip_beyond_the_transit_horizon_is_accepted_with_a_note(client):
-    far = today_utc() + timedelta(days=TRANSIT_HORIZON_DAYS + 30)
-    r = client.post("/initiate-plan", json=plan_body(
-        arrive_date=far.isoformat(), depart_date=(far + timedelta(days=3)).isoformat()))
-
-    assert r.status_code == 200
-    assert r.json()["notes"] == [TRANSIT_HORIZON_NOTE]
 
 
 def test_times_are_optional(client, db):
