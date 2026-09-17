@@ -38,14 +38,22 @@ export async function proxy(path: string, init?: RequestInit): Promise<Response>
   });
 }
 
-/** Server-side GET for server components, which need the parsed body rather than a Response. */
+/** Server-side GET for server components, which need the parsed body rather than a Response.
+ *
+ * null means tp_api answered "no" — signed out, or a trip this session cannot see. A dead or broken
+ * upstream throws instead, so error.tsx reports the outage rather than a page claiming the thing
+ * does not exist.
+ */
 export async function getJson<T>(path: string): Promise<T | null> {
+  let r: Response;
   try {
-    const r = await fetch(`${BASE}${path}`, await authed());
-    return r.ok ? ((await r.json()) as T) : null;
-  } catch {
-    return null;
+    r = await fetch(`${BASE}${path}`, await authed());
+  } catch (e) {
+    throw new Error(`tp_api is unreachable: ${path}`, { cause: e });
   }
+  if (r.ok) return (await r.json()) as T;
+  if (r.status >= 500) throw new Error(`tp_api answered ${r.status} for ${path}`);
+  return null;
 }
 
 /** Sign-in only: the one call with no session yet, so it must not read the cookie. */

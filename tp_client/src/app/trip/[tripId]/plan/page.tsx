@@ -2,7 +2,7 @@
 // route it and say what does not work.
 
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 
 import { AppHeader } from "@/components/app-header";
 import { PlanBoard } from "@/components/plan/plan-board";
@@ -25,6 +25,9 @@ export default async function PlanPage({ params }: PageProps<"/trip/[tripId]/pla
   const { tripId } = await params;
   const id = encodeURIComponent(tripId);
 
+  const user = await currentUser();
+  if (!user) redirect("/login");
+
   const [trip, itinerary, shortlist] = await Promise.all([
     getJson<TripStatus>(`/trips/${id}`),
     getJson<Itinerary>(`/trips/${id}/itinerary`),
@@ -38,7 +41,7 @@ export default async function PlanPage({ params }: PageProps<"/trip/[tripId]/pla
 
   return (
     <div className="min-h-dvh bg-page pb-16">
-      <AppHeader user={await currentUser()} />
+      <AppHeader user={user} />
       <main className="mx-auto w-full max-w-[1560px] px-7 pt-9">
         <Link
           href={`/trip/${id}`}

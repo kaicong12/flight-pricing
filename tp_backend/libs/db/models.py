@@ -96,7 +96,7 @@ class User(Base):
 class UserTrip(Base):
     """Who can see a trip. Access is only ever this table — `trips` has no owner column.
 
-    No role column yet: one owner and proposed edits is the next feature, not this one.
+    No role column yet: owner/editor/viewer is the next feature, not this one.
     """
 
     __tablename__ = "user_trips"

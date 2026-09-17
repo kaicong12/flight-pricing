@@ -2,7 +2,7 @@
 // exposes places.
 
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 
 import { AppHeader } from "@/components/app-header";
 import { DeleteTrip } from "@/components/delete-trip";
@@ -26,6 +26,11 @@ export async function generateMetadata({ params }: PageProps<"/trip/[tripId]">) 
 
 export default async function TripPage({ params }: PageProps<"/trip/[tripId]">) {
   const { tripId } = await params;
+  // Signed out is not the same as no access, and a shared link is the common way to arrive here
+  // without a session. currentUser is memoized, so the header below re-uses this call.
+  const user = await currentUser();
+  if (!user) redirect("/login");
+
   const trip = await loadTrip(tripId);
   if (!trip) notFound();
 
@@ -33,7 +38,7 @@ export default async function TripPage({ params }: PageProps<"/trip/[tripId]">) 
 
   return (
     <div className="min-h-dvh bg-page pb-24">
-      <AppHeader user={await currentUser()} />
+      <AppHeader user={user} />
       <main className="mx-auto w-full max-w-[820px] px-7 pt-11">
         <Link
           href="/trips"

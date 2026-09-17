@@ -10,7 +10,7 @@ route that exact sequence and warn about anything that doesn't work.
 |---|---|
 | Audience | Private group of friends |
 | Output | Ordered activity blocks + a route drawn on a map |
-| Collaboration | One owner; others propose edits; owner approves |
+| Collaboration | `user_trips.role`: owner, editor, viewer. Editors edit the itinerary directly — no approval step |
 | Auth | Google sign-in. Opaque session token in Postgres, not a JWT — sign out revokes |
 | Flights | Input only in v1 |
 | Cities | Any city on demand — async ingestion, client polls |
@@ -185,3 +185,10 @@ final.
    `tests/test_auth.py` asserts the open-route set, so a new endpoint added without a session
    dependency fails the suite — but nobody can click Google's consent screen in CI.
 10. **Sign-in has no rate limit.** `POST /auth/google` and `GET /auth/url` are open by necessity.
+11. **Sharing is designed, not built.** `user_trips` has no `role` column yet and the plan screen's
+    "Share" button only copies the URL — a link grants nothing, so a second user gets the trip's
+    not-found page. Still to build: the `role` migration (existing rows backfill to `owner`, one
+    owner per trip via a partial unique index), `POST`/`DELETE /trips/{id}/members`, `require_edit`
+    and `require_admin` beside `require_trip_access`, and a user-search dropdown. `viewer` stays out
+    of the share UI until someone wants read-only. Editors spend the owner's Gemini and Routes quota
+    when they draft or route a day, which is accepted.
