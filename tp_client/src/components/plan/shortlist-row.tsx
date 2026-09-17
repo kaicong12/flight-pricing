@@ -17,15 +17,18 @@ import { cn } from "@/lib/utils";
 export function ShortlistRow({
   place,
   placedDay,
+  readOnly,
   onDismiss,
 }: {
   place: ShortlistPlace;
   placedDay: number | null;
+  readOnly: boolean;
   onDismiss: () => void;
 }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: `shortlist:${place.place_id}`,
     data: { kind: "shortlist", place },
+    disabled: readOnly,
   });
 
   return (
@@ -51,14 +54,16 @@ export function ShortlistRow({
         </div>
 
         <div className="flex shrink-0 items-center gap-1">
-          <button
-            type="button"
-            onClick={onDismiss}
-            aria-label={`Remove ${place.name} from the shortlist`}
-            className="grid size-6 place-items-center rounded-full text-faint opacity-0 transition-all group-hover:opacity-100 hover:bg-alert-bg hover:text-alert focus-visible:opacity-100 outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
-          >
-            <X className="size-3.5" />
-          </button>
+          {readOnly ? null : (
+            <button
+              type="button"
+              onClick={onDismiss}
+              aria-label={`Remove ${place.name} from the shortlist`}
+              className="grid size-6 place-items-center rounded-full text-faint opacity-0 transition-all group-hover:opacity-100 hover:bg-alert-bg hover:text-alert focus-visible:opacity-100 outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+            >
+              <X className="size-3.5" />
+            </button>
+          )}
           {placedDay !== null && (
             <span className="grid h-6.5 min-w-6.5 place-items-center rounded-full bg-ok-bg px-1.5 font-mono text-[10.5px] text-ok">
               D{placedDay + 1}

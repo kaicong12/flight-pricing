@@ -33,6 +33,12 @@ export type TaskProgress = {
   count: number;
 };
 
+/** owner administers and edits, editor edits the plan, viewer reads. */
+export type TripRole = "owner" | "editor" | "viewer";
+
+/** A trip's member: a User plus what they may do with it. */
+export type Member = User & { role: TripRole };
+
 export type Trip = {
   trip_id: string;
   name: string | null;
@@ -44,6 +50,7 @@ export type Trip = {
   extra_details: string | null;
   ingest: Ingest | null;
   deleted: boolean;
+  your_role: TripRole;
 };
 
 export type TaskFailure = {

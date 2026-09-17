@@ -53,11 +53,15 @@ export function PlanBoard({
   center,
   initialItinerary,
   initialShortlist,
+  meId,
+  canEdit,
 }: {
   trip: Trip;
   center: { lat: number; lon: number } | null;
   initialItinerary: Itinerary;
   initialShortlist: Shortlist;
+  meId: string;
+  canEdit: boolean;
 }) {
   const [state, dispatch] = useReducer(
     planReducer,
@@ -263,6 +267,8 @@ export function PlanBoard({
         days={state.days}
         placeCount={state.total}
         provisional={provisional}
+        meId={meId}
+        canEdit={canEdit}
         stale={isStale}
         routing={routingDay !== null}
         onReroute={() => dispatch({ type: "invalidate", day: state.activeDay })}
@@ -276,6 +282,7 @@ export function PlanBoard({
           category={category}
           loading={!settled}
           onCategory={setCategory}
+          readOnly={!canEdit}
           onDismiss={dismiss}
           onMore={loadMore}
         />
@@ -290,6 +297,7 @@ export function PlanBoard({
             day={day}
             route={route}
             stale={isStale}
+            readOnly={!canEdit}
             available={availableWindow(trip, state.activeDay, state.days.length)}
             onRemove={(placeId) =>
               dispatch({ type: "remove", day: state.activeDay, placeId })

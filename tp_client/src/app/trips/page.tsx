@@ -12,18 +12,27 @@ export const metadata = { title: "Trips" };
 export const dynamic = "force-dynamic";
 
 export default async function TripsPage() {
+  const user = await currentUser();
   const trips = toTripList(await getJson<unknown>("/trips"));
   const ingesting = trips.filter((t) => t.status === "ingesting").length;
 
   return (
     <div className="min-h-dvh bg-page pb-24">
-      <AppHeader user={await currentUser()} />
-      {trips.length === 0 ? <Empty /> : <List trips={trips} ingesting={ingesting} />}
+      <AppHeader user={user} />
+      {trips.length === 0 || !user ? (
+        <Empty />
+      ) : (
+        <List trips={trips} ingesting={ingesting} meId={user.user_id} />
+      )}
     </div>
   );
 }
 
-function List({ trips, ingesting }: { trips: ReturnType<typeof toTripList>; ingesting: number }) {
+function List({ trips, ingesting, meId }: {
+  trips: ReturnType<typeof toTripList>;
+  ingesting: number;
+  meId: string;
+}) {
   return (
     <main className="mx-auto max-w-[1180px] px-7 pt-11">
       <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-4">
@@ -44,7 +53,7 @@ function List({ trips, ingesting }: { trips: ReturnType<typeof toTripList>; inge
 
       <div className="mt-7 grid gap-5 [grid-template-columns:repeat(auto-fill,minmax(min(340px,100%),1fr))]">
         {trips.map((trip) => (
-          <TripCard key={trip.trip_id} trip={trip} />
+          <TripCard key={trip.trip_id} trip={trip} meId={meId} />
         ))}
       </div>
     </main>

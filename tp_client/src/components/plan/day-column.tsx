@@ -30,6 +30,7 @@ export function DayColumn({
   day,
   route,
   stale,
+  readOnly,
   available,
   onRemove,
   onResize,
@@ -37,6 +38,7 @@ export function DayColumn({
   day: ItineraryDay;
   route: DayRoute | undefined;
   stale: boolean;
+  readOnly: boolean;
   /** Minutes the flight leaves usable. Outside it, a slot is shown but takes no drop. */
   available: { from: number; to: number };
   onRemove: (placeId: string) => void;
@@ -124,6 +126,7 @@ export function DayColumn({
               block={byPlace.get(p.item.place_id)}
               warnings={perPlace.get(p.item.place_id) ?? []}
               slotPx={SLOT_PX}
+              readOnly={readOnly}
               onRemove={() => onRemove(p.item.place_id)}
               onResize={(startMin, durationMin) =>
                 onResize(p.item.place_id, startMin, durationMin)
