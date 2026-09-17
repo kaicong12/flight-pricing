@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from libs.auth import user_for_token
 from libs.db import User, UserTrip, session
+from libs.db.enums import TripRole
 from libs.places import CityDetails, CitySuggestion, city_details, search_cities
 from libs.routing import HoursHit, RouteResult, compute_walk, fetch_hours
 
@@ -41,13 +42,26 @@ def require_trip_access(
     trip_id: str,
     db: Annotated[Session, Depends(db_session)],
     user: Annotated[User, Depends(current_user)],
-) -> None:
-    """Gate for every /trips/{trip_id} route. Access is the user_trips row, nothing else.
+) -> str:
+    """The caller's role on this trip. Access is the user_trips row, nothing else.
 
     404 rather than 403, so the gate cannot be used to discover which trip ids exist.
     """
-    if db.get(UserTrip, (user.user_id, trip_id)) is None:
+    row = db.get(UserTrip, (user.user_id, trip_id))
+    if row is None:
         raise HTTPException(404, "no such trip")
+    return row.role
+
+
+# 403 not 404 here: a member already knows the trip exists.
+def require_edit(role: Annotated[str, Depends(require_trip_access)]) -> None:
+    if role == TripRole.VIEWER:
+        raise HTTPException(403, "you can view this trip but not change it")
+
+
+def require_admin(role: Annotated[str, Depends(require_trip_access)]) -> None:
+    if role != TripRole.OWNER:
+        raise HTTPException(403, "only the trip's owner can do that")
 
 
 def city_lookup() -> CityLookup:

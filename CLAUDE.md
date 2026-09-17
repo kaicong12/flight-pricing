@@ -63,6 +63,13 @@ one row per trip for the list. The client polls until the run reaches a terminal
 `DELETE /trips/{id}` sets `trips.deleted`, which drops it from the list — soft, because the ordering
 work is worth more than the row.
 
+**5b. Share.** `user_trips.role` is the whole permission model: `require_trip_access` returns the
+caller's role and `require_edit`/`require_admin` compose on top, so a role is checked where the route
+is declared and `tests/test_auth.py` fails any trip write that forgets one. Owners rename, share and
+delete; editors change the plan; viewers read. `GET /users/search` feeds the share dropdown,
+`POST/DELETE /trips/{id}/members` writes it, and both trip payloads carry `your_role` so the client
+hides what would only 403. Sharing is reachable from a trip card as well as the plan screen.
+
 **6. Plan.** `GET /trips/{id}/shortlist` ranks the city's places by mention count and returns each
 mention as a link back to the video or note that named it. The user drags
 them into days; `PUT /trips/{id}/itinerary` replaces whole days, because a drag is a statement about
@@ -185,10 +192,7 @@ final.
    `tests/test_auth.py` asserts the open-route set, so a new endpoint added without a session
    dependency fails the suite — but nobody can click Google's consent screen in CI.
 10. **Sign-in has no rate limit.** `POST /auth/google` and `GET /auth/url` are open by necessity.
-11. **Sharing is designed, not built.** `user_trips` has no `role` column yet and the plan screen's
-    "Share" button only copies the URL — a link grants nothing, so a second user gets the trip's
-    not-found page. Still to build: the `role` migration (existing rows backfill to `owner`, one
-    owner per trip via a partial unique index), `POST`/`DELETE /trips/{id}/members`, `require_edit`
-    and `require_admin` beside `require_trip_access`, and a user-search dropdown. `viewer` stays out
-    of the share UI until someone wants read-only. Editors spend the owner's Gemini and Routes quota
-    when they draft or route a day, which is accepted.
+11. **Sharing has no invite for someone who has never signed in.** The dropdown searches `users`,
+    so a friend must have signed in here once before they can be added. An email invite that creates
+    the row first is the missing half — `users.user_id` is our own uuid precisely so it can exist
+    before any Google `sub` does.

@@ -22,8 +22,14 @@ export function UserMenu({ user }: { user: User }) {
         className="rounded-full outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
       >
         <Avatar.Root className="grid size-7 shrink-0 place-items-center overflow-hidden rounded-full bg-[#d7cfba] text-[11px] font-semibold text-ink-soft select-none">
+          {/* Chrome ORB-blocks a Google avatar when the request carries a referrer. */}
           {user.picture ? (
-            <Avatar.Image src={user.picture} alt="" className="size-full object-cover" />
+            <Avatar.Image
+              src={user.picture}
+              alt=""
+              referrerPolicy="no-referrer"
+              className="size-full object-cover"
+            />
           ) : null}
           <Avatar.Fallback>{initials(user)}</Avatar.Fallback>
         </Avatar.Root>

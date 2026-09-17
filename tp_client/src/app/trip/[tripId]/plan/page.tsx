@@ -56,6 +56,8 @@ export default async function PlanPage({ params }: PageProps<"/trip/[tripId]/pla
             center={center}
             initialItinerary={itinerary}
             initialShortlist={shortlist ?? EMPTY_SHORTLIST}
+            meId={user.user_id}
+            canEdit={trip.your_role !== "viewer"}
           />
         </div>
       </main>

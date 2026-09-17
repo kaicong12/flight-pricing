@@ -19,6 +19,7 @@ export function ActivityBlock({
   block,
   warnings,
   slotPx,
+  readOnly,
   onRemove,
   onResize,
 }: {
@@ -26,6 +27,7 @@ export function ActivityBlock({
   block: PlanBlock | undefined;
   warnings: PlanWarning[];
   slotPx: number;
+  readOnly: boolean;
   onRemove: () => void;
   onResize: (startMin: number, durationMin: number) => void;
 }) {
@@ -33,6 +35,7 @@ export function ActivityBlock({
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: `item:${item.place_id}`,
     data: { kind: "item", item },
+    disabled: readOnly,
   });
 
   const broken = warnings.length > 0;
@@ -81,11 +84,13 @@ export function ActivityBlock({
           isDragging && "z-10 opacity-90 shadow-lift",
         )}
       >
-        <ResizeHandle
-          edge="top"
-          label={`Start ${item.name} earlier or later`}
-          onPointerDown={startResize("top")}
-        />
+        {readOnly ? null : (
+          <ResizeHandle
+            edge="top"
+            label={`Start ${item.name} earlier or later`}
+            onPointerDown={startResize("top")}
+          />
+        )}
 
         <div
           ref={setNodeRef}
@@ -114,20 +119,24 @@ export function ActivityBlock({
           )}
         </div>
 
-        <button
-          type="button"
-          onClick={onRemove}
-          aria-label={`Remove ${item.name}`}
-          className="absolute top-0.5 right-0.5 grid size-5 place-items-center rounded text-faint opacity-0 transition-opacity group-hover/block:opacity-100 hover:text-ink focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring/50"
-        >
-          <X className="size-3" />
-        </button>
+        {readOnly ? null : (
+          <>
+            <button
+              type="button"
+              onClick={onRemove}
+              aria-label={`Remove ${item.name}`}
+              className="absolute top-0.5 right-0.5 grid size-5 place-items-center rounded text-faint opacity-0 transition-opacity group-hover/block:opacity-100 hover:text-ink focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring/50"
+            >
+              <X className="size-3" />
+            </button>
 
-        <ResizeHandle
-          edge="bottom"
-          label={`Change how long you spend at ${item.name}`}
-          onPointerDown={startResize("bottom")}
-        />
+            <ResizeHandle
+              edge="bottom"
+              label={`Change how long you spend at ${item.name}`}
+              onPointerDown={startResize("bottom")}
+            />
+          </>
+        )}
       </div>
     </div>
   );

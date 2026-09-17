@@ -13,6 +13,7 @@ from tp_api.deps import (
     RouteCompute,
     db_session,
     hours_lookup,
+    require_edit,
     require_trip_access,
     route_compute,
 )
@@ -31,6 +32,7 @@ router = APIRouter(dependencies=[Depends(require_trip_access)])
 Db = Annotated[Session, Depends(db_session)]
 Hours = Annotated[HoursLookup, Depends(hours_lookup)]
 Route = Annotated[RouteCompute, Depends(route_compute)]
+Edit = [Depends(require_edit)]
 
 
 @router.get("/trips/{trip_id}/shortlist", response_model=ShortlistOut)
@@ -49,17 +51,17 @@ def get_itinerary(trip_id: str, db: Db) -> ItineraryOut:
     return service.read_days(db, service.get_trip(db, trip_id))
 
 
-@router.put("/trips/{trip_id}/itinerary", response_model=ItineraryOut)
+@router.put("/trips/{trip_id}/itinerary", response_model=ItineraryOut, dependencies=Edit)
 def put_itinerary(trip_id: str, body: ItineraryIn, db: Db) -> ItineraryOut:
     return service.replace_days(db, trip_id, body)
 
 
-@router.post("/trips/{trip_id}/dismissals", status_code=204)
+@router.post("/trips/{trip_id}/dismissals", status_code=204, dependencies=Edit)
 def add_dismissal(trip_id: str, body: DismissalIn, db: Db) -> None:
     service.add_dismissal(db, trip_id, body.place_id)
 
 
-@router.delete("/trips/{trip_id}/dismissals/{place_id}", status_code=204)
+@router.delete("/trips/{trip_id}/dismissals/{place_id}", status_code=204, dependencies=Edit)
 def remove_dismissal(trip_id: str, place_id: str, db: Db) -> None:
     service.remove_dismissal(db, trip_id, place_id)
 

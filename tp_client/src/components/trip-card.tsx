@@ -3,14 +3,18 @@
 
 import Link from "next/link";
 
+import { ShareTrip } from "@/components/share-trip";
 import { TripName } from "@/components/trip-name";
 import { tripHref, type TripSummary } from "@/lib/trips";
 
 const CONTOURS =
   "repeating-radial-gradient(circle at 28% 118%, rgba(58,74,53,0.09) 0 1.5px, transparent 1.5px 20px)";
 
-export function TripCard({ trip }: { trip: TripSummary }) {
+export function TripCard({ trip, meId }: { trip: TripSummary; meId: string }) {
   return (
+    // The share control is a sibling of the Link, not a child: a button inside an anchor is invalid
+    // markup and the anchor would swallow the click.
+    <div className="relative">
     <Link
       href={tripHref(trip)}
       className="block overflow-hidden rounded-card border border-border surface shadow-card transition-all hover:border-[#c6bda4] hover:shadow-lift outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
@@ -57,5 +61,10 @@ export function TripCard({ trip }: { trip: TripSummary }) {
         </div>
       </div>
     </Link>
+
+      <div className="absolute top-3 right-3">
+        <ShareTrip tripId={trip.trip_id} yourRole={trip.your_role} meId={meId} variant="icon" />
+      </div>
+    </div>
   );
 }

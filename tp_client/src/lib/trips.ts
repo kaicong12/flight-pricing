@@ -3,9 +3,9 @@
 // Pure, and it has to stay that way: client components import the formatters from here, so one
 // server-only import (tp_api reads cookies) would drag `next/headers` into the browser bundle.
 
-import { TERMINAL_STATUSES, type City, type Trip } from "@/lib/api-types";
+import { TERMINAL_STATUSES, type City, type Trip, type TripRole } from "@/lib/api-types";
 
-export type TripListItem = Pick<Trip, "trip_id" | "name" | "city" | "arrive_date" | "depart_date" | "ingest"> & {
+export type TripListItem = Pick<Trip, "trip_id" | "name" | "city" | "arrive_date" | "depart_date" | "ingest" | "your_role"> & {
   tasks_done: number;
   tasks_total: number;
   place_count: number;
@@ -14,6 +14,7 @@ export type TripListItem = Pick<Trip, "trip_id" | "name" | "city" | "arrive_date
 export type TripSummary = {
   trip_id: string;
   name: string | null;
+  your_role: TripRole;
   title: string;
   city: string;
   country: string;
@@ -60,6 +61,7 @@ function summarise(item: TripListItem): TripSummary {
   return {
     trip_id: item.trip_id,
     name: item.name ?? null,
+    your_role: item.your_role,
     title: tripTitle(item),
     city: item.city?.name ?? "",
     country: item.city?.country ?? "",
