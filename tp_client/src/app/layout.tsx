@@ -31,9 +31,11 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
     >
       <body className="min-h-full flex flex-col">
         {children}
+        {/* Below the z-50 overlay layer: the map has to sit above this grain (see day-map.tsx), so
+            anything above it would paint over every dialog and popover. */}
         <div
           aria-hidden
-          className="pointer-events-none fixed inset-0 z-60 opacity-40 mix-blend-multiply"
+          className="pointer-events-none fixed inset-0 z-30 opacity-40 mix-blend-multiply"
           style={{ backgroundImage: GRAIN }}
         />
       </body>

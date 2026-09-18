@@ -19,7 +19,7 @@ export function AppHeader({ user }: { user: User | null }) {
   const pathname = usePathname();
 
   return (
-    <header className="sticky top-0 z-30 flex h-15 items-center justify-between gap-6 border-b border-border bg-white/85 px-7 backdrop-blur-md">
+    <header className="sticky top-0 z-40 flex h-15 items-center justify-between gap-6 border-b border-border bg-white/85 px-7 backdrop-blur-md">
       <div className="flex items-center gap-7">
         <Link href="/trips" className="flex shrink-0 items-center gap-2.5 rounded-full outline-none focus-visible:ring-3 focus-visible:ring-ring/50">
           <span className="size-5.5 rounded-[999px_4px_999px_4px] bg-linear-135 from-ok to-brand" />
