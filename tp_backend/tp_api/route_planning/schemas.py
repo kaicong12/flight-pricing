@@ -8,6 +8,7 @@ from datetime import date, time, timedelta
 
 from pydantic import BaseModel, Field
 
+from libs.db.enums import Category
 from tp_api.schemas import today_utc
 
 MAX_STOPS_PER_DAY = 25
@@ -91,6 +92,19 @@ class ItineraryIn(BaseModel):
 
 class DismissalIn(BaseModel):
     place_id: str = Field(min_length=1, max_length=255)
+
+
+class VenueSuggestionOut(BaseModel):
+    place_id: str
+    name: str
+    context: str | None = None
+
+
+class PlaceAddIn(BaseModel):
+    """Only the id is taken on trust — name and coordinates are fetched server-side."""
+
+    place_id: str = Field(min_length=1, max_length=255)
+    category: str = Field(pattern=f"^({'|'.join(Category)})$")
 
 
 class BlockOut(BaseModel):

@@ -201,6 +201,29 @@ export function PlanBoard({
     [trip.trip_id],
   );
 
+  // Not optimistic, unlike dismiss: the server owns the name and coordinates. Resolves to an error.
+  const addPlace = useCallback(
+    async (placeId: string, category: string): Promise<string | null> => {
+      let r: Response;
+      try {
+        r = await fetch(`/api/trips/${trip.trip_id}/places`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ place_id: placeId, category }),
+        });
+      } catch {
+        return "Could not reach the planner.";
+      }
+      if (!r.ok) {
+        const body = await r.json().catch(() => null);
+        return typeof body?.detail === "string" ? body.detail : "That place could not be added.";
+      }
+      dispatch({ type: "placeAdded", place: (await r.json()) as ShortlistPlace });
+      return null;
+    },
+    [trip.trip_id],
+  );
+
   function onDragStart(event: DragStartEvent) {
     setDragging(String(event.active.id));
   }
@@ -281,9 +304,11 @@ export function PlanBoard({
           placedDays={placed}
           category={category}
           loading={!settled}
+          tripId={trip.trip_id}
           onCategory={setCategory}
           readOnly={!canEdit}
           onDismiss={dismiss}
+          onAdd={addPlace}
           onMore={loadMore}
         />
 

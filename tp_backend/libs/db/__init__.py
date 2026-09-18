@@ -20,6 +20,7 @@ from libs.db.models import (
     UserTrip,
     YouTubeVideo,
 )
+from libs.db.places import upsert_place
 from libs.db.session import SessionLocal, engine, session
 
 __all__ = [
@@ -44,4 +45,5 @@ __all__ = [
     "YouTubeVideo",
     "engine",
     "session",
+    "upsert_place",
 ]

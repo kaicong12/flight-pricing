@@ -43,7 +43,8 @@ export type PlanAction =
   | { type: "routeFailed"; day: number }
   | { type: "invalidate"; day: number }
   | { type: "saved"; days: number[]; itinerary: Itinerary; revision: number }
-  | { type: "shortlistLoaded"; shortlist: Shortlist; append: boolean };
+  | { type: "shortlistLoaded"; shortlist: Shortlist; append: boolean }
+  | { type: "placeAdded"; place: ShortlistPlace };
 
 const without = (xs: number[], y: number) => xs.filter((x) => x !== y);
 const with_ = (xs: number[], y: number) => (xs.includes(y) ? xs : [...xs, y]);
@@ -206,6 +207,17 @@ export function planReducer(state: PlanState, action: PlanAction): PlanState {
           ? dedupe([...state.shortlist, ...action.shortlist.places])
           : action.shortlist.places,
       };
+
+    // Prepended, not appended: with no mentions the server ranks it last, on a page nobody scrolls to.
+    case "placeAdded": {
+      const known = state.shortlist.some((p) => p.place_id === action.place.place_id);
+      return {
+        ...state,
+        shortlist: dedupe([action.place, ...state.shortlist]),
+        dismissed: state.dismissed.filter((id) => id !== action.place.place_id),
+        total: known ? state.total : state.total + 1,
+      };
+    }
   }
 }
 

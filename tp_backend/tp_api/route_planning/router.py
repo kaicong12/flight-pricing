@@ -11,11 +11,15 @@ from sqlalchemy.orm import Session
 from tp_api.deps import (
     HoursLookup,
     RouteCompute,
+    VenueLookup,
+    VenueSearch,
     db_session,
     hours_lookup,
     require_edit,
     require_trip_access,
     route_compute,
+    venue_lookup,
+    venue_search,
 )
 from tp_api.route_planning import service
 from tp_api.route_planning.schemas import (
@@ -23,7 +27,10 @@ from tp_api.route_planning.schemas import (
     DismissalIn,
     ItineraryIn,
     ItineraryOut,
+    PlaceAddIn,
     ShortlistOut,
+    ShortlistPlaceOut,
+    VenueSuggestionOut,
 )
 
 # Every route here is under /trips/{trip_id}, so one router-wide gate covers all of them.
@@ -32,6 +39,8 @@ router = APIRouter(dependencies=[Depends(require_trip_access)])
 Db = Annotated[Session, Depends(db_session)]
 Hours = Annotated[HoursLookup, Depends(hours_lookup)]
 Route = Annotated[RouteCompute, Depends(route_compute)]
+Venues = Annotated[VenueSearch, Depends(venue_search)]
+Venue = Annotated[VenueLookup, Depends(venue_lookup)]
 Edit = [Depends(require_edit)]
 
 
@@ -54,6 +63,23 @@ def get_itinerary(trip_id: str, db: Db) -> ItineraryOut:
 @router.put("/trips/{trip_id}/itinerary", response_model=ItineraryOut, dependencies=Edit)
 def put_itinerary(trip_id: str, body: ItineraryIn, db: Db) -> ItineraryOut:
     return service.replace_days(db, trip_id, body)
+
+
+# Gated on edit because searching costs a Places call, and a viewer could only be 403'd by the POST.
+@router.get("/trips/{trip_id}/places/search", response_model=list[VenueSuggestionOut],
+            dependencies=Edit)
+def search_places(
+    trip_id: str,
+    db: Db,
+    search: Venues,
+    q: Annotated[str, Query(min_length=2, max_length=120)],
+) -> list[VenueSuggestionOut]:
+    return service.venue_suggestions(db, trip_id, q, search)
+
+
+@router.post("/trips/{trip_id}/places", response_model=ShortlistPlaceOut, dependencies=Edit)
+def add_place(trip_id: str, body: PlaceAddIn, db: Db, lookup: Venue) -> ShortlistPlaceOut:
+    return service.add_place(db, trip_id, body.place_id, body.category, lookup)
 
 
 @router.post("/trips/{trip_id}/dismissals", status_code=204, dependencies=Edit)

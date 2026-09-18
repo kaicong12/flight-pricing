@@ -11,10 +11,10 @@ from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
-from libs.db import City, Extraction, Place, PlaceMention, PlaceQuery
+from libs.db import City, Extraction, PlaceMention, PlaceQuery, upsert_place
 from libs.db.enums import Category, ErrorCode, ExtractedFrom, Sentiment, Source, TaskKind
 from libs.ingest import enqueue
-from libs.places import PlacesError, VenueHit, search_venue
+from libs.places import PlacesError, distance_km, search_venue
 from libs.settings import settings
 from tp_ingestions.errors import TaskError
 from tp_ingestions.places import names
@@ -51,21 +51,6 @@ def remember(session: Session, city_id: str, key: str, place_id: str) -> None:
         pg_insert(PlaceQuery)
         .values(city_id=city_id, query_norm=key, place_id=place_id)
         .on_conflict_do_nothing(index_elements=["city_id", "query_norm"])
-    )
-
-
-def upsert_place(session: Session, city: City, hit: VenueHit, query: str,
-                 confidence: str, reason: str) -> None:
-    """Ratings move, so refresh them; never overwrite the name a better resolution already set."""
-    session.execute(
-        pg_insert(Place)
-        .values(place_id=hit.place_id, city_id=city.city_id, name=hit.name, address=hit.address,
-                lat=hit.lat, lon=hit.lon, rating=hit.rating, rating_count=hit.rating_count,
-                primary_type=hit.primary_type, resolved_from_name=query,
-                confidence=confidence, confidence_reason=reason)
-        .on_conflict_do_update(
-            index_elements=["place_id"],
-            set_={"rating": hit.rating, "rating_count": hit.rating_count, "address": hit.address})
     )
 
 
@@ -163,7 +148,7 @@ def places_resolve(session: Session, task: ClaimedTask) -> dict:
             counts["rejected"] += 1
             continue
 
-        away = names.distance_km(city.lat, city.lon, hit.lat or city.lat, hit.lon or city.lon)
+        away = distance_km(city.lat, city.lon, hit.lat or city.lat, hit.lon or city.lon)
         if away > radius / 1000:
             log.info("unresolved %r: %s is %.0fkm from %s", name, hit.name, away, city.name)
             missed.add(key)

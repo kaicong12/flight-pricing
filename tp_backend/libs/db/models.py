@@ -169,6 +169,7 @@ class Place(Base):
     __tablename__ = "places"
     __table_args__ = (
         _in("confidence", Confidence),
+        _in("category", Category),
         Index("ix_places_city", "city_id"),
     )
 
@@ -181,6 +182,8 @@ class Place(Base):
     rating: Mapped[float | None] = mapped_column(Float)
     rating_count: Mapped[int | None] = mapped_column(Integer)
     primary_type: Mapped[str | None] = mapped_column(String(120))
+    # Set only by hand. Every other category is derived from mentions, which a manual place has none.
+    category: Mapped[str | None] = mapped_column(String(16))
     resolved_from_name: Mapped[str | None] = mapped_column(Text)
     confidence: Mapped[str] = mapped_column(String(16), nullable=False)
     confidence_reason: Mapped[str | None] = mapped_column(Text)

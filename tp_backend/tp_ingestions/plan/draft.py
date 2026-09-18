@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 from libs.db import ItineraryItem, Trip
 from libs.db.enums import TaskKind
 from libs.gemini import generate
+from libs.places import distance_km
 from libs.prompts import ITINERARY_DRAFT
 from libs.routing import SLOT_MIN, Stop, fetch_hours, hhmm, plan_day, sun_times
 from libs.routing.plan import CLOSED_TODAY, CLOSES_BEFORE_DONE, OPENS_LATER
@@ -21,7 +22,6 @@ from tp_api.route_planning.schemas import DayIn, ItemIn, ItineraryIn
 from tp_api.route_planning.service import load_hours, replace_days, shortlist
 from tp_api.route_planning.utils import available_window, day_count, google_weekday, tz_minutes
 from tp_ingestions import limits
-from tp_ingestions.places.names import distance_km
 from tp_ingestions.queue import ClaimedTask
 from tp_ingestions.registry import handles
 

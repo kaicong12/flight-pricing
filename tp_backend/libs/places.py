@@ -18,6 +18,10 @@ FIELDS = "id,displayName,location,addressComponents,types,timeZone"
 VENUE_FIELDS = ("places.id,places.displayName,places.formattedAddress,places.location,"
                 "places.types,places.primaryTypeDisplayName,places.rating,places.userRatingCount")
 
+# Details takes the mask unprefixed; a `places.`-prefixed one is a 400.
+VENUE_DETAIL_FIELDS = ("id,displayName,formattedAddress,location,types,primaryTypeDisplayName,"
+                       "rating,userRatingCount")
+
 # 1 degree of latitude is ~111 km everywhere; longitude shrinks with the cosine of the latitude,
 # which matters at Tromsø's 69°N.
 _KM_PER_DEG_LAT = 111.0
@@ -43,6 +47,13 @@ class CitySuggestion:
 
 
 @dataclass(frozen=True)
+class VenueSuggestion:
+    place_id: str
+    name: str
+    context: str | None
+
+
+@dataclass(frozen=True)
 class VenueHit:
     place_id: str
     name: str
@@ -65,6 +76,14 @@ class CityDetails:
     lon: float | None
 
 
+def distance_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """Equirectangular, which is accurate enough over a city and cheap."""
+    mean = math.radians((lat1 + lat2) / 2)
+    dx = (lon2 - lon1) * _KM_PER_DEG_LAT * math.cos(mean)
+    dy = (lat2 - lat1) * _KM_PER_DEG_LAT
+    return math.hypot(dx, dy)
+
+
 def _country(components: list[dict]) -> str | None:
     for c in components:
         if "country" in c.get("types", []):
@@ -72,33 +91,59 @@ def _country(components: list[dict]) -> str | None:
     return None
 
 
-def search_cities(q: str, limit: int = 5, *, timeout: float = 10.0) -> list[CitySuggestion]:
-    """Typeahead over city names. No matches is an empty list, not an error."""
+def _autocomplete(body: dict, limit: int, timeout: float) -> list[dict]:
     key = settings().google_api_key
     if not key:
         raise PlacesError("GOOGLE_API_KEY is not set")
 
     try:
         r = client().post(AUTOCOMPLETE_URL, timeout=timeout, headers={"X-Goog-Api-Key": key},
-                          json={"input": q, "includedPrimaryTypes": ["(cities)"]})
+                          json=body)
     except httpx.HTTPError as e:
         raise PlacesError(f"places autocomplete failed: {e}") from e
     if r.status_code != 200:
         raise PlacesError(f"places autocomplete returned {r.status_code}: {r.text[:200]}")
 
-    out = []
-    for s in r.json().get("suggestions") or []:
-        # A suggestion is either a placePrediction or a queryPrediction; only the former has an id.
-        p = s.get("placePrediction")
-        if not p or not p.get("placeId"):
-            continue
-        fmt = p.get("structuredFormat") or {}
-        out.append(CitySuggestion(
+    # A suggestion is either a placePrediction or a queryPrediction; only the former has an id.
+    out = [s["placePrediction"] for s in r.json().get("suggestions") or []
+           if (s.get("placePrediction") or {}).get("placeId")]
+    return out[:limit]
+
+
+def search_cities(q: str, limit: int = 5, *, timeout: float = 10.0) -> list[CitySuggestion]:
+    """Typeahead over city names. No matches is an empty list, not an error."""
+    body = {"input": q, "includedPrimaryTypes": ["(cities)"]}
+    return [
+        CitySuggestion(
             place_id=p["placeId"],
             description=(p.get("text") or {}).get("text") or "",
-            main_text=(fmt.get("mainText") or {}).get("text"),
+            main_text=((p.get("structuredFormat") or {}).get("mainText") or {}).get("text"),
+        )
+        for p in _autocomplete(body, limit, timeout)
+    ]
+
+
+def search_venues(q: str, lat: float, lon: float, radius_m: int, limit: int = 6,
+                  *, timeout: float = 10.0) -> list[VenueSuggestion]:
+    """Typeahead over venues near a city. Autocomplete takes a circle where searchText needs a
+    rectangle, and no `includedPrimaryTypes` means anything from a museum to a bakery comes back."""
+    body = {
+        "input": q,
+        "locationRestriction": {"circle": {
+            "center": {"latitude": lat, "longitude": lon},
+            "radius": float(radius_m),
+        }},
+    }
+    out = []
+    for p in _autocomplete(body, limit, timeout):
+        fmt = p.get("structuredFormat") or {}
+        main = (fmt.get("mainText") or {}).get("text")
+        out.append(VenueSuggestion(
+            place_id=p["placeId"],
+            name=main or (p.get("text") or {}).get("text") or "",
+            context=(fmt.get("secondaryText") or {}).get("text"),
         ))
-    return out[:limit]
+    return out
 
 
 def search_venue(query: str, lat: float, lon: float, radius_m: int,
@@ -151,6 +196,41 @@ def search_venue(query: str, lat: float, lon: float, radius_m: int,
         rating_count=hit.get("userRatingCount"),
         primary_type=(hit.get("primaryTypeDisplayName") or {}).get("text"),
         types=hit.get("types") or [],
+    )
+
+
+def venue_details(place_id: str, *, timeout: float = 10.0) -> VenueHit | None:
+    """Fetch one venue by place_id. Unlike `city_details` it does not check the type — Places labels
+    plenty of real venues with types no allowlist would hold."""
+    key = settings().google_api_key
+    if not key:
+        raise PlacesError("GOOGLE_API_KEY is not set")
+
+    try:
+        r = client().get(f"{DETAILS_URL}/{place_id}", timeout=timeout,
+                         headers={"X-Goog-Api-Key": key,
+                                  "X-Goog-FieldMask": VENUE_DETAIL_FIELDS})
+    except httpx.HTTPError as e:
+        raise PlacesError(f"places details failed: {e}") from e
+    # An unknown id is a 404, a malformed one a 400. Both mean no such place.
+    if r.status_code in (400, 404):
+        return None
+    if r.status_code != 200:
+        raise PlacesError(f"places details returned {r.status_code}: {r.text[:200]}")
+
+    body = r.json()
+    loc = body.get("location") or {}
+    return VenueHit(
+        # The response id is canonical; the one the client sent may be a merged alias.
+        place_id=body.get("id") or place_id,
+        name=(body.get("displayName") or {}).get("text") or place_id,
+        address=body.get("formattedAddress"),
+        lat=loc.get("latitude"),
+        lon=loc.get("longitude"),
+        rating=body.get("rating"),
+        rating_count=body.get("userRatingCount"),
+        primary_type=(body.get("primaryTypeDisplayName") or {}).get("text"),
+        types=body.get("types") or [],
     )
 
 
