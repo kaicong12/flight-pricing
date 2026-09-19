@@ -9,11 +9,22 @@ from sqlalchemy.orm import Session
 from libs.auth import user_for_token
 from libs.db import User, UserTrip, session
 from libs.db.enums import TripRole
-from libs.places import CityDetails, CitySuggestion, city_details, search_cities
+from libs.places import (
+    CityDetails,
+    CitySuggestion,
+    VenueHit,
+    VenueSuggestion,
+    city_details,
+    search_cities,
+    search_venues,
+    venue_details,
+)
 from libs.routing import HoursHit, RouteResult, compute_walk, fetch_hours
 
 CityLookup = Callable[[str], CityDetails]
 CitySearch = Callable[[str, int], list[CitySuggestion]]
+VenueSearch = Callable[[str, float, float, int], list[VenueSuggestion]]
+VenueLookup = Callable[[str], VenueHit | None]
 HoursLookup = Callable[[list[str]], dict[str, HoursHit]]
 RouteCompute = Callable[[list[str]], RouteResult]
 
@@ -70,6 +81,14 @@ def city_lookup() -> CityLookup:
 
 def city_search() -> CitySearch:
     return search_cities
+
+
+def venue_search() -> VenueSearch:
+    return search_venues
+
+
+def venue_lookup() -> VenueLookup:
+    return venue_details
 
 
 def hours_lookup() -> HoursLookup:

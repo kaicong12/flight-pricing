@@ -3,7 +3,6 @@
 Pure functions, so they can be tuned against real extractions with no API calls.
 """
 
-import math
 import re
 import unicodedata
 
@@ -42,9 +41,6 @@ CHAINS = {
     "dominos pizza", "olivia", "bit", "deli de luca", "jafs", "max", "tgi fridays",
     "scandic", "thon hotel", "radisson", "clarion", "comfort hotel", "quality hotel", "ibis",
 }
-
-_KM_PER_DEG_LAT = 111.0
-
 
 def query_norm(name: str) -> str:
     """The cache key. Folded and stripped, but CJK is kept — it is often the only name we have."""
@@ -88,13 +84,6 @@ def reject_before_call(name: str) -> str | None:
         return f"generic category, not a venue ({key})"
     return None
 
-
-def distance_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
-    """Equirectangular, which is accurate enough over a city and cheap."""
-    mean = math.radians((lat1 + lat2) / 2)
-    dx = (lon2 - lon1) * _KM_PER_DEG_LAT * math.cos(mean)
-    dy = (lat2 - lat1) * _KM_PER_DEG_LAT
-    return math.hypot(dx, dy)
 
 
 def _has_latin(s: str) -> bool:

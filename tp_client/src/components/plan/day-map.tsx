@@ -178,11 +178,11 @@ export function DayMap({
     if (styleReady.current) draw();
   }, [day, route, stale]);
 
-  // z-61 lifts the card above the layout's z-60 grain. mix-blend-multiply over an accelerated WebGL
-  // canvas makes Chromium composite it as blank, so the map forgoes the paper grain in order that
-  // every other surface can keep it.
+  // z-31 lifts the card above the layout's z-30 grain: mix-blend-multiply over an accelerated WebGL
+  // canvas makes Chromium composite it as blank, so the map forgoes the grain to let others keep it.
+  // Both stay under the z-50 overlay layer, or the map paints over open dialogs.
   return (
-    <div className="relative z-61 h-[calc(100dvh-140px)] min-h-[420px] overflow-hidden rounded-card border border-border bg-land shadow-card isolate">
+    <div className="relative z-31 h-[calc(100dvh-140px)] min-h-[420px] overflow-hidden rounded-card border border-border bg-land shadow-card isolate">
       {/* Sized explicitly: maplibre-gl.css forces position:relative on its own container, which
           beats an `absolute inset-0` utility and silently collapses the map to zero height. */}
       <div ref={container} className="h-full w-full" />

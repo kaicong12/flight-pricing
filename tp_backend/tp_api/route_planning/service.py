@@ -25,9 +25,10 @@ from libs.db import (
     Trip,
     TripDismissal,
     YouTubeVideo,
+    upsert_place,
 )
-from libs.db.enums import Sentiment, Source
-from libs.places import PlacesError
+from libs.db.enums import Confidence, Sentiment, Source
+from libs.places import PlacesError, distance_km
 from libs.routing import (
     PlanWarning,
     RouteResult,
@@ -39,7 +40,7 @@ from libs.routing import (
     sun_times,
 )
 from libs.settings import settings
-from tp_api.deps import HoursLookup, RouteCompute
+from tp_api.deps import HoursLookup, RouteCompute, VenueLookup, VenueSearch
 from tp_api.route_planning.schemas import (
     BlockOut,
     DaylightOut,
@@ -52,6 +53,7 @@ from tp_api.route_planning.schemas import (
     ShortlistOut,
     ShortlistPlaceOut,
     SourceRefOut,
+    VenueSuggestionOut,
     WarningOut,
     provisional_reasons,
 )
@@ -138,6 +140,11 @@ def mention_sources(db: Session, place_ids: Sequence[str]) -> dict[str, list[Sou
     return out
 
 
+def category_of(place: Place, facts: dict[str, tuple[str | None, str | None]]) -> str | None:
+    """A person's answer beats the videos'. `places.category` is only ever set by hand."""
+    return place.category or facts.get(place.place_id, (None, None))[0]
+
+
 def shortlist(db: Session, trip_id: str, limit: int, offset: int,
               category: str | None) -> ShortlistOut:
     """The city's places, ranked by how many independent sources mentioned each one."""
@@ -174,11 +181,12 @@ def shortlist(db: Session, trip_id: str, limit: int, offset: int,
     facts = mention_facts(db, place_ids)
     srcs = mention_sources(db, place_ids)
     if category:
-        rows = [r for r in rows if facts.get(r.Place.place_id, (None, None))[0] == category]
+        rows = [r for r in rows if category_of(r.Place, facts) == category]
 
     places = []
     for r in rows:
-        cat, why_go = facts.get(r.Place.place_id, (None, None))
+        _, why_go = facts.get(r.Place.place_id, (None, None))
+        cat = category_of(r.Place, facts)
         p = r.Place
         places.append(ShortlistPlaceOut(
             place_id=p.place_id, name=p.name, address=p.address, lat=p.lat, lon=p.lon,
@@ -273,6 +281,80 @@ def replace_days(db: Session, trip_id: str, body: ItineraryIn) -> ItineraryOut:
     db.commit()
 
     return read_days(db, trip)
+
+
+def venue_suggestions(db: Session, trip_id: str, q: str,
+                      search: VenueSearch) -> list[VenueSuggestionOut]:
+    trip = get_trip(db, trip_id)
+    city = trip.city
+    if city.lat is None or city.lon is None:
+        raise HTTPException(422, "this city has no coordinates to search near")
+
+    try:
+        found = search(q, city.lat, city.lon, settings().places_search_radius_m)
+    except PlacesError as e:
+        raise HTTPException(502, f"place search failed: {e}") from e
+    return [VenueSuggestionOut(place_id=s.place_id, name=s.name, context=s.context) for s in found]
+
+
+def add_place(db: Session, trip_id: str, place_id: str, category: str,
+              lookup: VenueLookup) -> ShortlistPlaceOut:
+    """Put a hand-picked place in the city's `places`, which is what makes it shortlistable.
+
+    City-scoped rather than trip-scoped, matching ingested places: the shortlist is a query over the
+    city and `replace_days` will not accept a place_id that is not in it.
+    """
+    trip = get_trip(db, trip_id)
+    city = trip.city
+    if city.lat is None or city.lon is None:
+        raise HTTPException(422, "this city has no coordinates to check against")
+
+    existing = db.get(Place, place_id)
+    if existing is not None and existing.city_id == city.city_id:
+        # Already in the city, so spend no Places call. The dismissal has to go, or it stays hidden.
+        existing.category = category
+        db.execute(delete(TripDismissal).where(TripDismissal.trip_id == trip_id,
+                                               TripDismissal.place_id == place_id))
+        db.commit()
+        return one_shortlist_place(db, trip_id, existing)
+
+    try:
+        hit = lookup(place_id)
+    except PlacesError as e:
+        raise HTTPException(502, f"place lookup failed: {e}") from e
+    if hit is None:
+        raise HTTPException(422, "no such place")
+    if hit.lat is None or hit.lon is None:
+        raise HTTPException(422, "that place has no location")
+
+    # The id comes from the browser, so without this any place_id on earth could be filed here.
+    radius_km = settings().places_search_radius_m / 1000
+    if distance_km(city.lat, city.lon, hit.lat, hit.lon) > radius_km:
+        raise HTTPException(422, f"{hit.name} is not in {city.name}")
+
+    upsert_place(db, city, hit, hit.name, Confidence.HIGH, "added by hand", category)
+    db.commit()
+
+    place = db.get(Place, hit.place_id)
+    if place is None:
+        raise HTTPException(500, "the place was not stored")
+    return one_shortlist_place(db, trip_id, place)
+
+
+def one_shortlist_place(db: Session, trip_id: str, place: Place) -> ShortlistPlaceOut:
+    facts = mention_facts(db, [place.place_id])
+    why_go = facts.get(place.place_id, (None, None))[1]
+    cat = category_of(place, facts)
+    day_index = db.scalar(select(ItineraryItem.day_index).where(
+        ItineraryItem.trip_id == trip_id, ItineraryItem.place_id == place.place_id))
+    mentions = db.scalar(select(func.count()).select_from(PlaceMention)
+                         .where(PlaceMention.place_id == place.place_id)) or 0
+    return ShortlistPlaceOut(
+        place_id=place.place_id, name=place.name, address=place.address, lat=place.lat,
+        lon=place.lon, primary_type=place.primary_type, category=cat, why_go=why_go,
+        sources=mention_sources(db, [place.place_id]).get(place.place_id, []),
+        mention_count=mentions, in_itinerary=day_index is not None, day_index=day_index,
+    )
 
 
 def add_dismissal(db: Session, trip_id: str, place_id: str) -> None:

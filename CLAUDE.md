@@ -71,7 +71,14 @@ delete; editors change the plan; viewers read. `GET /users/search` feeds the sha
 hides what would only 403. Sharing is reachable from a trip card as well as the plan screen.
 
 **6. Plan.** `GET /trips/{id}/shortlist` ranks the city's places by mention count and returns each
-mention as a link back to the video or note that named it. The user drags
+mention as a link back to the video or note that named it. `GET /trips/{id}/places/search` and
+`POST /trips/{id}/places` add one the videos never named, from a modal on the plan screen:
+autocomplete near the city, then Place Details on the pick, then the same `places` row an ingestion
+would have written — **city-scoped, not per-trip**, because the shortlist is a query over the city and
+`replace_days` rejects a `place_id` that is not in it. It ranks last with no mentions, so the client
+prepends it. **A category is compulsory**, and is the one thing `places.category` exists for: every
+other category is a majority vote over `place_mentions`, which a hand-added place has none of, so
+without it the place is invisible under every filter chip. A person's answer beats the videos'. The user drags
 them into days; `PUT /trips/{id}/itinerary` replaces whole days, because a drag is a statement about
 a sequence and positions are dense and derived. `POST /trips/{id}/days/{n}/route` then draws that
 exact order with `computeRoutes` (WALK, one call), checks it against Place Details hours and local
@@ -181,8 +188,10 @@ final.
 5. **The generic-noun and chain stoplists in `tp_ingestions/places/names.py` are Norway-leaning.**
    They will need a pass per new country, and there is no longer a dry-run that shows what a
    country's names would query or drop.
-6. **`tp_client` has no test runner.** The plan screen's reducer is exported pure precisely so it can
-   be covered; a revision-handling bug in it wedged re-routing and only a browser caught it.
+6. **`tp_client` has no test runner.** `src/lib/*.check.ts` are standalone instead — `npx tsx
+   src/lib/plan-state.check.ts` covers the reducer, `plan-types.check.ts` the grid maths. Nothing
+   runs them automatically, which is how `plan-types.check.ts` sat broken from 6ce4601 until it was
+   noticed by hand. They want a `make` target at least.
 7. **No pinned arrival times.** Durations are editable; block start times are always derived. The
    design's "booked 17:00" affordance needs a per-item locked time.
 8. **Expired `sessions` rows are never collected.** Sign-out deletes its own row and a lapsed token

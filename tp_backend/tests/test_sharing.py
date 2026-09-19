@@ -145,6 +145,20 @@ class TestWhatAViewerMay:
         r = client.post(f"/trips/{trip}/dismissals", json={"place_id": "p1"})
         assert r.status_code == 403
 
+    def test_not_add_a_place(self, client, friend):
+        trip = make_trip(client)
+        share(client, trip, friend.user_id, TripRole.VIEWER)
+        seen_by(client, "friend-token")
+        r = client.post(f"/trips/{trip}/places", json={"place_id": "p1"})
+        assert r.status_code == 403
+
+    def test_not_even_search_for_one(self, client, friend):
+        """Searching spends a Places call, so a viewer is stopped before it, not after."""
+        trip = make_trip(client)
+        share(client, trip, friend.user_id, TripRole.VIEWER)
+        seen_by(client, "friend-token")
+        assert client.get(f"/trips/{trip}/places/search", params={"q": "oodi"}).status_code == 403
+
 
 class TestOwnership:
     def test_a_request_cannot_hand_out_ownership(self, client, friend):

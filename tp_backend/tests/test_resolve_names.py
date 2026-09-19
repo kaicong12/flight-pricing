@@ -3,7 +3,7 @@
 import pytest
 
 from libs.db.enums import Confidence
-from libs.places import VenueHit
+from libs.places import VenueHit, distance_km
 from tp_ingestions.places import names
 
 
@@ -117,6 +117,6 @@ def test_a_cjk_query_with_a_latin_anchor_is_confirmed_by_that_anchor():
 
 def test_distance_is_measured_in_kilometres_at_high_latitude():
     """Longitude degrees shrink with latitude; at Tromsø's 69°N the naive figure is nearly 3x out."""
-    assert names.distance_km(69.6492, 18.9553, 69.6492, 18.9553) == pytest.approx(0, abs=0.01)
-    far = names.distance_km(69.6492, 18.9553, 69.6492, 20.0)
+    assert distance_km(69.6492, 18.9553, 69.6492, 18.9553) == pytest.approx(0, abs=0.01)
+    far = distance_km(69.6492, 18.9553, 69.6492, 20.0)
     assert 38 < far < 46

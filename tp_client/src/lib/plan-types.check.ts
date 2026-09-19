@@ -65,19 +65,16 @@ eq(endOf(item("a", 600, 90)), 690, "endOf");
 eq(hhmm(1290), "21:30", "hhmm");
 eq(hhmm(1470), "00:30", "hhmm wraps past midnight");
 
-// The warning the pinned model added. Both directions read as English.
+// A warning names the block it is about, and an unknown code degrades to the code itself rather
+// than to "undefined". `travel_does_not_fit` was asserted here until travel-time validation was
+// removed; there is deliberately nothing to replace it with.
 eq(
-  warningText({ code: "travel_does_not_fit", place_id: "b",
-                detail: { from: "Polar Museum", to: "Raketten", need_min: 25, gap_min: 0 } }),
-  "Only 0 min after Polar Museum, but it is a 25 min trip.",
-  "travel_does_not_fit, positive gap",
+  warningText({ code: "closes_before_done", place_id: "b",
+                detail: { start: "16:00", need_min: 90, closes: "17:00" } }, "Polar Museum"),
+  "Polar Museum — Starts 16:00, needs 90 min, closes 17:00. Move it earlier.",
+  "a warning is prefixed with the block's name",
 );
-eq(
-  warningText({ code: "travel_does_not_fit", place_id: "b",
-                detail: { from: "Polar Museum", to: "Raketten", need_min: 5, gap_min: -30 } }),
-  "Overlaps Polar Museum, and the 5 min trip between them is not possible.",
-  "travel_does_not_fit, overlap",
-);
+eq(warningText({ code: "who_knows", place_id: null, detail: {} }), "who_knows", "unknown code");
 
 // The flight window. Day 0 cannot start before landing; the last day cannot run past departure.
 const trip = { arrive_time: "13:40:00", depart_time: "17:20:00" };

@@ -38,6 +38,13 @@ export type Shortlist = {
   places: ShortlistPlace[];
 };
 
+/** One venue autocomplete prediction. A label and an id — the rest is fetched when it is picked. */
+export type VenueSuggestion = {
+  place_id: string;
+  name: string;
+  context: string | null;
+};
+
 export type ItineraryItem = {
   place_id: string;
   name: string;

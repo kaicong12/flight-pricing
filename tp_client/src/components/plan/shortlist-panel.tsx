@@ -5,6 +5,7 @@
 import type { ShortlistPlace } from "@/lib/plan-types";
 import { cn } from "@/lib/utils";
 
+import { PlaceSearch } from "./place-search";
 import { ShortlistRow } from "./shortlist-row";
 
 const CATEGORIES = ["eat", "see", "do", "drink", "buy"];
@@ -16,8 +17,10 @@ export function ShortlistPanel({
   readOnly,
   category,
   loading,
+  tripId,
   onCategory,
   onDismiss,
+  onAdd,
   onMore,
 }: {
   places: ShortlistPlace[];
@@ -26,8 +29,10 @@ export function ShortlistPanel({
   readOnly: boolean;
   category: string | null;
   loading: boolean;
+  tripId: string;
   onCategory: (category: string | null) => void;
   onDismiss: (place: ShortlistPlace) => void;
+  onAdd: (placeId: string, category: string) => Promise<string | null>;
   onMore: () => void;
 }) {
   return (
@@ -53,6 +58,10 @@ export function ShortlistPanel({
             </FilterChip>
           ))}
         </div>
+
+        {!readOnly && (
+          <PlaceSearch tripId={tripId} categories={CATEGORIES} onAdd={onAdd} />
+        )}
       </div>
 
       {places.length === 0 ? (
