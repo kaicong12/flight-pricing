@@ -3,7 +3,7 @@
 // Title, the whole-plan caveats, and the two actions. "Provisional" is a property of how far out the
 // date is, not of the ordering, so it never clears by editing the plan.
 
-import { RefreshCw } from "lucide-react";
+import { RefreshCw, Sheet } from "lucide-react";
 
 import { DraftPlan } from "@/components/plan/draft-plan";
 import { ShareTrip } from "@/components/share-trip";
@@ -78,6 +78,16 @@ export function PlanHeader({
         {canEdit ? <DraftPlan tripId={trip.trip_id} days={days} /> : null}
 
         <ShareTrip tripId={trip.trip_id} yourRole={trip.your_role} meId={meId} />
+
+        {/* A plain download link: the file is a GET, so this needs no state and no fetch. */}
+        <a
+          href={`/api/trips/${trip.trip_id}/export`}
+          download
+          className="flex h-9 items-center gap-1.5 rounded-full border border-border bg-surface px-3.5 text-[13px] font-medium text-ink transition-colors hover:border-[#c6bda4] outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+        >
+          <Sheet className="size-3.5" />
+          Excel
+        </a>
 
         <button
           type="button"

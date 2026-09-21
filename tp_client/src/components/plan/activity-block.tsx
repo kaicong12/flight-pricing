@@ -7,9 +7,12 @@
 // Warnings sit under the grid rather than inside the block: a block's height is its duration, so
 // there is no room to grow into, and the alert border already says which block is the problem.
 
-import { useDraggable } from "@dnd-kit/core";
-import { X } from "lucide-react";
+import { useState } from "react";
 
+import { useDraggable } from "@dnd-kit/core";
+import { Link2, X } from "lucide-react";
+
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import type { PlacedItem, PlanBlock, PlanWarning } from "@/lib/plan-types";
 import { DAY_START_MIN, MIN_DURATION, SLOT_MIN, endOf, hhmm, resize, slotAt } from "@/lib/plan-types";
 import { cn } from "@/lib/utils";
@@ -21,6 +24,7 @@ export function ActivityBlock({
   slotPx,
   readOnly,
   onRemove,
+  onReference,
   onResize,
 }: {
   placed: PlacedItem;
@@ -29,6 +33,7 @@ export function ActivityBlock({
   slotPx: number;
   readOnly: boolean;
   onRemove: () => void;
+  onReference: (url: string | null) => void;
   onResize: (startMin: number, durationMin: number) => void;
 }) {
   const { item, lane, lanes } = placed;
@@ -119,8 +124,22 @@ export function ActivityBlock({
           )}
         </div>
 
-        {readOnly ? null : (
+        {readOnly ? (
+          item.reference_url ? (
+            <a
+              href={item.reference_url}
+              target="_blank"
+              rel="noreferrer"
+              aria-label={`Open your link for ${item.name}`}
+              className="absolute top-0.5 right-0.5 grid size-5 place-items-center rounded text-brand hover:bg-brand-bg"
+            >
+              <Link2 className="size-3" />
+            </a>
+          ) : null
+        ) : (
           <>
+            <Reference name={item.name} url={item.reference_url} onSave={onReference} />
+
             <button
               type="button"
               onClick={onRemove}
@@ -139,6 +158,90 @@ export function ActivityBlock({
         )}
       </div>
     </div>
+  );
+}
+
+/** The user's own link for this block: a booking confirmation, a listing, an email receipt. */
+function Reference({
+  name,
+  url,
+  onSave,
+}: {
+  name: string;
+  url: string | null;
+  onSave: (url: string | null) => void;
+}) {
+  const [draft, setDraft] = useState(url ?? "");
+  const [open, setOpen] = useState(false);
+  const trimmed = draft.trim();
+  const valid = trimmed === "" || /^https?:\/\/\S+$/.test(trimmed);
+
+  const save = () => {
+    if (!valid) return;
+    onSave(trimmed || null);
+    setOpen(false);
+  };
+
+  return (
+    <Popover
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next);
+        if (next) setDraft(url ?? "");
+      }}
+    >
+      <PopoverTrigger
+        aria-label={url ? `Edit your link for ${name}` : `Add a link for ${name}`}
+        // The block body is draggable, so the press must not reach it.
+        onPointerDown={(e) => e.stopPropagation()}
+        className={cn(
+          "absolute top-0.5 right-5.5 grid size-5 place-items-center rounded transition-opacity focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring/50",
+          url
+            ? "text-brand hover:bg-brand-bg"
+            : "text-faint opacity-0 group-hover/block:opacity-100 hover:text-ink",
+        )}
+      >
+        <Link2 className="size-3" />
+      </PopoverTrigger>
+
+      <PopoverContent align="end" className="gap-2">
+        <label className="text-[12px] font-medium text-ink-soft" htmlFor={`ref-${name}`}>
+          Your link for {name}
+        </label>
+        <input
+          id={`ref-${name}`}
+          type="url"
+          value={draft}
+          autoFocus
+          placeholder="https://airbnb.com/… or a booking email"
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && save()}
+          className="h-9 rounded-lg border border-input bg-transparent px-2.5 text-[13px] outline-none placeholder:text-faint focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+        />
+        <div className="flex items-center justify-between gap-2">
+          {url ? (
+            <a
+              href={url}
+              target="_blank"
+              rel="noreferrer"
+              className="text-[12px] font-medium text-brand underline"
+            >
+              Open
+            </a>
+          ) : (
+            <span className="text-[12px] text-faint">Only you and the trip see this.</span>
+          )}
+          <button
+            type="button"
+            onClick={save}
+            disabled={!valid}
+            className="h-8 rounded-full bg-ink px-3 text-[12.5px] font-medium text-primary-foreground hover:bg-ink-hover disabled:opacity-50"
+          >
+            {trimmed ? "Save" : "Clear"}
+          </button>
+        </div>
+      </PopoverContent>
+    </Popover>
   );
 }
 

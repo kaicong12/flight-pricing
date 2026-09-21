@@ -84,7 +84,14 @@ a sequence and positions are dense and derived. `POST /trips/{id}/days/{n}/route
 exact order with `computeRoutes` (WALK, one call), checks it against Place Details hours and local
 daylight, and returns structured warning codes — the client owns the English. **Travel time is not a
 constraint**: the route gives a polyline and how far apart the places are, and nothing validates
-whether the gap between two blocks is enough to get there.
+whether the gap between two blocks is enough to get there. `itinerary_items.reference_url` is the
+user's own link on a block — a booking, a listing, a receipt — stored and opened, never fetched; the
+plan screen edits it from the block itself and saving one does not re-route the day. `GET
+/trips/{id}/export.xlsx` is those same days as a workbook: Itinerary, a band per day and the warning
+in the app's own amber and clay, with a `Ref` column **only when some block has a link**, plus
+Shortlist, whose `Source` column is the video or note that named the place. It re-reads hours but
+never routes, so an export costs no `computeRoutes` call, and the warning English lives in
+`export.py` because a spreadsheet has no client to own it.
 
 **7. Draft.** `route.plan` fills a trip's *empty* days so the plan screen opens filled — **one Gemini
 call in a loop, not an agent**: the shortlist is already a closed ranked set and `plan_day` already

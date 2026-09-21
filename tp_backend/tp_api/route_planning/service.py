@@ -228,7 +228,7 @@ def read_days(db: Session, trip: Trip) -> ItineraryOut:
             place_id=place.place_id, name=place.name, lat=place.lat, lon=place.lon,
             start_min=item.start_min, duration_min=item.duration_min,
             category=facts.get(place.place_id, (None, None))[0],
-            primary_type=place.primary_type,
+            primary_type=place.primary_type, reference_url=item.reference_url,
         ))
     return ItineraryOut(days=days)
 
@@ -277,7 +277,8 @@ def replace_days(db: Session, trip_id: str, body: ItineraryIn) -> ItineraryOut:
     for d in body.days:
         for item in d.items:
             db.add(ItineraryItem(trip_id=trip_id, place_id=item.place_id, day_index=d.day_index,
-                                 start_min=item.start_min, duration_min=item.duration_min))
+                                 start_min=item.start_min, duration_min=item.duration_min,
+                                 reference_url=item.reference_url))
     db.commit()
 
     return read_days(db, trip)

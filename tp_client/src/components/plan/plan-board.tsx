@@ -104,6 +104,7 @@ export function PlanBoard({
             place_id: i.place_id,
             start_min: i.start_min,
             duration_min: i.duration_min,
+            reference_url: i.reference_url,
           })),
         })),
       };
@@ -326,6 +327,9 @@ export function PlanBoard({
             available={availableWindow(trip, state.activeDay, state.days.length)}
             onRemove={(placeId) =>
               dispatch({ type: "remove", day: state.activeDay, placeId })
+            }
+            onReference={(placeId, url) =>
+              dispatch({ type: "reference", day: state.activeDay, placeId, url })
             }
             onResize={(placeId, startMin, durationMin) => {
               // A top-edge drag changes both, so both go through, each guarded against a no-op.
