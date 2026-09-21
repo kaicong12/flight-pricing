@@ -38,6 +38,29 @@ export async function proxy(path: string, init?: RequestInit): Promise<Response>
   });
 }
 
+/** Proxies a download: the body stays bytes and the filename tp_api chose is passed through. */
+export async function proxyFile(path: string): Promise<Response> {
+  let upstream: Response;
+  try {
+    upstream = await fetch(`${BASE}${path}`, await authed());
+  } catch {
+    return Response.json({ detail: "The planning API is unreachable." }, { status: 502 });
+  }
+  if (!upstream.ok) {
+    return new Response((await upstream.text()) || "null", {
+      status: upstream.status,
+      headers: { "content-type": "application/json" },
+    });
+  }
+  return new Response(upstream.body, {
+    status: upstream.status,
+    headers: {
+      "content-type": upstream.headers.get("content-type") ?? "application/octet-stream",
+      "content-disposition": upstream.headers.get("content-disposition") ?? "attachment",
+    },
+  });
+}
+
 /** Server-side GET for server components, which need the parsed body rather than a Response.
  *
  * null means tp_api answered "no" — signed out, or a trip this session cannot see. A dead or broken

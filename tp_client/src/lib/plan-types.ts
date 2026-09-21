@@ -55,6 +55,8 @@ export type ItineraryItem = {
   duration_min: number;
   category: string | null;
   primary_type: string | null;
+  /** The user's own link for this block — a booking, a listing. Never fetched, only opened. */
+  reference_url: string | null;
 };
 
 export type ItineraryDay = {

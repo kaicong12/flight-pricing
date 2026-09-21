@@ -33,6 +33,7 @@ const item = (place_id: string, start_min: number, duration_min = 60): Itinerary
   duration_min,
   category: null,
   primary_type: null,
+  reference_url: null,
 });
 
 eq(snap(614), 600, "snap down");

@@ -255,6 +255,7 @@ class ItineraryItem(Base):
     day_index: Mapped[int] = mapped_column(Integer, nullable=False)
     start_min: Mapped[int] = mapped_column(Integer, nullable=False)
     duration_min: Mapped[int] = mapped_column(Integer, nullable=False)
+    reference_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = _ts(nullable=False, server_default=func.now())
     updated_at: Mapped[datetime] = _ts(nullable=False, server_default=func.now(),
                                        onupdate=func.now())

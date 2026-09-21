@@ -83,6 +83,29 @@ const withBlock = planReducer(base, {
 eq(withBlock.unsaved, [0], "placing a block marks its day unsaved");
 eq(withBlock.revision, 1, "placing a block bumps the revision");
 
+// A reference is a link, not an ordering: it must save but never spend a route on the day.
+const linked = planReducer(withBlock, {
+  type: "reference",
+  day: 0,
+  placeId: "p1",
+  url: "https://airbnb.com/rooms/1",
+});
+eq(linked.days[0].items[0].reference_url, "https://airbnb.com/rooms/1", "the link is stored");
+eq(linked.unsaved, [0], "a link marks the day unsaved");
+eq(linked.stale, withBlock.stale, "a link does not re-route the day");
+eq(
+  planReducer(linked, { type: "reference", day: 0, placeId: "p1", url: "https://airbnb.com/rooms/1" })
+    .revision,
+  linked.revision,
+  "re-saving the same link changes nothing",
+);
+eq(
+  planReducer(linked, { type: "reference", day: 0, placeId: "p1", url: null }).days[0].items[0]
+    .reference_url,
+  null,
+  "clearing the link removes it",
+);
+
 const stale = planReducer(withBlock, { type: "saved", days: [0], itinerary, revision: 0 });
 eq(stale.unsaved, [0], "a save for an older revision is ignored");
 const fresh = planReducer(withBlock, { type: "saved", days: [0], itinerary, revision: 1 });

@@ -22,6 +22,8 @@ MIN_DURATION = SLOT_MIN
 SPECIAL_HOURS_HORIZON_DAYS = 7
 REGULAR_HOURS_ONLY_NOTE = "regular_hours_only"
 
+REFERENCE_URL_MAX = 2048
+
 
 class SourceRefOut(BaseModel):
     source: str
@@ -59,6 +61,7 @@ class ItemOut(BaseModel):
     duration_min: int
     category: str | None = None
     primary_type: str | None = None
+    reference_url: str | None = None
 
 
 class DayOut(BaseModel):
@@ -77,6 +80,9 @@ class ItemIn(BaseModel):
     place_id: str = Field(min_length=1, max_length=255)
     start_min: int = Field(ge=0, lt=24 * 60, multiple_of=SLOT_MIN)
     duration_min: int = Field(ge=MIN_DURATION, le=24 * 60, multiple_of=SLOT_MIN)
+    # Only the scheme is checked: a booking link is the user's to keep, and we never fetch it.
+    reference_url: str | None = Field(default=None, max_length=REFERENCE_URL_MAX,
+                                      pattern=r"^https?://\S+$")
 
 
 class DayIn(BaseModel):

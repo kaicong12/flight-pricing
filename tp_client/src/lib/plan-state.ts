@@ -37,6 +37,7 @@ export type PlanAction =
   | { type: "remove"; day: number; placeId: string }
   | { type: "pin"; placeId: string; fromDay: number; toDay: number; startMin: number }
   | { type: "duration"; day: number; placeId: string; minutes: number }
+  | { type: "reference"; day: number; placeId: string; url: string | null }
   | { type: "activeDay"; day: number }
   | { type: "dismiss"; placeId: string }
   | { type: "routed"; route: DayRoute }
@@ -90,6 +91,7 @@ export function itemFor(
     duration_min: durationMin,
     category: place.category,
     primary_type: place.primary_type,
+    reference_url: null,
   };
 }
 
@@ -156,6 +158,21 @@ export function planReducer(state: PlanState, action: PlanAction): PlanState {
         i.place_id === action.placeId ? { ...i, duration_min: action.minutes } : i,
       );
       return { ...state, days: setDay(state, action.day, items), ...touched(state, [action.day]) };
+    }
+
+    // Not `touched`: a link says nothing about the order, so it must not re-route the day.
+    case "reference": {
+      const current = itemsOf(state, action.day).find((i) => i.place_id === action.placeId);
+      if (!current || current.reference_url === action.url) return state;
+      const items = itemsOf(state, action.day).map((i) =>
+        i.place_id === action.placeId ? { ...i, reference_url: action.url } : i,
+      );
+      return {
+        ...state,
+        days: setDay(state, action.day, items),
+        unsaved: with_(state.unsaved, action.day),
+        revision: state.revision + 1,
+      };
     }
 
     case "activeDay":

@@ -5,7 +5,7 @@ Declaration and validation only — the work is in `service`.
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Response
 from sqlalchemy.orm import Session
 
 from tp_api.deps import (
@@ -21,7 +21,7 @@ from tp_api.deps import (
     venue_lookup,
     venue_search,
 )
-from tp_api.route_planning import service
+from tp_api.route_planning import export, service
 from tp_api.route_planning.schemas import (
     DayRouteOut,
     DismissalIn,
@@ -58,6 +58,20 @@ def get_shortlist(
 @router.get("/trips/{trip_id}/itinerary", response_model=ItineraryOut)
 def get_itinerary(trip_id: str, db: Db) -> ItineraryOut:
     return service.read_days(db, service.get_trip(db, trip_id))
+
+
+XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+
+
+# A viewer may export: the file says no more than the plan screen already shows them.
+@router.get("/trips/{trip_id}/export.xlsx", response_class=Response)
+def get_export(trip_id: str, db: Db, fetch_hours: Hours) -> Response:
+    trip = service.get_trip(db, trip_id)
+    return Response(
+        content=export.workbook_bytes(db, trip, fetch_hours),
+        media_type=XLSX,
+        headers={"Content-Disposition": f'attachment; filename="{export.filename(trip)}"'},
+    )
 
 
 @router.put("/trips/{trip_id}/itinerary", response_model=ItineraryOut, dependencies=Edit)
