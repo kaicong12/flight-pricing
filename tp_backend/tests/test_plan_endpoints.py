@@ -2,10 +2,10 @@
 
 from datetime import timedelta
 
-from conftest import make_mention, make_note, make_place, make_video, plan_body
+from conftest import HELSINKI, make_mention, make_note, make_place, make_video, plan_body
 from sqlalchemy import select
 
-from libs.db import ItineraryItem
+from libs.db import ItineraryItem, claim_for_city_trips
 from libs.db.enums import Sentiment, Source
 from libs.routing import HoursHit
 from tp_api.route_planning.schemas import REGULAR_HOURS_ONLY_NOTE
@@ -242,6 +242,17 @@ class TestDismissals:
         trip = make_trip(client)
         assert client.post(f"/trips/{trip}/dismissals",
                            json={"place_id": "nope"}).status_code == 422
+
+    def test_a_later_ingestion_reclaiming_a_place_does_not_resurrect_it(self, client, db):
+        """Why dismissals stay their own table rather than becoming the absence of a claim."""
+        trip = make_trip(client)
+        seed(db, ("p1", "Struck Off", 1))
+        client.post(f"/trips/{trip}/dismissals", json={"place_id": "p1"})
+
+        claim_for_city_trips(db, HELSINKI, ["p1"])
+        db.commit()
+
+        assert client.get(f"/trips/{trip}/shortlist").json()["places"] == []
 
 
 class TestItineraryRead:

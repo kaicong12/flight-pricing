@@ -2,11 +2,12 @@
 
 from datetime import UTC, datetime, timedelta
 
-from conftest import HELSINKI, make_city, plan_body
-from sqlalchemy import func, select
+from conftest import HELSINKI, make_city, make_place, plan_body
+from sqlalchemy import func, select, update
 
-from libs.db import City, IngestRun, IngestTask, Trip
-from libs.db.enums import TaskKind
+from libs.db import City, IngestRun, IngestTask, Place, Trip, TripPlace
+from libs.db.enums import Confidence, RunStatus, TaskKind
+from libs.ingest import plan_after_ingest
 from libs.places import NotACity, PlacesError
 from tp_api.schemas import (
     MAX_TRIP_DAYS,
@@ -61,6 +62,35 @@ def test_warm_city_returns_no_ingest(client, db):
     kinds = db.scalars(select(IngestTask.kind)).all()
     assert kinds == [TaskKind.ROUTE_PLAN]
     assert db.scalar(select(IngestTask.payload)) == {"trip_id": body["trip_id"]}
+
+
+def test_a_new_trip_claims_the_city_places_that_already_exist(client, db):
+    """A claim is the whole shortlist, so a warm city's places have to be inherited at creation."""
+    make_city(db, last_ingested_at=datetime.now(UTC) - timedelta(days=2))
+    make_place(db, place_id="p1")
+    make_place(db, place_id="p2")
+
+    trip_id = client.post("/initiate-plan", json=plan_body()).json()["trip_id"]
+
+    claimed = set(db.scalars(select(TripPlace.place_id).where(TripPlace.trip_id == trip_id)))
+    assert claimed == {"p1", "p2"}
+
+
+def test_a_trip_created_mid_run_catches_up_when_the_run_settles(client, db):
+    """Neither the trip nor a resolve task sees the other's uncommitted rows, so plan_after_ingest
+    reconciles rather than anything locking."""
+    run_id = client.post("/initiate-plan", json=plan_body()).json()["ingest"]["run_id"]
+    trip_id = db.scalar(select(Trip.trip_id))
+    # Resolved without the claim the worker would have written — the race, not a shortcut.
+    db.add(Place(place_id="missed", city_id=HELSINKI, name="Missed", confidence=Confidence.HIGH))
+    db.execute(update(IngestRun).values(status=RunStatus.DONE))
+    db.commit()
+
+    plan_after_ingest(db, run_id)
+    db.commit()
+
+    assert set(db.scalars(select(TripPlace.place_id).where(TripPlace.trip_id == trip_id))) \
+        == {"missed"}
 
 
 def test_a_second_trip_on_a_warm_city_gets_its_own_draft(client, db):

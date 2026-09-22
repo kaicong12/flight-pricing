@@ -21,7 +21,7 @@ from libs.db.models import (
     UserTrip,
     YouTubeVideo,
 )
-from libs.db.places import upsert_place
+from libs.db.places import claim_city_places, claim_for_city_trips, upsert_place
 from libs.db.session import SessionLocal, engine, session
 
 __all__ = [
@@ -45,6 +45,8 @@ __all__ = [
     "UserSession",
     "UserTrip",
     "YouTubeVideo",
+    "claim_city_places",
+    "claim_for_city_trips",
     "engine",
     "session",
     "upsert_place",

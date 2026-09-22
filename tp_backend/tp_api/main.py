@@ -12,7 +12,16 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from libs import logs
-from libs.db import IngestRun, IngestTask, Place, Trip, User, UserTrip
+from libs.db import (
+    IngestRun,
+    IngestTask,
+    Place,
+    Trip,
+    TripDismissal,
+    User,
+    UserTrip,
+    claim_city_places,
+)
 from libs.db.enums import RunKind, TaskKind, TaskStatus, TripRole
 from libs.ingest import ensure_city, ensure_city_ingest, ensure_trip_plan
 from libs.places import NotACity, PlacesError
@@ -31,6 +40,7 @@ from tp_api.deps import (
     require_trip_access,
 )
 from tp_api.route_planning import router as planning_router
+from tp_api.route_planning.service import in_shortlist
 from tp_api.schemas import (
     CityOut,
     CitySuggestionOut,
@@ -121,6 +131,9 @@ def initiate_plan(body: InitiatePlanRequest, db: Db, lookup: Lookup, user: Me) -
     )
     db.add(trip)
     db.add(UserTrip(user_id=user.user_id, trip_id=trip.trip_id, role=TripRole.OWNER))
+    db.flush()
+    # Unconditional: a city past its refresh TTL is not warm but still has the last run's places.
+    claim_city_places(db, trip.trip_id, city.city_id)
     db.commit()
 
     run = ensure_city_ingest(db, city)
@@ -196,11 +209,18 @@ def list_trips(db: Db, user: Me) -> list[TripSummaryOut]:
             counts[row.run_id] = (done + (row.n if row.status in DONE_TASK_STATUSES else 0),
                                   total + row.n)
 
+    # The shortlist's own predicates, correlated on Trip rather than one trip_id, so this stays one
+    # query for every trip.
+    dismissed = (select(TripDismissal.place_id)
+                 .where(TripDismissal.trip_id == Trip.trip_id,
+                        TripDismissal.place_id == Place.place_id)
+                 .exists())
     places = dict(
         db.execute(
-            select(Place.city_id, func.count())
-            .where(Place.city_id.in_(city_ids))
-            .group_by(Place.city_id)
+            select(Trip.trip_id, func.count())
+            .join(Place, in_shortlist(Trip))
+            .where(Trip.trip_id.in_([t.trip_id for t in trips]), ~dismissed)
+            .group_by(Trip.trip_id)
         ).all()
     )
 
@@ -219,7 +239,7 @@ def list_trips(db: Db, user: Me) -> list[TripSummaryOut]:
                 your_role=roles[trip.trip_id],
                 tasks_done=done,
                 tasks_total=total,
-                place_count=places.get(trip.city_id, 0),
+                place_count=places.get(trip.trip_id, 0),
             )
         )
     return out

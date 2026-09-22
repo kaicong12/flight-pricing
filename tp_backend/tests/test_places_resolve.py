@@ -1,10 +1,12 @@
 """places.resolve against stubbed Places. The cache, the geofence, and the merge on place_id."""
 
+from datetime import timedelta
+
 import pytest
 from conftest import HELSINKI, make_city
 from sqlalchemy import select
 
-from libs.db import Extraction, IngestRun, Place, PlaceMention, PlaceQuery
+from libs.db import Extraction, IngestRun, Place, PlaceMention, PlaceQuery, Trip, TripPlace
 from libs.db.enums import (
     Confidence,
     ErrorCode,
@@ -16,6 +18,7 @@ from libs.db.enums import (
 )
 from libs.places import PlacesError, VenueHit
 from libs.prompts import REDNOTE_OCR, REDNOTE_TEXT, YOUTUBE_TRANSCRIPT
+from tp_api.schemas import today_utc
 from tp_ingestions.errors import TaskError
 from tp_ingestions.places import resolve
 from tp_ingestions.queue import ClaimedTask
@@ -71,6 +74,14 @@ def task(run, source=Source.YOUTUBE, ref=VIDEO, prompt=YOUTUBE_TRANSCRIPT):
                        attempts=1, max_attempts=5)
 
 
+def make_trip(db, trip_id, deleted=False):
+    arrive = today_utc() + timedelta(days=30)
+    db.add(Trip(trip_id=trip_id, city_id=HELSINKI, arrive_date=arrive,
+                depart_date=arrive + timedelta(days=2), deleted=deleted))
+    db.commit()
+    return trip_id
+
+
 def stub(monkeypatch, fn):
     monkeypatch.setattr(resolve, "search_venue", fn)
     return fn
@@ -106,6 +117,37 @@ def test_a_candidate_becomes_a_place_and_a_mention(db, run, monkeypatch):
     assert (mention.source, mention.source_ref, mention.category) == (Source.YOUTUBE, VIDEO, "eat")
     assert mention.name_as_written == "Vanha Kauppahalli"
     assert mention.source_timestamp == "03:00"
+
+
+def test_a_resolved_place_is_claimed_for_the_citys_live_trips(db, run, monkeypatch):
+    """A claim is the whole shortlist, so resolving is also what puts a place on a waiting trip."""
+    live, gone = make_trip(db, "t-live"), make_trip(db, "t-gone", deleted=True)
+    extraction(db, [yt_place()])
+    counting(monkeypatch)
+
+    resolve.places_resolve(db, task(run))
+    db.commit()
+
+    assert set(db.scalars(select(TripPlace.trip_id))) == {live}
+    assert gone not in set(db.scalars(select(TripPlace.trip_id)))
+
+
+def test_a_cached_hit_is_claimed_as_well(db, run, monkeypatch):
+    """The second pass spends nothing but still has to claim: a trip created since run one has no
+    claim, and no Places call will be made on its behalf."""
+    extraction(db, [yt_place()])
+    counting(monkeypatch)
+    resolve.places_resolve(db, task(run))
+    db.commit()
+
+    latecomer = make_trip(db, "t-late")
+    extraction(db, [yt_place()], ref="vid0000002b")
+    calls = counting(monkeypatch)
+    out = resolve.places_resolve(db, task(run, ref="vid0000002b"))
+    db.commit()
+
+    assert (calls, out["cached"]) == ([], 1)
+    assert latecomer in set(db.scalars(select(TripPlace.trip_id)))
 
 
 def test_the_city_is_appended_to_the_query(db, run, monkeypatch):

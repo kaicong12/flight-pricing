@@ -13,7 +13,14 @@ from fastapi.routing import APIRoute
 from sqlalchemy import select
 from sqlalchemy.orm import sessionmaker
 
-from libs.auth import AuthError, GoogleIdentity, exchange_code, upsert_user, user_for_token
+from libs.auth import (
+    AuthError,
+    GoogleIdentity,
+    exchange_code,
+    start_session,
+    upsert_user,
+    user_for_token,
+)
 from libs.db import User, UserSession, UserTrip
 from libs.settings import Settings
 from tp_api.deps import current_user, require_admin, require_edit, require_trip_access
@@ -101,6 +108,18 @@ class TestSession:
         body = client.get("/auth/me").json()
         assert body == {"user_id": user.user_id, "email": user.email, "name": user.name,
                         "picture": user.picture}
+
+    def test_a_sign_in_sweeps_expired_sessions(self, db, user):
+        """Nothing else collects them, so the next sign-in is what keeps the table bounded."""
+        db.add(UserSession(token="stale", user_id=user.user_id,
+                           expires_at=datetime.now(UTC) - timedelta(seconds=1)))
+        db.commit()
+
+        fresh = start_session(db, user)
+        db.commit()
+
+        tokens = set(db.scalars(select(UserSession.token)))
+        assert tokens == {"test-session-token", fresh.token}
 
     def test_signing_out_revokes_only_that_token(self, client, db, user):
         db.add(UserSession(token="other-browser", user_id=user.user_id,

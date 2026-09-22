@@ -15,7 +15,7 @@ from urllib.parse import urlencode
 from uuid import uuid4
 
 import httpx
-from sqlalchemy import func
+from sqlalchemy import delete, func
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
@@ -122,6 +122,7 @@ def upsert_user(db: Session, who: GoogleIdentity) -> User:
 
 
 def start_session(db: Session, user: User) -> UserSession:
+    db.execute(delete(UserSession).where(UserSession.expires_at < func.now()))
     s = UserSession(
         token=secrets.token_urlsafe(32),
         user_id=user.user_id,

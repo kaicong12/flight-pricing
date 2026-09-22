@@ -126,10 +126,13 @@ def search_cities(q: str, limit: int = 5, *, timeout: float = 10.0) -> list[City
 def search_venues(q: str, lat: float, lon: float, radius_m: int, limit: int = 6,
                   *, timeout: float = 10.0) -> list[VenueSuggestion]:
     """Typeahead over venues near a city. Autocomplete takes a circle where searchText needs a
-    rectangle, and no `includedPrimaryTypes` means anything from a museum to a bakery comes back."""
+    rectangle, and no `includedPrimaryTypes` means anything from a museum to a bakery comes back.
+
+    A bias, not a restriction, because a trip may hold a place in another city.
+    """
     body = {
         "input": q,
-        "locationRestriction": {"circle": {
+        "locationBias": {"circle": {
             "center": {"latitude": lat, "longitude": lon},
             "radius": float(radius_m),
         }},

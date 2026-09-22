@@ -42,7 +42,7 @@ help:
 	@echo "make install    uv sync + npm ci"
 	@echo "make migrate    alembic upgrade head"
 	@echo "make revision m='what changed'   autogenerate a migration"
-	@echo "make test       pytest"
+	@echo "make test       pytest + the client's src/lib/*.check.ts"
 	@echo "make lint       ruff + eslint + tsc"
 	@echo "make build      production build of the web app"
 	@echo ""
@@ -136,8 +136,11 @@ revision:
 	@test -n "$(m)" || (echo "usage: make revision m='add itinerary items'" && exit 1)
 	cd $(BACKEND) && $(ALEMBIC) revision --autogenerate -m "$(m)"
 
+# The client has no test framework — src/lib/*.check.ts are standalone asserts, and this target is
+# the only thing that runs them.
 test:
 	cd $(BACKEND) && uv run pytest
+	cd $(CLIENT) && npm run check
 
 lint:
 	cd $(BACKEND) && uv run ruff check .

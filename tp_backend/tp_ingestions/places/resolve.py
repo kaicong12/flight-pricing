@@ -11,7 +11,14 @@ from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
-from libs.db import City, Extraction, PlaceMention, PlaceQuery, upsert_place
+from libs.db import (
+    City,
+    Extraction,
+    PlaceMention,
+    PlaceQuery,
+    claim_for_city_trips,
+    upsert_place,
+)
 from libs.db.enums import Category, ErrorCode, ExtractedFrom, Sentiment, Source, TaskKind
 from libs.ingest import enqueue
 from libs.places import PlacesError, distance_km, search_venue
@@ -110,6 +117,9 @@ def places_resolve(session: Session, task: ClaimedTask) -> dict:
     # Misses are not cached in place_queries, so this keeps a name repeated inside one extraction
     # from costing two calls. In-process only: it cannot poison a later run.
     missed: set[str] = set()
+    # A claim is what shortlists a place, so every trip in this city needs one — including for a
+    # cache hit, which writes a mention without resolving anything.
+    touched: set[str] = set()
 
     for place in (extraction.result or {}).get("places") or []:
         counts["candidates"] += 1
@@ -131,6 +141,7 @@ def places_resolve(session: Session, task: ClaimedTask) -> dict:
         if place_id:
             counts["cached"] += 1
             upsert_mention(session, place_id, extraction, place)
+            touched.add(place_id)
             continue
         if key in missed:
             counts["rejected"] += 1
@@ -166,6 +177,8 @@ def places_resolve(session: Session, task: ClaimedTask) -> dict:
         upsert_place(session, city, hit, name, confidence, reason)
         session.flush()
         upsert_mention(session, hit.place_id, extraction, place)
+        touched.add(hit.place_id)
         counts["resolved"] += 1
 
+    claim_for_city_trips(session, city.city_id, sorted(touched))
     return {"ref": extraction.source_ref, **counts}

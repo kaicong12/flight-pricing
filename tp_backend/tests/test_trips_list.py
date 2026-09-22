@@ -1,10 +1,10 @@
 """GET /trips: the landing screen's list."""
 
 
-from conftest import plan_body
+from conftest import make_place, plan_body
 from sqlalchemy import update
 
-from libs.db import IngestRun, IngestTask, Place
+from libs.db import City, IngestRun, IngestTask, Place, TripDismissal, TripPlace
 from libs.db.enums import Confidence, RunStatus, TaskKind, TaskStatus
 
 
@@ -47,14 +47,52 @@ def test_skipped_tasks_count_as_finished(client, db):
     assert client.get("/trips").json()[0]["tasks_done"] == 3
 
 
-def test_place_count_comes_from_the_city(client, db):
+def test_place_count_is_what_the_trip_claimed(client, db):
+    """Resolved after the trip exists, so the count is the ingestion's claims reaching it."""
     created = client.post("/initiate-plan", json=plan_body()).json()
-    city_id = created["city"]["city_id"]
-    db.add_all([Place(place_id=f"p{i}", city_id=city_id, name=f"Place {i}",
-                      confidence=Confidence.HIGH) for i in range(3)])
-    db.commit()
+    for i in range(3):
+        make_place(db, city_id=created["city"]["city_id"], place_id=f"p{i}", name=f"Place {i}")
 
     assert client.get("/trips").json()[0]["place_count"] == 3
+
+
+def test_place_count_agrees_with_the_shortlist(client, db):
+    """Both numbers are `in_shortlist`, so an out-of-city claim counts and a dismissal does not."""
+    created = client.post("/initiate-plan", json=plan_body()).json()
+    trip_id, city_id = created["trip_id"], created["city"]["city_id"]
+    db.add(City(city_id="elsewhere", name="Sydney", country="AU"))
+    db.commit()
+    for i in range(3):
+        make_place(db, city_id=city_id, place_id=f"p{i}", name=f"Place {i}")
+    # Another city's ingestion claims nothing here; the hand-add is what reaches it.
+    make_place(db, city_id="elsewhere", place_id="far", name="Opera House")
+    db.add(TripPlace(trip_id=trip_id, place_id="far"))
+    db.add(TripDismissal(trip_id=trip_id, place_id="p0"))
+    db.commit()
+
+    shortlist_total = client.get(f"/trips/{trip_id}/shortlist").json()["total"]
+    assert client.get("/trips").json()[0]["place_count"] == shortlist_total == 3
+
+
+def test_an_unclaimed_place_in_the_city_is_not_counted(client, db):
+    """The city no longer implies the shortlist, so a place no trip claimed is invisible."""
+    created = client.post("/initiate-plan", json=plan_body()).json()
+    db.add(Place(place_id="orphan", city_id=created["city"]["city_id"], name="Orphan",
+                 confidence=Confidence.HIGH))
+    db.commit()
+
+    assert client.get("/trips").json()[0]["place_count"] == 0
+
+
+def test_a_dismissal_on_one_trip_does_not_change_anothers_count(client, db):
+    first = client.post("/initiate-plan", json=plan_body()).json()
+    second = client.post("/initiate-plan", json=plan_body()).json()
+    make_place(db, city_id=first["city"]["city_id"], place_id="p0", name="Place 0")
+    db.add(TripDismissal(trip_id=first["trip_id"], place_id="p0"))
+    db.commit()
+
+    counts = {t["trip_id"]: t["place_count"] for t in client.get("/trips").json()}
+    assert counts == {first["trip_id"]: 0, second["trip_id"]: 1}
 
 
 def test_a_second_trip_in_the_same_city_shares_one_run(client, db):
