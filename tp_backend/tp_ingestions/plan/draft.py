@@ -2,7 +2,7 @@
 
 The model picks the places and owns the clock. plan_day then judges the result against real opening
 hours and the named violations go back for one more attempt; nothing here reflows a block itself.
-The loop routes nothing, so it spends no Routes quota.
+The loop only judges hours, so it spends no Places quota beyond the ones it reads.
 """
 
 import logging

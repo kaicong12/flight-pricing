@@ -4,7 +4,7 @@
 // three columns are given props and raise events.
 //
 // Two debounces hang off it: the ordering is written back quickly, and the day is re-checked more
-// slowly, because a write is free and a Routes call is not.
+// slowly, because a write is local and the check re-reads opening hours.
 
 import {
   DndContext,

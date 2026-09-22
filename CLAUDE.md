@@ -71,9 +71,12 @@ delete; editors change the plan; viewers read. `GET /users/search` feeds the sha
 hides what would only 403. Sharing is reachable from a trip card as well as the plan screen.
 
 **6. Plan.** `GET /trips/{id}/shortlist` ranks the trip's places by mention count and returns each
-mention as a link back to the video or note that named it. **The set is trip-scoped**: the city's
-ingested places plus whatever this trip added by hand, which `trip_places` records — one predicate,
-`service.in_shortlist`, that `replace_days` and `add_dismissal` share. `GET
+mention as a link back to the video or note that named it. **The set is trip-scoped**: its city's places
+plus any this trip claimed in `trip_places` — one predicate, `service.in_shortlist`, that
+`replace_days` and `add_dismissal` share. The claim is what reaches a place filed under a *different*
+city, which is what a second city will need; inside the city it is redundant, and a hand-added place
+deliberately stays visible to every trip there, exactly like an ingested one. Visibility is never
+decided by `places.category`, which is a row the whole city shares. `GET
 /trips/{id}/places/search` and `POST /trips/{id}/places` add one the videos never named, from a modal
 on the plan screen: autocomplete near the city, then Place Details on the pick, then the same
 `places` row an ingestion would have written, claimed for this trip. **Nothing checks it is near the
@@ -81,8 +84,7 @@ city** — a place across the country is a legitimate thing to plan, because no 
 anywhere. It ranks last with no mentions, so the client prepends it. **A category is compulsory**, and
 is the one thing `places.category` exists for: every other category is a majority vote over
 `place_mentions`, which a hand-added place has none of, so without it the place is invisible under
-every filter chip — and a set category is also what tells a hand-added place from an ingested one.
-A person's answer beats the videos'. The user drags
+every filter chip. A person's answer beats the videos'. The user drags
 them into days; `PUT /trips/{id}/itinerary` replaces whole days, because a drag is a statement about
 a sequence and positions are dense and derived. `POST /trips/{id}/days/{n}/route` then checks that
 exact order against Place Details hours and local daylight and returns structured warning codes — the
@@ -120,7 +122,7 @@ account must not become one budget per host.
 | `tp_backend/tp_ingestions` | The worker, through `places.resolve` |
 | `tp_backend/libs/routing` | Hours, daylight and day validation. Pure except `hours.py` |
 | `tp_client` | `/login`, `/` (form), `/trips` (list), `/trip/{trip_id}` (checklist), `/trip/{trip_id}/plan` (shortlist + days + map) |
-| `spikes/<topic>/` | Throwaway exploration. `routes_planning` and `google_auth` are superseded by `libs/routing` and `libs/auth.py` |
+| `spikes/<topic>/` | Throwaway exploration. `agent_planning` is superseded by `tp_ingestions/plan`, `google_auth` by `libs/auth.py` |
 
 `make dev` runs everything locally — migrate + api + worker via `./dev.sh`, plus the web app — and one
 Ctrl-C stops all of it. `make dev-container` runs the same backend from `docker-compose.yml` instead,
@@ -208,7 +210,17 @@ final.
    `tests/test_auth.py` asserts the open-route set, so a new endpoint added without a session
    dependency fails the suite — but nobody can click Google's consent screen in CI.
 9. **Sign-in has no rate limit.** `POST /auth/google` and `GET /auth/url` are open by necessity.
-10. **Sharing has no invite for someone who has never signed in.** The dropdown searches `users`,
+10. **`/trips/{id}/places/search` still restricts autocomplete to 50km around the trip's city.**
+    `add_place` now accepts a place anywhere, but Places Autocomplete is given a hard
+    `locationRestriction`, not a bias, so a far one cannot be *found* from the modal. This is the
+    next thing to change when a trip may hold a second city.
+11. **A hand-added place takes its `city_id` from the trip that added it**, and `upsert_place` never
+    updates that column, so adding a Sydney venue to a Helsinki trip files it under Helsinki
+    permanently — a later Sydney ingestion attaches mentions but cannot reclaim it. `city_id` is a
+    single-valued guess at a many-to-many; the fix is scoping a mention to a city, not overwriting it.
+12. **`GET /trips`' "N places found" is still city-scoped** (`main.py`), so it under-counts a trip's
+    out-of-city claims and disagrees with the shortlist's own total. It should share `in_shortlist`.
+13. **Sharing has no invite for someone who has never signed in.** The dropdown searches `users`,
     so a friend must have signed in here once before they can be added. An email invite that creates
     the row first is the missing half — `users.user_id` is our own uuid precisely so it can exist
     before any Google `sub` does.

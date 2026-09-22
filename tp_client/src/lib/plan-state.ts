@@ -50,7 +50,7 @@ export type PlanAction =
 const without = (xs: number[], y: number) => xs.filter((x) => x !== y);
 const with_ = (xs: number[], y: number) => (xs.includes(y) ? xs : [...xs, y]);
 
-/** The day's sequence, matching how the server reads it back — legs are indexed against this. */
+/** The day's sequence, matching how the server reads it back. */
 function inTimeOrder(items: ItineraryItem[]): ItineraryItem[] {
   return [...items].sort(
     (a, b) => a.start_min - b.start_min || a.place_id.localeCompare(b.place_id),
