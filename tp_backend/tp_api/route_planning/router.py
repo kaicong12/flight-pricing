@@ -1,4 +1,4 @@
-"""The planning screen's endpoints: a ranked shortlist, the user's ordering, and one routed day.
+"""The planning screen's endpoints: a ranked shortlist, the user's ordering, and one checked day.
 
 Declaration and validation only — the work is in `service`.
 """
@@ -10,14 +10,12 @@ from sqlalchemy.orm import Session
 
 from tp_api.deps import (
     HoursLookup,
-    RouteCompute,
     VenueLookup,
     VenueSearch,
     db_session,
     hours_lookup,
     require_edit,
     require_trip_access,
-    route_compute,
     venue_lookup,
     venue_search,
 )
@@ -38,7 +36,6 @@ router = APIRouter(dependencies=[Depends(require_trip_access)])
 
 Db = Annotated[Session, Depends(db_session)]
 Hours = Annotated[HoursLookup, Depends(hours_lookup)]
-Route = Annotated[RouteCompute, Depends(route_compute)]
 Venues = Annotated[VenueSearch, Depends(venue_search)]
 Venue = Annotated[VenueLookup, Depends(venue_lookup)]
 Edit = [Depends(require_edit)]
@@ -107,11 +104,5 @@ def remove_dismissal(trip_id: str, place_id: str, db: Db) -> None:
 
 
 @router.post("/trips/{trip_id}/days/{day_index}/route", response_model=DayRouteOut)
-def route_day(
-    trip_id: str,
-    day_index: int,
-    db: Db,
-    fetch_hours: Hours,
-    compute: Route,
-) -> DayRouteOut:
-    return service.route_day(db, trip_id, day_index, fetch_hours, compute)
+def route_day(trip_id: str, day_index: int, db: Db, fetch_hours: Hours) -> DayRouteOut:
+    return service.route_day(db, trip_id, day_index, fetch_hours)

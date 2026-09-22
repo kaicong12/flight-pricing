@@ -3,7 +3,7 @@
 // The planning screen's one stateful component. Everything mutable lives in the reducer here; the
 // three columns are given props and raise events.
 //
-// Two debounces hang off it: the ordering is written back quickly, and the day is re-routed more
+// Two debounces hang off it: the ordering is written back quickly, and the day is re-checked more
 // slowly, because a write is free and a Routes call is not.
 
 import {
@@ -129,9 +129,9 @@ export function PlanBoard({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [revision, state.savedRevision, trip.trip_id]);
 
-  // Route the visible day once its edits settle. "Re-route day" re-marks it stale, which is the
+  // Check the visible day once its edits settle. "Re-check day" re-marks it stale, which is the
   // same signal an edit produces, so there is one path in.
-  // Routing reads the day back from the database, so it must not run until the write has landed.
+  // The check reads the day back from the database, so it must not run until the write has landed.
   const activeDay = state.activeDay;
   const needsRoute =
     isStale && day && day.items.length > 0 && state.savedRevision === state.revision;
@@ -145,7 +145,7 @@ export function PlanBoard({
           method: "POST",
           signal: controller.signal,
         });
-        if (r.ok) dispatch({ type: "routed", route: (await r.json()) as DayRoute });
+        if (r.ok) dispatch({ type: "checked", route: (await r.json()) as DayRoute });
         else dispatch({ type: "routeFailed", day: activeDay });
       } catch {
         // Superseded or navigated away. Leave the day stale so it retries.

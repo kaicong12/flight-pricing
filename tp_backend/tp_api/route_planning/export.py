@@ -1,7 +1,7 @@
 """The trip as one .xlsx: the ordered days, then the shortlist behind them.
 
 Colours are tp_client/docs/design-system.md, and the warning English lives here because a
-spreadsheet has no client to own it. Nothing routes: an export spends no `computeRoutes` call.
+spreadsheet has no client to own it.
 """
 
 from datetime import UTC, datetime, timedelta
@@ -35,9 +35,8 @@ WARNING_TEXT = {
     "closes_before_done": "closes {closes} before you finish",
     "after_sunset": "dark by {start} — sunset {sunset}",
     "no_hours": "opening hours unknown",
-    "no_route": "no walking route",
 }
-BLOCKING = {"closed", "no_route"}
+BLOCKING = {"closed"}
 
 ITINERARY_COLUMNS = [("Day", 6), ("Date", 10), ("#", 4), ("Start", 7), ("End", 7), ("Place", 32),
                      ("Category", 10), ("Warning", 36)]
@@ -151,7 +150,7 @@ def itinerary_sheet(ws: Worksheet, db: Session, trip: Trip, fetch: HoursLookup) 
                   start_min=r.ItineraryItem.start_min, duration_min=r.ItineraryItem.duration_min,
                   periods=hours[r.Place.place_id].periods if r.Place.place_id in hours else None)
              for r in items],
-            [], weekday=google_weekday(day_date), sunset_min=sunset, routed=False)
+            weekday=google_weekday(day_date), sunset_min=sunset)
 
         found: dict[str, list[PlanWarning]] = {}
         for w in plan.warnings:

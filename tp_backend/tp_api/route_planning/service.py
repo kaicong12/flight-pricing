@@ -1,7 +1,7 @@
-"""What the planning endpoints actually do: rank a shortlist, store an ordering, route one day.
+"""What the planning endpoints actually do: rank a shortlist, store an ordering, check one day.
 
-The order is the user's. Nothing here reorders anything — routing follows the sequence it is given
-and the warnings say what does not work.
+The order is the user's. Nothing here reorders anything — the warnings say what does not work and
+leave the sequence alone.
 
 These functions raise `HTTPException` directly rather than a private exception hierarchy the router
 would only translate one-to-one. Everything they return is already a response schema.
@@ -29,18 +29,9 @@ from libs.db import (
 )
 from libs.db.enums import Confidence, Sentiment, Source
 from libs.places import PlacesError, distance_km
-from libs.routing import (
-    PlanWarning,
-    RouteResult,
-    RoutesError,
-    Stop,
-    TravelLeg,
-    hhmm,
-    plan_day,
-    sun_times,
-)
+from libs.routing import Stop, hhmm, plan_day, sun_times
 from libs.settings import settings
-from tp_api.deps import HoursLookup, RouteCompute, VenueLookup, VenueSearch
+from tp_api.deps import HoursLookup, VenueLookup, VenueSearch
 from tp_api.route_planning.schemas import (
     BlockOut,
     DaylightOut,
@@ -49,7 +40,6 @@ from tp_api.route_planning.schemas import (
     ItemOut,
     ItineraryIn,
     ItineraryOut,
-    LegOut,
     ShortlistOut,
     ShortlistPlaceOut,
     SourceRefOut,
@@ -414,32 +404,12 @@ def load_hours(db: Session, place_ids: list[str], fetch: HoursLookup) -> dict[st
     }
 
 
-def _route_legs(compute: RouteCompute,
-                place_ids: list[str]) -> tuple[RouteResult, list[TravelLeg], bool]:
-    """The day's legs, and whether they are real. One `computeRoutes` call at most."""
-    if len(place_ids) < 2:
-        # Nothing to route between, so spend nothing.
-        return RouteResult(legs=[], polyline=None, total_meters=0), [], True
-
-    try:
-        result = compute(place_ids)
-    except RoutesError as e:
-        raise HTTPException(502, f"routing failed: {e}") from e
-
-    legs = [TravelLeg(meters=leg.meters) for leg in result.legs]
-    if not legs:
-        # Routes can answer 200 with nothing, which is an absent answer and not a failure. Say the
-        # day has no distances rather than guessing at them.
-        return result, [TravelLeg(meters=0) for _ in place_ids[:-1]], False
-    return result, legs, True
-
-
 def route_day(db: Session, trip_id: str, day_index: int,
-              fetch_hours: HoursLookup, compute: RouteCompute) -> DayRouteOut:
-    """Route one day in the order it is stored, then say what does not work.
+              fetch_hours: HoursLookup) -> DayRouteOut:
+    """Check one day in the order it is stored and say what does not work.
 
-    Synchronous rather than queued: routing has no budget to pace, one walking day is a single call,
-    and the user is waiting on the answer. The stop cap is what bounds the worst case.
+    Hours and daylight only — nothing here measures the distance between two blocks or asks whether
+    a route between them exists, which is what lets a day name places in two different cities.
     """
     trip = get_trip(db, trip_id)
     day_date = check_day(trip, day_index)
@@ -466,9 +436,6 @@ def route_day(db: Session, trip_id: str, day_index: int,
         next((h.utc_offset_minutes for h in hours.values() if h.utc_offset_minutes is not None),
              None),
     )
-    result, legs, routed = _route_legs(compute, place_ids)
-    warnings: list[PlanWarning] = [] if routed else [PlanWarning("no_route", None, {})]
-
     sunrise, sunset = (None, None)
     if city.lat is not None and city.lon is not None:
         sunrise, sunset = sun_times(day_date, city.lat, city.lon, tz_min)
@@ -480,8 +447,7 @@ def route_day(db: Session, trip_id: str, day_index: int,
              periods=hours[r.Place.place_id].periods if r.Place.place_id in hours else None)
         for r in rows
     ]
-    plan = plan_day(stops, legs, weekday=google_weekday(day_date),
-                    sunset_min=sunset, routed=routed)
+    plan = plan_day(stops, weekday=google_weekday(day_date), sunset_min=sunset)
 
     return DayRouteOut(
         day_index=day_index, date=day_date, start_time=start,
@@ -490,14 +456,9 @@ def route_day(db: Session, trip_id: str, day_index: int,
                          open_from=hhmm(b.open_from) if b.open_from is not None else None,
                          open_to=hhmm(b.open_to) if b.open_to is not None else None)
                 for b in plan.blocks],
-        legs=[LegOut(from_place_id=place_ids[i], to_place_id=place_ids[i + 1], meters=leg.meters)
-              for i, leg in enumerate(legs) if i + 1 < len(place_ids)],
-        polyline=result.polyline,
-        total_distance_m=result.total_meters,
-        routed=routed,
         daylight=(DaylightOut(sunrise=hhmm(sunrise), sunset=hhmm(sunset))
                   if sunrise is not None and sunset is not None else None),
         warnings=[WarningOut(code=w.code, place_id=w.place_id, detail=w.detail)
-                  for w in warnings + plan.warnings],
+                  for w in plan.warnings],
         provisional=provisional,
     )

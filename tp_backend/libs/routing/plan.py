@@ -1,10 +1,13 @@
 """Check one day of pinned activity blocks and say what is wrong with it.
 
-Pure: the caller supplies the travel legs, the hours and the daylight, so this never touches the
-network and the whole of the validation is testable.
+Pure: the caller supplies the hours and the daylight, so this never touches the network and the whole
+of the validation is testable.
 
 Every block carries its own start time. Nothing here derives a time and nothing here moves a block —
 the user put it at 14:00, so it stays at 14:00 and the warnings say what does not work.
+
+Travel between blocks is not modelled at all — not the time, not the distance, not whether a route
+exists. A day may name two places on opposite sides of the world and this will not object.
 """
 
 from dataclasses import dataclass
@@ -27,7 +30,6 @@ OPENS_LATER = "opens_later"
 CLOSES_BEFORE_DONE = "closes_before_done"
 AFTER_SUNSET = "after_sunset"
 NO_HOURS = "no_hours"
-NO_ROUTE = "no_route"
 
 
 @dataclass(frozen=True)
@@ -40,11 +42,6 @@ class Stop:
     start_min: int
     duration_min: int
     periods: list[dict] | None = None  # None = never fetched; [] = Places publishes none
-
-
-@dataclass(frozen=True)
-class TravelLeg:
-    meters: int
 
 
 @dataclass(frozen=True)
@@ -85,24 +82,18 @@ def in_time_order(stops: list[Stop]) -> list[Stop]:
 
 def plan_day(
     stops: list[Stop],
-    legs: list[TravelLeg],
     *,
     weekday: int,
     sunset_min: float | None = None,
-    routed: bool = True,
 ) -> DayPlan:
     """Validate a day of pinned blocks.
 
-    `stops` may arrive in any order; `legs[i]` is the distance between the i-th and (i+1)-th stop
-    **in time order**, which is what the caller routed. `weekday` is Google's 0=Sunday.
-    `routed=False` means the day was never routed, so a missing leg is not reported as unreachable —
-    the caller says so with its own warning.
+    `stops` may arrive in any order. `weekday` is Google's 0=Sunday.
     """
-    ordered = in_time_order(stops)
     blocks: list[Block] = []
     warnings: list[PlanWarning] = []
 
-    for i, stop in enumerate(ordered):
+    for stop in in_time_order(stops):
         end_min = stop.start_min + stop.duration_min
         window: Window = window_for(stop.periods, weekday) if stop.periods is not None else None
         open_from = open_to = None
@@ -131,14 +122,6 @@ def plan_day(
         blocks.append(Block(place_id=stop.place_id, name=stop.name, start_min=stop.start_min,
                             end_min=end_min, duration_min=stop.duration_min,
                             open_from=open_from, open_to=open_to))
-
-        nxt = ordered[i + 1] if i + 1 < len(ordered) else None
-        if nxt is None or not routed or i >= len(legs):
-            continue
-
-        if legs[i].meters == 0:
-            warnings.append(PlanWarning(NO_ROUTE, nxt.place_id, {
-                "from": stop.name, "to": nxt.name}))
 
     finish = max((b.end_min for b in blocks), default=0)
     return DayPlan(blocks=blocks, warnings=warnings, finish_min=finish)

@@ -1,4 +1,4 @@
-"""Request and response bodies for the shortlist, the itinerary and a routed day.
+"""Request and response bodies for the shortlist, the itinerary and one checked day.
 
 Warnings and provisional reasons cross the wire as codes. The client owns the English, the same way
 it already owns the copy for trip notes.
@@ -123,12 +123,6 @@ class BlockOut(BaseModel):
     open_to: str | None = None
 
 
-class LegOut(BaseModel):
-    from_place_id: str
-    to_place_id: str
-    meters: int
-
-
 class WarningOut(BaseModel):
     code: str
     place_id: str | None = None
@@ -146,11 +140,6 @@ class DayRouteOut(BaseModel):
     # The first block's time, echoed back. None on an empty day.
     start_time: time | None = None
     blocks: list[BlockOut] = []
-    legs: list[LegOut] = []
-    polyline: str | None = None
-    total_distance_m: int = 0
-    # False when the day was never routed, so there are no distances and no route to draw.
-    routed: bool = True
     daylight: DaylightOut | None = None
     warnings: list[WarningOut] = []
     provisional: list[str] = []
