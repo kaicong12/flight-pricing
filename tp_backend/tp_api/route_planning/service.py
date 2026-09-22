@@ -1,7 +1,7 @@
-"""What the planning endpoints actually do: rank a shortlist, store an ordering, route one day.
+"""What the planning endpoints actually do: rank a shortlist, store an ordering, check one day.
 
-The order is the user's. Nothing here reorders anything — routing follows the sequence it is given
-and the warnings say what does not work.
+The order is the user's. Nothing here reorders anything — the warnings say what does not work and
+leave the sequence alone.
 
 These functions raise `HTTPException` directly rather than a private exception hierarchy the router
 would only translate one-to-one. Everything they return is already a response schema.
@@ -24,23 +24,15 @@ from libs.db import (
     RedNotePost,
     Trip,
     TripDismissal,
+    TripPlace,
     YouTubeVideo,
     upsert_place,
 )
 from libs.db.enums import Confidence, Sentiment, Source
-from libs.places import PlacesError, distance_km
-from libs.routing import (
-    PlanWarning,
-    RouteResult,
-    RoutesError,
-    Stop,
-    TravelLeg,
-    hhmm,
-    plan_day,
-    sun_times,
-)
+from libs.places import PlacesError
+from libs.routing import Stop, hhmm, plan_day, sun_times
 from libs.settings import settings
-from tp_api.deps import HoursLookup, RouteCompute, VenueLookup, VenueSearch
+from tp_api.deps import HoursLookup, VenueLookup, VenueSearch
 from tp_api.route_planning.schemas import (
     BlockOut,
     DaylightOut,
@@ -49,7 +41,6 @@ from tp_api.route_planning.schemas import (
     ItemOut,
     ItineraryIn,
     ItineraryOut,
-    LegOut,
     ShortlistOut,
     ShortlistPlaceOut,
     SourceRefOut,
@@ -145,9 +136,23 @@ def category_of(place: Place, facts: dict[str, tuple[str | None, str | None]]) -
     return place.category or facts.get(place.place_id, (None, None))[0]
 
 
+def in_shortlist(trip: Trip):
+    """Which places this trip may list: its city's, plus any it claimed in `trip_places`.
+
+    The claim is what reaches a place outside the trip's city, which is what a second city will need.
+    Inside the city it is redundant, and deliberately so: a hand-added place stays visible to every
+    trip in that city, the same as an ingested one. Visibility is never decided by `places.category`,
+    which `add_place` writes onto the row the whole city shares.
+    """
+    mine = (select(TripPlace.place_id)
+            .where(TripPlace.trip_id == trip.trip_id, TripPlace.place_id == Place.place_id)
+            .exists())
+    return or_(Place.city_id == trip.city_id, mine)
+
+
 def shortlist(db: Session, trip_id: str, limit: int, offset: int,
               category: str | None) -> ShortlistOut:
-    """The city's places, ranked by how many independent sources mentioned each one."""
+    """The trip's places, ranked by how many independent sources mentioned each one."""
     trip = get_trip(db, trip_id)
 
     mentions = (
@@ -166,7 +171,7 @@ def shortlist(db: Session, trip_id: str, limit: int, offset: int,
         .outerjoin(ItineraryItem,
                    (ItineraryItem.place_id == Place.place_id)
                    & (ItineraryItem.trip_id == trip_id))
-        .where(Place.city_id == trip.city_id,
+        .where(in_shortlist(trip),
                ~select(TripDismissal.place_id)
                .where(TripDismissal.trip_id == trip_id,
                       TripDismissal.place_id == Place.place_id)
@@ -260,12 +265,11 @@ def replace_days(db: Session, trip_id: str, body: ItineraryIn) -> ItineraryOut:
 
     if place_ids:
         known = set(db.scalars(
-            select(Place.place_id).where(Place.place_id.in_(place_ids),
-                                         Place.city_id == trip.city_id)
+            select(Place.place_id).where(Place.place_id.in_(place_ids), in_shortlist(trip))
         ).all())
         missing = [p for p in place_ids if p not in known]
         if missing:
-            raise HTTPException(422, f"not a place in this city: {missing[0]}")
+            raise HTTPException(422, f"not a place on this trip: {missing[0]}")
 
     # Delete by submitted place_id as well as by day, so dragging a place in from an unlisted day
     # moves it instead of colliding with uq_itinerary_trip_place.
@@ -298,24 +302,30 @@ def venue_suggestions(db: Session, trip_id: str, q: str,
     return [VenueSuggestionOut(place_id=s.place_id, name=s.name, context=s.context) for s in found]
 
 
+def claim_place(db: Session, trip_id: str, place_id: str) -> None:
+    """Put the place on this trip's own list, and undo any dismissal that would hide it."""
+    db.execute(pg_insert(TripPlace).values(trip_id=trip_id, place_id=place_id)
+               .on_conflict_do_nothing(index_elements=["trip_id", "place_id"]))
+    db.execute(delete(TripDismissal).where(TripDismissal.trip_id == trip_id,
+                                           TripDismissal.place_id == place_id))
+
+
 def add_place(db: Session, trip_id: str, place_id: str, category: str,
               lookup: VenueLookup) -> ShortlistPlaceOut:
-    """Put a hand-picked place in the city's `places`, which is what makes it shortlistable.
+    """Store a hand-picked place and claim it for this trip, which is what shortlists it.
 
-    City-scoped rather than trip-scoped, matching ingested places: the shortlist is a query over the
-    city and `replace_days` will not accept a place_id that is not in it.
+    Nothing checks that it is near the trip's city: the distance between two blocks is not modelled
+    anywhere, so a place across the country is a legitimate thing to plan. The claim is what reaches
+    one that lands outside the city.
     """
     trip = get_trip(db, trip_id)
     city = trip.city
-    if city.lat is None or city.lon is None:
-        raise HTTPException(422, "this city has no coordinates to check against")
 
     existing = db.get(Place, place_id)
-    if existing is not None and existing.city_id == city.city_id:
-        # Already in the city, so spend no Places call. The dismissal has to go, or it stays hidden.
+    if existing is not None:
+        # Already stored, so spend no Places call.
         existing.category = category
-        db.execute(delete(TripDismissal).where(TripDismissal.trip_id == trip_id,
-                                               TripDismissal.place_id == place_id))
+        claim_place(db, trip_id, place_id)
         db.commit()
         return one_shortlist_place(db, trip_id, existing)
 
@@ -328,12 +338,9 @@ def add_place(db: Session, trip_id: str, place_id: str, category: str,
     if hit.lat is None or hit.lon is None:
         raise HTTPException(422, "that place has no location")
 
-    # The id comes from the browser, so without this any place_id on earth could be filed here.
-    radius_km = settings().places_search_radius_m / 1000
-    if distance_km(city.lat, city.lon, hit.lat, hit.lon) > radius_km:
-        raise HTTPException(422, f"{hit.name} is not in {city.name}")
-
+    # city_id records where the place was found, not a claim that it is inside the city.
     upsert_place(db, city, hit, hit.name, Confidence.HIGH, "added by hand", category)
+    claim_place(db, trip_id, hit.place_id)
     db.commit()
 
     place = db.get(Place, hit.place_id)
@@ -362,8 +369,8 @@ def add_dismissal(db: Session, trip_id: str, place_id: str) -> None:
     """Strike a place off this trip's shortlist — the answer to Google's duplicate listings."""
     trip = get_trip(db, trip_id)
     if not db.scalar(select(func.count()).select_from(Place)
-                     .where(Place.place_id == place_id, Place.city_id == trip.city_id)):
-        raise HTTPException(422, "not a place in this city")
+                     .where(Place.place_id == place_id, in_shortlist(trip))):
+        raise HTTPException(422, "not a place on this trip")
     db.execute(pg_insert(TripDismissal)
                .values(trip_id=trip_id, place_id=place_id)
                .on_conflict_do_nothing(index_elements=["trip_id", "place_id"]))
@@ -414,32 +421,12 @@ def load_hours(db: Session, place_ids: list[str], fetch: HoursLookup) -> dict[st
     }
 
 
-def _route_legs(compute: RouteCompute,
-                place_ids: list[str]) -> tuple[RouteResult, list[TravelLeg], bool]:
-    """The day's legs, and whether they are real. One `computeRoutes` call at most."""
-    if len(place_ids) < 2:
-        # Nothing to route between, so spend nothing.
-        return RouteResult(legs=[], polyline=None, total_meters=0), [], True
-
-    try:
-        result = compute(place_ids)
-    except RoutesError as e:
-        raise HTTPException(502, f"routing failed: {e}") from e
-
-    legs = [TravelLeg(meters=leg.meters) for leg in result.legs]
-    if not legs:
-        # Routes can answer 200 with nothing, which is an absent answer and not a failure. Say the
-        # day has no distances rather than guessing at them.
-        return result, [TravelLeg(meters=0) for _ in place_ids[:-1]], False
-    return result, legs, True
-
-
 def route_day(db: Session, trip_id: str, day_index: int,
-              fetch_hours: HoursLookup, compute: RouteCompute) -> DayRouteOut:
-    """Route one day in the order it is stored, then say what does not work.
+              fetch_hours: HoursLookup) -> DayRouteOut:
+    """Check one day in the order it is stored and say what does not work.
 
-    Synchronous rather than queued: routing has no budget to pace, one walking day is a single call,
-    and the user is waiting on the answer. The stop cap is what bounds the worst case.
+    Hours and daylight only — nothing here measures the distance between two blocks or asks whether
+    a route between them exists, which is what lets a day name places in two different cities.
     """
     trip = get_trip(db, trip_id)
     day_date = check_day(trip, day_index)
@@ -466,9 +453,6 @@ def route_day(db: Session, trip_id: str, day_index: int,
         next((h.utc_offset_minutes for h in hours.values() if h.utc_offset_minutes is not None),
              None),
     )
-    result, legs, routed = _route_legs(compute, place_ids)
-    warnings: list[PlanWarning] = [] if routed else [PlanWarning("no_route", None, {})]
-
     sunrise, sunset = (None, None)
     if city.lat is not None and city.lon is not None:
         sunrise, sunset = sun_times(day_date, city.lat, city.lon, tz_min)
@@ -480,8 +464,7 @@ def route_day(db: Session, trip_id: str, day_index: int,
              periods=hours[r.Place.place_id].periods if r.Place.place_id in hours else None)
         for r in rows
     ]
-    plan = plan_day(stops, legs, weekday=google_weekday(day_date),
-                    sunset_min=sunset, routed=routed)
+    plan = plan_day(stops, weekday=google_weekday(day_date), sunset_min=sunset)
 
     return DayRouteOut(
         day_index=day_index, date=day_date, start_time=start,
@@ -490,14 +473,9 @@ def route_day(db: Session, trip_id: str, day_index: int,
                          open_from=hhmm(b.open_from) if b.open_from is not None else None,
                          open_to=hhmm(b.open_to) if b.open_to is not None else None)
                 for b in plan.blocks],
-        legs=[LegOut(from_place_id=place_ids[i], to_place_id=place_ids[i + 1], meters=leg.meters)
-              for i, leg in enumerate(legs) if i + 1 < len(place_ids)],
-        polyline=result.polyline,
-        total_distance_m=result.total_meters,
-        routed=routed,
         daylight=(DaylightOut(sunrise=hhmm(sunrise), sunset=hhmm(sunset))
                   if sunrise is not None and sunset is not None else None),
         warnings=[WarningOut(code=w.code, place_id=w.place_id, detail=w.detail)
-                  for w in warnings + plan.warnings],
+                  for w in plan.warnings],
         provisional=provisional,
     )

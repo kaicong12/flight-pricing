@@ -49,7 +49,7 @@ export function ActivityBlock({
 
   /**
    * Raw pointer events rather than dnd-kit, committed once on pointerup: the board re-routes on
-   * every duration change, so dispatching per pixel would spend a computeRoutes call per pixel.
+   * every duration change, so dispatching per pixel would re-check the day per pixel.
    */
   const startResize = (edge: "top" | "bottom") => (e: React.PointerEvent) => {
     e.preventDefault();

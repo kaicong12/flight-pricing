@@ -144,8 +144,7 @@ def problems(s, trip, chosen, places):
                       start_min=st, duration_min=du,
                       periods=getattr(hours.get(places[i].place_id), "periods", None))
                  for i, st, du in picks]
-        plan = plan_day(stops, [], weekday=google_weekday(trip.arrive_date + timedelta(days=day)),
-                        routed=False)
+        plan = plan_day(stops, weekday=google_weekday(trip.arrive_date + timedelta(days=day)))
         block = {b.place_id: b for b in plan.blocks}
 
         at = {places[i].place_id: i for i, _, _ in picks}

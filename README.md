@@ -1,18 +1,21 @@
 # Trip Planner
 
 Enter a city, dates, flight times and one sentence about yourselves. We shortlist places from travel
-videos and posts, show them as a list beside a map, and you drag them into order. We route that exact
+videos and posts, show them as a list beside a map, and you drag them into order. We check that exact
 sequence and warn about anything that does not work.
 
-**We do not optimise the order.** The user controls it; our job is routing plus validation.
+**We do not optimise the order.** The user controls it; our job is validation.
 
 ![Itinerary beside the map](screenshots/itinerary_and_map.png)
 
-Day 2 of a Tromsø trip, live at `/trip/{trip_id}/plan`: ordered blocks with the real walking leg
-between each pair, the route drawn across the bridge from `computeRoutes`, and two warnings the
-validator found in an order the user chose — Arctic Cathedral opens at 13:00 but the walk gets you
-there at 11:11, and Restaurant Skirri is closed that day. The title is editable; it falls back to the
+Day 2 of a Tromsø trip, live at `/trip/{trip_id}/plan`: ordered blocks, numbered pins on the map, and
+two warnings the validator found in an order the user chose — Arctic Cathedral is pinned before it
+opens at 13:00, and Restaurant Skirri is closed that day. The title is editable; it falls back to the
 city name. "Provisional" is there because holiday hours for a future date are unpublishable.
+(The screenshot predates the removal of the walking route line.)
+
+**Travel between blocks is not modelled** — not the time, not the distance, not whether a route
+exists. A day may name places in two different cities and nothing objects.
 
 ## How it works
 
@@ -32,12 +35,12 @@ to a Google `place_id` -> rank by how many independent sources mentioned it.
 | Works today | Not built |
 |---|---|
 | Schema + Alembic migrations | Auth — so the owner/proposals split in the design is unenforced, and sharing is a link, not a permission |
-| `POST /initiate-plan`, `GET /trips`, `GET /trips/{trip_id}` | A cached routed day, so a page reload re-spends one `computeRoutes` call per day viewed |
+| `POST /initiate-plan`, `GET /trips`, `GET /trips/{trip_id}` | Multi-city trips: a trip still has one primary city, though its shortlist is now trip-scoped |
 | Worker loop: claim, lease reclaim, retry/backoff | Pinned arrival times; a block's time is always derived from the order |
 | `youtube.search`, `rednote.search`, which fan out follow-on tasks | Any frontend test runner |
 | `places.resolve` — candidate names become `places` + `place_mentions` behind a query cache | Block detail, and the standalone ingesting/blocked pages |
 | Versioned Gemini prompts in `libs/prompts` | |
-| Shortlist, itinerary and per-day routing endpoints, validated against hours and daylight | |
+| Shortlist, itinerary and per-day check endpoints, validated against hours and daylight | |
 | `tp_client`: plan form, trips list, and the shortlist/itinerary/map screen | |
 
 ## Getting started

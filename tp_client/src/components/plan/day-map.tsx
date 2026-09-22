@@ -1,13 +1,12 @@
 "use client";
 
-// The day's route on a map. MapLibre with a keyless basemap: no Google key may reach client JS, and
-// the polyline is decoded here rather than fetched as geometry.
+// The day's places on a map, numbered in the user's order. MapLibre with a keyless basemap: no
+// Google key may reach client JS. No line is drawn between them — travel is not modelled.
 
 import "maplibre-gl/dist/maplibre-gl.css";
 
 // maplibre-gl 6 dropped its default export, so these are named.
 import {
-  type GeoJSONSource,
   LngLatBounds,
   type LngLatBoundsLike,
   Map as MapLibreMap,
@@ -17,15 +16,12 @@ import {
 import { useEffect, useRef } from "react";
 
 import type { DayRoute, ItineraryDay } from "@/lib/plan-types";
-import { formatDistance } from "@/lib/plan-types";
-import { decodePolyline } from "@/lib/polyline";
 
 // A style URL, not a key — swappable without a deploy if the tile host goes away. OpenStreetMap
 // attribution is carried by the style and rendered by MapLibre's own control; do not remove it.
 const STYLE_URL =
   process.env.NEXT_PUBLIC_MAP_STYLE_URL ?? "https://tiles.openfreemap.org/styles/positron";
 
-const ROUTE_SOURCE = "day-route";
 const LAND = "#e8e7d6";
 const WATER = "#bfd2de";
 const INK = "#252b20";
@@ -77,7 +73,7 @@ export function DayMap({
   const markers = useRef<Marker[]>([]);
   // Our own stops do not depend on the basemap, so they are gated on the style being parsed rather
   // than on `load`, which waits for every tile source. A tile host that never answers must not also
-  // cost us the pins and the route line.
+  // cost us the pins.
   const styleReady = useRef(false);
   const redraw = useRef<(() => void) | null>(null);
 
@@ -112,7 +108,7 @@ export function DayMap({
     };
   }, [centerLat, centerLon]);
 
-  // Markers and the route line, redrawn whenever the day or its route changes.
+  // Markers, redrawn whenever the day changes.
   useEffect(() => {
     const m = map.current;
     if (!m) return;
@@ -132,51 +128,20 @@ export function DayMap({
         );
       });
 
-      const lines = stale
-        ? []
-        : [route?.polyline]
-            .filter((p): p is string => Boolean(p))
-            .map(decodePolyline)
-            .filter((coords) => coords.length > 1);
-
-      const geojson: GeoJSON.FeatureCollection = {
-        type: "FeatureCollection",
-        features: lines.map((coords) => ({
-          type: "Feature",
-          properties: {},
-          geometry: { type: "LineString", coordinates: coords },
-        })),
-      };
-
-      const existing = m.getSource(ROUTE_SOURCE) as GeoJSONSource | undefined;
-      if (existing) {
-        existing.setData(geojson);
-      } else {
-        m.addSource(ROUTE_SOURCE, { type: "geojson", data: geojson });
-        m.addLayer({
-          id: ROUTE_SOURCE,
-          type: "line",
-          source: ROUTE_SOURCE,
-          layout: { "line-cap": "round", "line-join": "round" },
-          paint: { "line-color": INK, "line-width": 3, "line-opacity": 0.75 },
-        });
-      }
-
-      const fit = lines.flat().length > 1 ? lines.flat() : points;
-      if (fit.length > 1) {
-        const bounds = fit.reduce(
+      if (points.length > 1) {
+        const bounds = points.reduce(
           (b, c) => b.extend(c),
-          new LngLatBounds(fit[0], fit[0]),
+          new LngLatBounds(points[0], points[0]),
         );
         m.fitBounds(bounds as LngLatBoundsLike, { padding: 64, maxZoom: 15, duration: 400 });
-      } else if (fit.length === 1) {
-        m.easeTo({ center: fit[0], zoom: 14, duration: 400 });
+      } else if (points.length === 1) {
+        m.easeTo({ center: points[0], zoom: 14, duration: 400 });
       }
     };
 
     redraw.current = draw;
     if (styleReady.current) draw();
-  }, [day, route, stale]);
+  }, [day]);
 
   // z-31 lifts the card above the layout's z-30 grain: mix-blend-multiply over an accelerated WebGL
   // canvas makes Chromium composite it as blank, so the map forgoes the grain to let others keep it.
@@ -189,18 +154,8 @@ export function DayMap({
 
       <div className="pointer-events-none absolute top-3.5 left-3.5 flex flex-wrap items-center gap-1.5">
         <span className="flex h-7 items-center rounded-full bg-white/92 px-3 text-[12.5px] font-medium text-ink shadow-card">
-          Day {day.day_index + 1} route
+          Day {day.day_index + 1}
         </span>
-        {route && !stale && route.routed && (
-          <span className="flex h-7 items-center rounded-full bg-white/92 px-3 font-mono text-[11px] text-ink-soft shadow-card">
-            {formatDistance(route.total_distance_m)} walking
-          </span>
-        )}
-        {stale && day.items.length > 1 && (
-          <span className="flex h-7 items-center rounded-full bg-warn-bg px-3 text-[12.5px] font-medium text-warn shadow-card">
-            Re-route to redraw
-          </span>
-        )}
       </div>
 
       {route?.daylight && !stale && (

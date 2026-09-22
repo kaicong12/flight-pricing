@@ -105,7 +105,7 @@ export function PlanHeader({
               routing && "animate-[tp-spin_0.9s_linear_infinite] motion-reduce:animate-none",
             )}
           />
-          {routing ? "Routing…" : "Re-route day"}
+          {routing ? "Checking…" : "Re-check day"}
         </button>
       </div>
     </div>

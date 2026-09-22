@@ -19,14 +19,13 @@ from libs.places import (
     search_venues,
     venue_details,
 )
-from libs.routing import HoursHit, RouteResult, compute_walk, fetch_hours
+from libs.routing import HoursHit, fetch_hours
 
 CityLookup = Callable[[str], CityDetails]
 CitySearch = Callable[[str, int], list[CitySuggestion]]
 VenueSearch = Callable[[str, float, float, int], list[VenueSuggestion]]
 VenueLookup = Callable[[str], VenueHit | None]
 HoursLookup = Callable[[list[str]], dict[str, HoursHit]]
-RouteCompute = Callable[[list[str]], RouteResult]
 
 
 def db_session() -> Iterator[Session]:
@@ -93,7 +92,3 @@ def venue_lookup() -> VenueLookup:
 
 def hours_lookup() -> HoursLookup:
     return fetch_hours
-
-
-def route_compute() -> RouteCompute:
-    return compute_walk

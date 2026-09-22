@@ -2,7 +2,7 @@
 
 The model picks the places and owns the clock. plan_day then judges the result against real opening
 hours and the named violations go back for one more attempt; nothing here reflows a block itself.
-The loop routes nothing, so it spends no Routes quota.
+The loop only judges hours, so it spends no Places quota beyond the ones it reads.
 """
 
 import logging
@@ -108,7 +108,7 @@ def keep(trip: Trip, reply: dict, n: int, open_days, shut=()) -> dict:
 
 
 def problems(session: Session, trip: Trip, chosen: dict, places) -> dict:
-    """plan_day's hours verdict per day. routed=False, so this spends no Routes quota."""
+    """plan_day's hours verdict per day."""
     ids = [places[i].place_id for picks in chosen.values() for i, _, _ in picks]
     hours = load_hours(session, ids, fetch_hours) if ids else {}
 
@@ -118,8 +118,7 @@ def problems(session: Session, trip: Trip, chosen: dict, places) -> dict:
                       start_min=st, duration_min=du,
                       periods=getattr(hours.get(places[i].place_id), "periods", None))
                  for i, st, du in picks]
-        plan = plan_day(stops, [], weekday=google_weekday(trip.arrive_date + timedelta(days=day)),
-                        routed=False)
+        plan = plan_day(stops, weekday=google_weekday(trip.arrive_date + timedelta(days=day)))
         block = {b.place_id: b for b in plan.blocks}
         at = {places[i].place_id: i for i, _, _ in picks}
 

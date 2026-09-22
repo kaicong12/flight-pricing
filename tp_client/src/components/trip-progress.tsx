@@ -107,7 +107,7 @@ export function TripProgress({ initial }: { initial: TripStatus }) {
             Build the itinerary →
           </span>
           <span className="font-mono text-[11px] text-faint">
-            shortlist · order · route
+            shortlist · order · check
           </span>
         </Link>
       ) : (

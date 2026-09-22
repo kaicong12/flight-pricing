@@ -1,4 +1,4 @@
-"""The planning screen's endpoints: shortlist ranking, the user's ordering, and a routed day."""
+"""The planning screen's endpoints: shortlist ranking, the user's ordering, and a checked day."""
 
 from datetime import timedelta
 
@@ -7,7 +7,7 @@ from sqlalchemy import select
 
 from libs.db import ItineraryItem
 from libs.db.enums import Sentiment, Source
-from libs.routing import HoursHit, Leg, RouteResult
+from libs.routing import HoursHit
 from tp_api.route_planning.schemas import REGULAR_HOURS_ONLY_NOTE
 from tp_api.schemas import today_utc
 
@@ -465,10 +465,8 @@ class TestRouteDay:
         trip = make_trip(client)
         body = client.post(f"/trips/{trip}/days/0/route", json={}).json()
         assert body["blocks"] == []
-        assert body["legs"] == []
 
-    def test_block_times_are_the_pinned_ones_not_a_derived_schedule(self, client, db, hours,
-                                                                    routes):
+    def test_block_times_are_the_pinned_ones_not_a_derived_schedule(self, client, db, hours):
         trip = make_trip(client)
         seed(db, ("p1", "A", 1), ("p2", "B", 1))
         put_day(client, trip, ["p1", "p2"], start=900, step=90)
@@ -480,33 +478,6 @@ class TestRouteDay:
         assert [(b["start"], b["end"]) for b in body["blocks"]] == [("15:00", "16:00"),
                                                                     ("16:30", "17:30")]
         assert body["start_time"] == "15:00:00"
-        assert body["legs"][0]["meters"] == 800
-        assert body["legs"][0]["from_place_id"] == "p1"
-        assert body["legs"][0]["to_place_id"] == "p2"
-
-    def test_a_one_stop_day_spends_no_routes_call(self, client, db, routes):
-        trip = make_trip(client)
-        seed(db, ("p1", "A", 1))
-        put_day(client, trip, ["p1"])
-        called = []
-        routes["fn"] = lambda ids: called.append(ids) or RouteResult([], None, 0)
-
-        body = client.post(f"/trips/{trip}/days/0/route", json={"start_time": "09:00"}).json()
-
-        assert called == []
-        assert len(body["blocks"]) == 1
-        assert body["legs"] == []
-        # Not "unrouted": there was nothing to route, which is different from having no answer.
-        assert body["routed"] is True
-
-    def test_the_polyline_reaches_the_client(self, client, db, hours):
-        trip = make_trip(client)
-        seed(db, ("p1", "A", 1), ("p2", "B", 1))
-        put_day(client, trip, ["p1", "p2"])
-
-        body = client.post(f"/trips/{trip}/days/0/route", json={}).json()
-        assert body["polyline"] == "_p~iF~ps|U"
-        assert body["total_distance_m"] == 800
 
     def test_open_hours_reach_the_blocks(self, client, db, hours):
         trip = make_trip(client)
@@ -576,43 +547,15 @@ class TestRouteDay:
         body = client.post(f"/trips/{trip}/days/1/route", json={}).json()
         assert body["start_time"] is None
 
-
-    def test_no_route_at_all_degrades_instead_of_failing(self, client, db, routes):
-        """Routes can answer 200 with nothing. That is not a 502."""
+    def test_two_places_an_ocean_apart_are_not_an_error(self, client, db):
+        """Travel is not modelled, so nothing here can call a day impossible."""
         trip = make_trip(client)
         seed(db, ("p1", "A", 1), ("p2", "B", 1))
         put_day(client, trip, ["p1", "p2"])
-        routes["fn"] = lambda ids: RouteResult([], None, 0)
-
-        r = client.post(f"/trips/{trip}/days/0/route")
-
-        assert r.status_code == 200
-        body = r.json()
-        assert body["routed"] is False
-        assert "no_route" in [w["code"] for w in body["warnings"]]
-        # The blocks keep their pinned times; only the travel claim is withheld.
-        assert [b["start"] for b in body["blocks"]] == ["15:00", "16:30"]
-
-    def test_an_unrouted_day_does_not_also_claim_each_pair_is_unreachable(self, client, db, routes):
-        trip = make_trip(client)
-        seed(db, ("p1", "A", 1), ("p2", "B", 1))
-        put_day(client, trip, ["p1", "p2"])
-        routes["fn"] = lambda ids: RouteResult([], None, 0)
 
         body = client.post(f"/trips/{trip}/days/0/route", json={}).json()
-        assert [w["code"] for w in body["warnings"]].count("no_route") == 1
-
-    def test_a_routes_failure_is_a_502(self, client, db, routes):
-        from libs.routing import RoutesError
-        trip = make_trip(client)
-        seed(db, ("p1", "A", 1), ("p2", "B", 1))
-        put_day(client, trip, ["p1", "p2"])
-
-        def boom(ids):
-            raise RoutesError("computeRoutes returned 403")
-
-        routes["fn"] = boom
-        assert client.post(f"/trips/{trip}/days/0/route", json={}).status_code == 502
+        assert [b["start"] for b in body["blocks"]] == ["15:00", "16:30"]
+        assert "no_route" not in [w["code"] for w in body["warnings"]]
 
     def test_an_unreachable_places_call_leaves_hours_unknown_rather_than_failing(
             self, client, db, hours):
@@ -629,16 +572,13 @@ class TestRouteDay:
         assert [w["code"] for w in body["warnings"]] == ["no_hours"]
 
 
-    def test_the_route_follows_the_stored_order_not_the_request(self, client, db, routes):
+    def test_the_check_follows_the_stored_order_not_the_request(self, client, db):
         trip = make_trip(client)
         seed(db, ("p1", "A", 1), ("p2", "B", 1), ("p3", "C", 1))
         put_day(client, trip, ["p3", "p1", "p2"])
-        asked = []
-        routes["fn"] = lambda ids: asked.append(list(ids)) or RouteResult(
-            [Leg(0)] * 2, None, 0)
 
-        client.post(f"/trips/{trip}/days/0/route", json={})
-        assert asked == [["p3", "p1", "p2"]]
+        body = client.post(f"/trips/{trip}/days/0/route", json={}).json()
+        assert [b["place_id"] for b in body["blocks"]] == ["p3", "p1", "p2"]
 
 
 class TestProvisional:

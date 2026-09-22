@@ -23,9 +23,8 @@ from libs.db import (
 )
 from libs.db.enums import Confidence, ExtractedFrom, Sentiment, Source
 from libs.places import CityDetails
-from libs.routing import Leg, RouteResult
 from libs.settings import settings
-from tp_api.deps import city_lookup, db_session, hours_lookup, route_compute
+from tp_api.deps import city_lookup, db_session, hours_lookup
 from tp_api.main import app
 from tp_api.schemas import today_utc
 from tp_ingestions.throttle import Throttler
@@ -133,15 +132,6 @@ def hours():
 
 
 @pytest.fixture
-def routes():
-    """Stands in for Routes. Defaults to an 800 m leg between each pair."""
-    def default(place_ids):
-        legs = [Leg(meters=800) for _ in place_ids[:-1]]
-        return RouteResult(legs=legs, polyline="_p~iF~ps|U", total_meters=800 * len(legs))
-    return {"fn": default}
-
-
-@pytest.fixture
 def user(db):
     """A signed-in account. Real rows, not an overridden dependency, because trip access is a join."""
     u = User(user_id="u-test", google_sub="sub-test", email="friend@example.com", name="A Friend",
@@ -154,12 +144,11 @@ def user(db):
 
 
 @pytest.fixture
-def anon_client(db, lookup, hours, routes):
+def anon_client(db, lookup, hours):
     """A client with no session, for asserting an endpoint is actually closed."""
     app.dependency_overrides[db_session] = lambda: db
     app.dependency_overrides[city_lookup] = lambda: (lambda pid: lookup["fn"](pid))
     app.dependency_overrides[hours_lookup] = lambda: (lambda pids: hours["fn"](pids))
-    app.dependency_overrides[route_compute] = lambda: (lambda pids: routes["fn"](pids))
     with TestClient(app) as c:
         yield c
     app.dependency_overrides.clear()

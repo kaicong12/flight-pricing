@@ -77,12 +77,6 @@ export type PlanBlock = {
   open_to: string | null;
 };
 
-export type PlanLeg = {
-  from_place_id: string;
-  to_place_id: string;
-  meters: number;
-};
-
 export type PlanWarning = {
   code: string;
   place_id: string | null;
@@ -95,10 +89,6 @@ export type DayRoute = {
   /** The first block's time. Null on an empty day. */
   start_time: string | null;
   blocks: PlanBlock[];
-  legs: PlanLeg[];
-  polyline: string | null;
-  total_distance_m: number;
-  routed: boolean;
   daylight: { sunrise: string; sunset: string } | null;
   warnings: PlanWarning[];
   provisional: string[];
@@ -108,8 +98,8 @@ export type DayRoute = {
  *
  * `name` is the block the warning is about, prefixed so a list of them says which is which — three
  * warnings that all open "Starts 18:00" are unreadable otherwise. Left off where the caller has no
- * name to give: a day-wide warning names no place, and an unrouted day has no block to look up. The
- * messages therefore never repeat the name themselves.
+ * name to give — a day-wide warning names no place. The messages therefore never repeat the name
+ * themselves.
  */
 export function warningText(w: PlanWarning, name?: string): string {
   const d = w.detail;
@@ -125,10 +115,6 @@ export function warningText(w: PlanWarning, name?: string): string {
         return `Starts ${d.start}, after sunset at ${d.sunset}. Worth doing in daylight.`;
       case "no_hours":
         return "No opening hours published — unverified.";
-      case "no_route":
-        return d.from
-          ? `No route found from ${d.from} to ${d.to}.`
-          : "No route could be drawn for this day.";
       default:
         return w.code;
     }
@@ -140,10 +126,6 @@ export function warningText(w: PlanWarning, name?: string): string {
 export const PROVISIONAL_TEXT: Record<string, string> = {
   regular_hours_only: "regular hours only",
 };
-
-export function formatDistance(meters: number): string {
-  return meters < 1000 ? `${meters} m` : `${(meters / 1000).toFixed(1)} km`;
-}
 
 /** "Thu 4 Dec" — the day tabs. */
 export function formatDayTab(iso: string): string {

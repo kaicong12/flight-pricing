@@ -1,4 +1,4 @@
-"""Routing and validation for one user-ordered day. The order is never optimised."""
+"""Validation for one user-ordered day: opening hours and daylight. Travel is not modelled."""
 
 from libs.routing.daylight import sun_times
 from libs.routing.hours import CLOSED, HoursHit, fetch_hours, window_for
@@ -11,12 +11,10 @@ from libs.routing.plan import (
     DayPlan,
     PlanWarning,
     Stop,
-    TravelLeg,
     hhmm,
     in_time_order,
     plan_day,
 )
-from libs.routing.routes import Leg, RouteResult, RoutesError, compute_walk
 
 __all__ = [
     "CLOSED",
@@ -27,13 +25,8 @@ __all__ = [
     "Block",
     "DayPlan",
     "HoursHit",
-    "Leg",
     "PlanWarning",
-    "RouteResult",
-    "RoutesError",
     "Stop",
-    "TravelLeg",
-    "compute_walk",
     "fetch_hours",
     "hhmm",
     "in_time_order",

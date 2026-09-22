@@ -1,5 +1,5 @@
 // One trip in the list. The thumbnail is the trip's identity, because same city with different
-// dates is the common case. It holds the day-1 polyline once Routes is enabled.
+// dates is the common case.
 
 import Link from "next/link";
 

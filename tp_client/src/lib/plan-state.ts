@@ -1,7 +1,7 @@
 // All of the planning screen's mutable state, as one pure reducer.
 //
 // A reducer rather than a dozen useStates because the transitions are interdependent: pinning a place
-// to another day changes two days, re-sorts both, marks both unsaved and both un-routed. Doing that
+// to another day changes two days, re-sorts both, marks both unsaved and both unchecked. Doing that
 // in one place is what stops a half-applied drag.
 
 import { DEFAULT_DURATION } from "@/lib/plan-types";
@@ -22,7 +22,7 @@ export type PlanState = {
   dismissed: string[];
   activeDay: number;
   routes: Record<number, DayRoute>;
-  /** Edited since it was last routed, so the legs no longer describe it. */
+  /** Edited since it was last checked, so the warnings no longer describe it. */
   stale: number[];
   /** Which days the next write must send. */
   unsaved: number[];
@@ -40,7 +40,7 @@ export type PlanAction =
   | { type: "reference"; day: number; placeId: string; url: string | null }
   | { type: "activeDay"; day: number }
   | { type: "dismiss"; placeId: string }
-  | { type: "routed"; route: DayRoute }
+  | { type: "checked"; route: DayRoute }
   | { type: "routeFailed"; day: number }
   | { type: "invalidate"; day: number }
   | { type: "saved"; days: number[]; itinerary: Itinerary; revision: number }
@@ -50,7 +50,7 @@ export type PlanAction =
 const without = (xs: number[], y: number) => xs.filter((x) => x !== y);
 const with_ = (xs: number[], y: number) => (xs.includes(y) ? xs : [...xs, y]);
 
-/** The day's sequence, matching how the server reads it back — legs are indexed against this. */
+/** The day's sequence, matching how the server reads it back. */
 function inTimeOrder(items: ItineraryItem[]): ItineraryItem[] {
   return [...items].sort(
     (a, b) => a.start_min - b.start_min || a.place_id.localeCompare(b.place_id),
@@ -186,7 +186,7 @@ export function planReducer(state: PlanState, action: PlanAction): PlanState {
         total: Math.max(0, state.total - 1),
       };
 
-    case "routed":
+    case "checked":
       return {
         ...state,
         routes: { ...state.routes, [action.route.day_index]: action.route },
@@ -197,7 +197,7 @@ export function planReducer(state: PlanState, action: PlanAction): PlanState {
     case "routeFailed":
       return { ...state, stale: without(state.stale, action.day) };
 
-    // What "Re-route day" asks for: bin the answer we have and go again.
+    // What "Re-check day" asks for: bin the answer we have and go again.
     case "invalidate":
       return { ...state, stale: with_(state.stale, action.day) };
 

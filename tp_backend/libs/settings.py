@@ -40,7 +40,7 @@ class Settings(BaseSettings):
     places_search_radius_m: int = 50000
     # Hours move, and the Places terms only let place_id be kept indefinitely, so this is short.
     place_hours_ttl_days: int = 7
-    # computeRoutes allows 25 intermediates, which bounds a day and so bounds a routing request.
+    # Nothing routes any more, so this only bounds one day's payload and its Place Details reads.
     max_stops_per_day: int = 25
 
     # RedNote needs a cookie AND a signature, and the signature is bound to the URL path — hence

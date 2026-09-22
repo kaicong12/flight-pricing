@@ -70,28 +70,33 @@ delete; editors change the plan; viewers read. `GET /users/search` feeds the sha
 `POST/DELETE /trips/{id}/members` writes it, and both trip payloads carry `your_role` so the client
 hides what would only 403. Sharing is reachable from a trip card as well as the plan screen.
 
-**6. Plan.** `GET /trips/{id}/shortlist` ranks the city's places by mention count and returns each
-mention as a link back to the video or note that named it. `GET /trips/{id}/places/search` and
-`POST /trips/{id}/places` add one the videos never named, from a modal on the plan screen:
-autocomplete near the city, then Place Details on the pick, then the same `places` row an ingestion
-would have written — **city-scoped, not per-trip**, because the shortlist is a query over the city and
-`replace_days` rejects a `place_id` that is not in it. It ranks last with no mentions, so the client
-prepends it. **A category is compulsory**, and is the one thing `places.category` exists for: every
-other category is a majority vote over `place_mentions`, which a hand-added place has none of, so
-without it the place is invisible under every filter chip. A person's answer beats the videos'. The user drags
+**6. Plan.** `GET /trips/{id}/shortlist` ranks the trip's places by mention count and returns each
+mention as a link back to the video or note that named it. **The set is trip-scoped**: its city's places
+plus any this trip claimed in `trip_places` — one predicate, `service.in_shortlist`, that
+`replace_days` and `add_dismissal` share. The claim is what reaches a place filed under a *different*
+city, which is what a second city will need; inside the city it is redundant, and a hand-added place
+deliberately stays visible to every trip there, exactly like an ingested one. Visibility is never
+decided by `places.category`, which is a row the whole city shares. `GET
+/trips/{id}/places/search` and `POST /trips/{id}/places` add one the videos never named, from a modal
+on the plan screen: autocomplete near the city, then Place Details on the pick, then the same
+`places` row an ingestion would have written, claimed for this trip. **Nothing checks it is near the
+city** — a place across the country is a legitimate thing to plan, because no distance is modelled
+anywhere. It ranks last with no mentions, so the client prepends it. **A category is compulsory**, and
+is the one thing `places.category` exists for: every other category is a majority vote over
+`place_mentions`, which a hand-added place has none of, so without it the place is invisible under
+every filter chip. A person's answer beats the videos'. The user drags
 them into days; `PUT /trips/{id}/itinerary` replaces whole days, because a drag is a statement about
-a sequence and positions are dense and derived. `POST /trips/{id}/days/{n}/route` then draws that
-exact order with `computeRoutes` (WALK, one call), checks it against Place Details hours and local
-daylight, and returns structured warning codes — the client owns the English. **Travel time is not a
-constraint**: the route gives a polyline and how far apart the places are, and nothing validates
-whether the gap between two blocks is enough to get there. `itinerary_items.reference_url` is the
+a sequence and positions are dense and derived. `POST /trips/{id}/days/{n}/route` then checks that
+exact order against Place Details hours and local daylight and returns structured warning codes — the
+client owns the English. **Travel between blocks is not modelled at all** — not the time, not the
+distance, not whether a route exists. A day may name two places on opposite sides of the world and
+nothing objects; the map draws numbered pins and no line. `itinerary_items.reference_url` is the
 user's own link on a block — a booking, a listing, a receipt — stored and opened, never fetched; the
-plan screen edits it from the block itself and saving one does not re-route the day. `GET
+plan screen edits it from the block itself and saving one does not re-check the day. `GET
 /trips/{id}/export.xlsx` is those same days as a workbook: Itinerary, a band per day and the warning
 in the app's own amber and clay, with a `Ref` column **only when some block has a link**, plus
-Shortlist, whose `Source` column is the video or note that named the place. It re-reads hours but
-never routes, so an export costs no `computeRoutes` call, and the warning English lives in
-`export.py` because a spreadsheet has no client to own it.
+Shortlist, whose `Source` column is the video or note that named the place. It re-reads hours, and
+the warning English lives in `export.py` because a spreadsheet has no client to own it.
 
 **7. Draft.** `route.plan` fills a trip's *empty* days so the plan screen opens filled — **one Gemini
 call in a loop, not an agent**: the shortlist is already a closed ranked set and `plan_day` already
@@ -115,9 +120,9 @@ account must not become one budget per host.
 | `tp_backend/libs/db` | Schema + migrations |
 | `tp_backend/tp_api` | The API |
 | `tp_backend/tp_ingestions` | The worker, through `places.resolve` |
-| `tp_backend/libs/routing` | Routing, hours, daylight and day validation. Pure except `routes.py`/`hours.py` |
+| `tp_backend/libs/routing` | Hours, daylight and day validation. Pure except `hours.py` |
 | `tp_client` | `/login`, `/` (form), `/trips` (list), `/trip/{trip_id}` (checklist), `/trip/{trip_id}/plan` (shortlist + days + map) |
-| `spikes/<topic>/` | Throwaway exploration. `routes_planning` is superseded by `libs/routing`, `google_auth` by `libs/auth.py` |
+| `spikes/<topic>/` | Throwaway exploration. `agent_planning` is superseded by `tp_ingestions/plan`, `google_auth` by `libs/auth.py` |
 
 `make dev` runs everything locally — migrate + api + worker via `./dev.sh`, plus the web app — and one
 Ctrl-C stops all of it. `make dev-container` runs the same backend from `docker-compose.yml` instead,
@@ -140,7 +145,7 @@ via `run_after` and `drain()` exits as soon as nothing is due.
 
 Proven live on Tromsø, Bergen, Porto and Singapore (~36 tasks each). Tromsø's 122 candidates became
 84 `searchText` calls and 58 places with 90 mentions. The plan screen is proven against Tromsø
-end to end: a real drawn route, real opening hours, and a `closes_before_done` warning. The trips
+end to end: real opening hours and a `closes_before_done` warning. The trips
 themselves were deleted when `user_trips` arrived, since they predate any owner — the cities and
 places are city-scoped and stayed, so re-creating a Tromsø trip is warm and re-tests the same path.
 
@@ -151,14 +156,15 @@ places are city-scoped and stayed, so re-creating a Tromsø trip is warm and re-
 | Discovery | **YouTube** — transcripts primary, chapters as spelling anchor, comments |
 | Food + POI | **RedNote/Xiaohongshu** — private web API, confirmed usable |
 | Identity + facts | **Google Places** `searchText` → `place_id`, then Place Details for hours |
-| Routing + map | **Routes API `computeRoutes`** — WALK only: polyline and per-leg distance |
+| Map | **MapLibre GL** with a keyless basemap — numbered pins, no route line |
 | Daylight | Computed locally (NOAA), no API |
 | Thin-city fallback | **Wikivoyage**, labelled guidebook-grade |
 | Later | Reddit, behind a disabled flag |
 
 Ruled out: Reddit (blocked), OSM/Overture/Wikidata (inventories, no curation signal), Foursquare open
-data (doesn't exist), **Google Route Optimization** (no TRANSIT mode; skip reasons can't distinguish
-"closed" from "unreachable"), Tokyo/Bangkok/Singapore open data (stale or geo-blocked).
+data (doesn't exist), **Routes API `computeRoutes`** (a WALK polyline is meaningless the moment a
+day spans two cities, and it answers a 3000 km leg with a route rather than a refusal),
+Tokyo/Bangkok/Singapore open data (stale or geo-blocked).
 
 # Conventions
 
@@ -182,33 +188,39 @@ final.
 
 # Open items
 
-1. **Restrict the API key** to Places + Routes + YouTube + Gemini. (Routes itself is enabled and
-   verified live on WALK.)
-2. **Confirm Places and Routes pricing** and whether caching lat/lon is permitted. Resolution is the
-   biggest spender: 84 `searchText` calls on one city. `place_hours` now caches opening hours on a
+1. **Restrict the API key** to Places + YouTube + Gemini. Routes is no longer called at all.
+2. **Confirm Places pricing** and whether caching lat/lon is permitted. Resolution is the biggest
+   spender: 84 `searchText` calls on one city. `place_hours` now caches opening hours on a
    7-day TTL (`place_hours_ttl_days`), which is a judgement call about the terms, not a settled one.
-3. **Day routes are not cached.** Every first view of a day spends one `computeRoutes` call, so a
-   page reload re-pays. The fix is a `day_routes` row keyed on a hash of the ordered place_ids, so an
-   unchanged order is free and a reordered day is marked stale rather than re-routed on a GET.
-4. **Test transcript fetching from cloud egress**, not just a laptop. The failure mode to watch for
+3. **Test transcript fetching from cloud egress**, not just a laptop. The failure mode to watch for
    on EC2 is `PoTokenRequired`.
-5. **The generic-noun and chain stoplists in `tp_ingestions/places/names.py` are Norway-leaning.**
+4. **The generic-noun and chain stoplists in `tp_ingestions/places/names.py` are Norway-leaning.**
    They will need a pass per new country, and there is no longer a dry-run that shows what a
    country's names would query or drop.
-6. **`tp_client` has no test runner.** `src/lib/*.check.ts` are standalone instead — `npx tsx
+5. **`tp_client` has no test runner.** `src/lib/*.check.ts` are standalone instead — `npx tsx
    src/lib/plan-state.check.ts` covers the reducer, `plan-types.check.ts` the grid maths. Nothing
    runs them automatically, which is how `plan-types.check.ts` sat broken from 6ce4601 until it was
    noticed by hand. They want a `make` target at least.
-7. **No pinned arrival times.** Durations are editable; block start times are always derived. The
+6. **No pinned arrival times.** Durations are editable; block start times are always derived. The
    design's "booked 17:00" affordance needs a per-item locked time.
-8. **Expired `sessions` rows are never collected.** Sign-out deletes its own row and a lapsed token
+7. **Expired `sessions` rows are never collected.** Sign-out deletes its own row and a lapsed token
    stops resolving, but nothing sweeps the table. One `DELETE ... WHERE expires_at < now()` on a
    schedule, whenever the row count starts to matter.
-9. **The Google hop itself is only verified by hand.** Everything either side of it is covered —
+8. **The Google hop itself is only verified by hand.** Everything either side of it is covered —
    `tests/test_auth.py` asserts the open-route set, so a new endpoint added without a session
    dependency fails the suite — but nobody can click Google's consent screen in CI.
-10. **Sign-in has no rate limit.** `POST /auth/google` and `GET /auth/url` are open by necessity.
-11. **Sharing has no invite for someone who has never signed in.** The dropdown searches `users`,
+9. **Sign-in has no rate limit.** `POST /auth/google` and `GET /auth/url` are open by necessity.
+10. **`/trips/{id}/places/search` still restricts autocomplete to 50km around the trip's city.**
+    `add_place` now accepts a place anywhere, but Places Autocomplete is given a hard
+    `locationRestriction`, not a bias, so a far one cannot be *found* from the modal. This is the
+    next thing to change when a trip may hold a second city.
+11. **A hand-added place takes its `city_id` from the trip that added it**, and `upsert_place` never
+    updates that column, so adding a Sydney venue to a Helsinki trip files it under Helsinki
+    permanently — a later Sydney ingestion attaches mentions but cannot reclaim it. `city_id` is a
+    single-valued guess at a many-to-many; the fix is scoping a mention to a city, not overwriting it.
+12. **`GET /trips`' "N places found" is still city-scoped** (`main.py`), so it under-counts a trip's
+    out-of-city claims and disagrees with the shortlist's own total. It should share `in_shortlist`.
+13. **Sharing has no invite for someone who has never signed in.** The dropdown searches `users`,
     so a friend must have signed in here once before they can be added. An email invite that creates
     the row first is the missing half — `users.user_id` is our own uuid precisely so it can exist
     before any Google `sub` does.

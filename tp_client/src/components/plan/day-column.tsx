@@ -14,7 +14,6 @@ import {
   MIN_DURATION,
   SLOT_MIN,
   formatDayTab,
-  formatDistance,
   hhmm,
   layout,
   warningText,
@@ -46,7 +45,6 @@ export function DayColumn({
   onReference: (placeId: string, url: string | null) => void;
   onResize: (placeId: string, startMin: number, durationMin: number) => void;
 }) {
-  const routed = Boolean(route?.routed) && !stale;
   const byPlace = new Map((route?.blocks ?? []).map((b) => [b.place_id, b]));
   const perPlace = new Map<string, PlanWarning[]>();
   const dayWide: PlanWarning[] = [];
@@ -69,11 +67,10 @@ export function DayColumn({
       <p className="mt-1 font-mono text-[11px] text-faint">
         {[
           `${day.items.length} ${day.items.length === 1 ? "block" : "blocks"}`,
-          routed && route ? `${formatDistance(route.total_distance_m)} walking` : null,
-          routed && warningCount > 0
+          warningCount > 0
             ? `${warningCount} ${warningCount === 1 ? "warning" : "warnings"}`
             : null,
-          stale && day.items.length > 1 ? "not routed yet" : null,
+          stale && day.items.length > 0 ? "not checked yet" : null,
         ]
           .filter(Boolean)
           .join(" · ")}
