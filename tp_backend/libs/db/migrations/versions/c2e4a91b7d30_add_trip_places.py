@@ -30,16 +30,7 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(['place_id'], ['places.place_id']),
         sa.PrimaryKeyConstraint('trip_id', 'place_id'),
     )
-    # Hand-added places were city-scoped until now, and the shortlist no longer reaches them that
-    # way. A set category is what marks them; claim each one for every trip in its city.
-    op.execute("""
-        INSERT INTO trip_places (trip_id, place_id)
-        SELECT t.trip_id, p.place_id
-        FROM trips t
-        JOIN places p ON p.city_id = t.city_id
-        WHERE p.category IS NOT NULL
-        ON CONFLICT DO NOTHING
-    """)
+    # No backfill: every existing place sits in its trip's city, which `in_shortlist` still reaches.
 
 
 def downgrade() -> None:

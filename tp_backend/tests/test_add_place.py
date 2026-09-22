@@ -1,7 +1,7 @@
 """Adding a place by hand: the venue typeahead, and the insert that makes it shortlistable."""
 
 import pytest
-from conftest import HELSINKI, make_mention, make_place, plan_body
+from conftest import HELSINKI, make_city, make_mention, make_place, plan_body
 from sqlalchemy import select
 
 from libs.db import Place, TripDismissal
@@ -134,14 +134,33 @@ class TestAdd:
         names = [p["name"] for p in client.get(f"/trips/{trip}/shortlist").json()["places"]]
         assert "Sydney Opera House" in names
 
-    def test_another_trips_hand_added_place_is_not_on_this_shortlist(self, client, db, venues):
-        """Trip-scoped: what one trip added by hand is that trip's, not the whole city's."""
-        venues["lookup"] = lambda pid: FAR_AWAY
+    def test_a_place_in_another_city_reaches_only_the_trip_that_claimed_it(self, client, db, venues):
+        """What `trip_places` is for: the city query cannot see this row, so the claim is the only
+        thing that does — and it belongs to one trip, not to everyone planning Helsinki."""
+        make_city(db, city_id="ChIJ_sydney_city", name="Sydney")
+        make_place(db, city_id="ChIJ_sydney_city", place_id="ChIJ_sydney", name="Opera House")
         mine, theirs = make_trip(client), make_trip(client)
-        add(client, theirs, "ChIJ_sydney")
 
-        names = [p["name"] for p in client.get(f"/trips/{mine}/shortlist").json()["places"]]
-        assert "Sydney Opera House" not in names
+        assert add(client, mine, "ChIJ_sydney").status_code == 200
+        assert [p["name"] for p in
+                client.get(f"/trips/{mine}/shortlist").json()["places"]] == ["Opera House"]
+        assert client.get(f"/trips/{theirs}/shortlist").json()["places"] == []
+
+    def test_adding_an_ingested_place_leaves_it_on_every_other_trip(self, client, db):
+        """Setting `places.category` is a write to a row the whole city shares, so it must not be
+        what decides visibility: one trip adding a place must not strike it off another's."""
+        mine, theirs = make_trip(client), make_trip(client)
+        make_place(db, place_id="p1", name="Mentioned")
+        make_mention(db, "p1")
+
+        add(client, mine, "p1", "eat")
+
+        assert [p["name"] for p in
+                client.get(f"/trips/{theirs}/shortlist").json()["places"]] == ["Mentioned"]
+        r = client.put(f"/trips/{theirs}/itinerary", json={"days": [
+            {"day_index": 0, "items": [
+                {"place_id": "p1", "start_min": 15 * 60, "duration_min": 60}]}]})
+        assert r.status_code == 200, r.text
 
     def test_an_unknown_place_id_is_refused(self, client, venues):
         """Google answers a malformed id with a 400 and an unknown one with a 404; venue_details

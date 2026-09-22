@@ -12,7 +12,7 @@ from collections.abc import Sequence
 from datetime import UTC, date, datetime, time, timedelta
 
 from fastapi import HTTPException
-from sqlalchemy import Row, and_, delete, func, or_, select
+from sqlalchemy import Row, delete, func, or_, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
@@ -137,18 +137,17 @@ def category_of(place: Place, facts: dict[str, tuple[str | None, str | None]]) -
 
 
 def in_shortlist(trip: Trip):
-    """Which places this trip may list: the city's ingested ones, plus the ones it added itself.
+    """Which places this trip may list: its city's, plus any it claimed in `trip_places`.
 
-    Trip-scoped rather than purely city-scoped, so a place the videos never named belongs to the trip
-    that added it — and may sit outside the trip's city, which is what a second city will need.
-
-    `places.category` is set by hand and never by an ingestion, so it is also what tells the two
-    apart: a hand-added place is reachable only through the trip that added it.
+    The claim is what reaches a place outside the trip's city, which is what a second city will need.
+    Inside the city it is redundant, and deliberately so: a hand-added place stays visible to every
+    trip in that city, the same as an ingested one. Visibility is never decided by `places.category`,
+    which `add_place` writes onto the row the whole city shares.
     """
     mine = (select(TripPlace.place_id)
             .where(TripPlace.trip_id == trip.trip_id, TripPlace.place_id == Place.place_id)
             .exists())
-    return or_(and_(Place.city_id == trip.city_id, Place.category.is_(None)), mine)
+    return or_(Place.city_id == trip.city_id, mine)
 
 
 def shortlist(db: Session, trip_id: str, limit: int, offset: int,
@@ -316,7 +315,8 @@ def add_place(db: Session, trip_id: str, place_id: str, category: str,
     """Store a hand-picked place and claim it for this trip, which is what shortlists it.
 
     Nothing checks that it is near the trip's city: the distance between two blocks is not modelled
-    anywhere, so a place across the country is a legitimate thing to plan.
+    anywhere, so a place across the country is a legitimate thing to plan. The claim is what reaches
+    one that lands outside the city.
     """
     trip = get_trip(db, trip_id)
     city = trip.city
