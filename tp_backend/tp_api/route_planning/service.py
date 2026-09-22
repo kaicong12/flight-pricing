@@ -12,7 +12,7 @@ from collections.abc import Sequence
 from datetime import UTC, date, datetime, time, timedelta
 
 from fastapi import HTTPException
-from sqlalchemy import Row, delete, func, or_, select
+from sqlalchemy import Row, and_, delete, func, or_, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
@@ -24,11 +24,12 @@ from libs.db import (
     RedNotePost,
     Trip,
     TripDismissal,
+    TripPlace,
     YouTubeVideo,
     upsert_place,
 )
 from libs.db.enums import Confidence, Sentiment, Source
-from libs.places import PlacesError, distance_km
+from libs.places import PlacesError
 from libs.routing import Stop, hhmm, plan_day, sun_times
 from libs.settings import settings
 from tp_api.deps import HoursLookup, VenueLookup, VenueSearch
@@ -135,9 +136,24 @@ def category_of(place: Place, facts: dict[str, tuple[str | None, str | None]]) -
     return place.category or facts.get(place.place_id, (None, None))[0]
 
 
+def in_shortlist(trip: Trip):
+    """Which places this trip may list: the city's ingested ones, plus the ones it added itself.
+
+    Trip-scoped rather than purely city-scoped, so a place the videos never named belongs to the trip
+    that added it — and may sit outside the trip's city, which is what a second city will need.
+
+    `places.category` is set by hand and never by an ingestion, so it is also what tells the two
+    apart: a hand-added place is reachable only through the trip that added it.
+    """
+    mine = (select(TripPlace.place_id)
+            .where(TripPlace.trip_id == trip.trip_id, TripPlace.place_id == Place.place_id)
+            .exists())
+    return or_(and_(Place.city_id == trip.city_id, Place.category.is_(None)), mine)
+
+
 def shortlist(db: Session, trip_id: str, limit: int, offset: int,
               category: str | None) -> ShortlistOut:
-    """The city's places, ranked by how many independent sources mentioned each one."""
+    """The trip's places, ranked by how many independent sources mentioned each one."""
     trip = get_trip(db, trip_id)
 
     mentions = (
@@ -156,7 +172,7 @@ def shortlist(db: Session, trip_id: str, limit: int, offset: int,
         .outerjoin(ItineraryItem,
                    (ItineraryItem.place_id == Place.place_id)
                    & (ItineraryItem.trip_id == trip_id))
-        .where(Place.city_id == trip.city_id,
+        .where(in_shortlist(trip),
                ~select(TripDismissal.place_id)
                .where(TripDismissal.trip_id == trip_id,
                       TripDismissal.place_id == Place.place_id)
@@ -250,12 +266,11 @@ def replace_days(db: Session, trip_id: str, body: ItineraryIn) -> ItineraryOut:
 
     if place_ids:
         known = set(db.scalars(
-            select(Place.place_id).where(Place.place_id.in_(place_ids),
-                                         Place.city_id == trip.city_id)
+            select(Place.place_id).where(Place.place_id.in_(place_ids), in_shortlist(trip))
         ).all())
         missing = [p for p in place_ids if p not in known]
         if missing:
-            raise HTTPException(422, f"not a place in this city: {missing[0]}")
+            raise HTTPException(422, f"not a place on this trip: {missing[0]}")
 
     # Delete by submitted place_id as well as by day, so dragging a place in from an unlisted day
     # moves it instead of colliding with uq_itinerary_trip_place.
@@ -288,24 +303,29 @@ def venue_suggestions(db: Session, trip_id: str, q: str,
     return [VenueSuggestionOut(place_id=s.place_id, name=s.name, context=s.context) for s in found]
 
 
+def claim_place(db: Session, trip_id: str, place_id: str) -> None:
+    """Put the place on this trip's own list, and undo any dismissal that would hide it."""
+    db.execute(pg_insert(TripPlace).values(trip_id=trip_id, place_id=place_id)
+               .on_conflict_do_nothing(index_elements=["trip_id", "place_id"]))
+    db.execute(delete(TripDismissal).where(TripDismissal.trip_id == trip_id,
+                                           TripDismissal.place_id == place_id))
+
+
 def add_place(db: Session, trip_id: str, place_id: str, category: str,
               lookup: VenueLookup) -> ShortlistPlaceOut:
-    """Put a hand-picked place in the city's `places`, which is what makes it shortlistable.
+    """Store a hand-picked place and claim it for this trip, which is what shortlists it.
 
-    City-scoped rather than trip-scoped, matching ingested places: the shortlist is a query over the
-    city and `replace_days` will not accept a place_id that is not in it.
+    Nothing checks that it is near the trip's city: the distance between two blocks is not modelled
+    anywhere, so a place across the country is a legitimate thing to plan.
     """
     trip = get_trip(db, trip_id)
     city = trip.city
-    if city.lat is None or city.lon is None:
-        raise HTTPException(422, "this city has no coordinates to check against")
 
     existing = db.get(Place, place_id)
-    if existing is not None and existing.city_id == city.city_id:
-        # Already in the city, so spend no Places call. The dismissal has to go, or it stays hidden.
+    if existing is not None:
+        # Already stored, so spend no Places call.
         existing.category = category
-        db.execute(delete(TripDismissal).where(TripDismissal.trip_id == trip_id,
-                                               TripDismissal.place_id == place_id))
+        claim_place(db, trip_id, place_id)
         db.commit()
         return one_shortlist_place(db, trip_id, existing)
 
@@ -318,12 +338,9 @@ def add_place(db: Session, trip_id: str, place_id: str, category: str,
     if hit.lat is None or hit.lon is None:
         raise HTTPException(422, "that place has no location")
 
-    # The id comes from the browser, so without this any place_id on earth could be filed here.
-    radius_km = settings().places_search_radius_m / 1000
-    if distance_km(city.lat, city.lon, hit.lat, hit.lon) > radius_km:
-        raise HTTPException(422, f"{hit.name} is not in {city.name}")
-
+    # city_id records where the place was found, not a claim that it is inside the city.
     upsert_place(db, city, hit, hit.name, Confidence.HIGH, "added by hand", category)
+    claim_place(db, trip_id, hit.place_id)
     db.commit()
 
     place = db.get(Place, hit.place_id)
@@ -352,8 +369,8 @@ def add_dismissal(db: Session, trip_id: str, place_id: str) -> None:
     """Strike a place off this trip's shortlist — the answer to Google's duplicate listings."""
     trip = get_trip(db, trip_id)
     if not db.scalar(select(func.count()).select_from(Place)
-                     .where(Place.place_id == place_id, Place.city_id == trip.city_id)):
-        raise HTTPException(422, "not a place in this city")
+                     .where(Place.place_id == place_id, in_shortlist(trip))):
+        raise HTTPException(422, "not a place on this trip")
     db.execute(pg_insert(TripDismissal)
                .values(trip_id=trip_id, place_id=place_id)
                .on_conflict_do_nothing(index_elements=["trip_id", "place_id"]))

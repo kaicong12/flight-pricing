@@ -122,16 +122,26 @@ class TestAdd:
         assert r.status_code == 200, r.text
         assert client.get(f"/trips/{trip}/shortlist").json()["places"][0]["in_itinerary"] is True
 
-    def test_a_place_outside_the_city_is_refused(self, client, db, venues):
-        """The place_id comes from the browser, so the city bound is enforced, never trusted."""
+    def test_a_place_far_from_the_city_is_accepted(self, client, db, venues):
+        """No distance is modelled anywhere, so nothing here can call a place too far away."""
         venues["lookup"] = lambda pid: FAR_AWAY
         trip = make_trip(client)
 
         r = add(client, trip, "ChIJ_sydney")
 
-        assert r.status_code == 422
-        assert "Helsinki" in r.json()["detail"]
-        assert db.scalar(select(Place).where(Place.place_id == "ChIJ_sydney")) is None
+        assert r.status_code == 200, r.text
+        assert db.scalar(select(Place).where(Place.place_id == "ChIJ_sydney")) is not None
+        names = [p["name"] for p in client.get(f"/trips/{trip}/shortlist").json()["places"]]
+        assert "Sydney Opera House" in names
+
+    def test_another_trips_hand_added_place_is_not_on_this_shortlist(self, client, db, venues):
+        """Trip-scoped: what one trip added by hand is that trip's, not the whole city's."""
+        venues["lookup"] = lambda pid: FAR_AWAY
+        mine, theirs = make_trip(client), make_trip(client)
+        add(client, theirs, "ChIJ_sydney")
+
+        names = [p["name"] for p in client.get(f"/trips/{mine}/shortlist").json()["places"]]
+        assert "Sydney Opera House" not in names
 
     def test_an_unknown_place_id_is_refused(self, client, venues):
         """Google answers a malformed id with a 400 and an unknown one with a 404; venue_details

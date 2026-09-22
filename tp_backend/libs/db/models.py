@@ -279,6 +279,21 @@ class TripDismissal(Base):
     created_at: Mapped[datetime] = _ts(nullable=False, server_default=func.now())
 
 
+class TripPlace(Base):
+    """A place this trip put on its own shortlist, rather than one the city's ingestion found.
+
+    The shortlist is the city's ingested places plus these, so a hand-added place belongs to the trip
+    that added it and a place outside the trip's city is still reachable.
+    """
+
+    __tablename__ = "trip_places"
+
+    trip_id: Mapped[str] = mapped_column(ForeignKey("trips.trip_id", ondelete="CASCADE"),
+                                         primary_key=True)
+    place_id: Mapped[str] = mapped_column(ForeignKey("places.place_id"), primary_key=True)
+    created_at: Mapped[datetime] = _ts(nullable=False, server_default=func.now())
+
+
 class PlaceHours(Base):
     """Cached regular opening hours for one place, with a TTL.
 
