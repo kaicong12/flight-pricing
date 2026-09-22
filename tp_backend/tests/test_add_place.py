@@ -192,6 +192,17 @@ class TestAdd:
         assert names == ["Struck Off"]
         assert db.scalar(select(TripDismissal).where(TripDismissal.trip_id == trip)) is None
 
+    def test_a_hand_added_place_stays_on_the_trip_that_added_it(self, client, db, venues):
+        """It is filed under the adding trip's city, so only the claim can be what shortlists it."""
+        mine, theirs = make_trip(client), make_trip(client)
+        venues["lookup"] = lambda pid: FAR_AWAY
+
+        add(client, mine, FAR_AWAY.place_id)
+
+        assert [p["name"] for p in client.get(f"/trips/{mine}/shortlist").json()["places"]] \
+            == ["Sydney Opera House"]
+        assert client.get(f"/trips/{theirs}/shortlist").json()["places"] == []
+
     def test_adding_twice_is_harmless(self, client):
         trip = make_trip(client)
         first = add(client, trip, "ChIJ_oodi")

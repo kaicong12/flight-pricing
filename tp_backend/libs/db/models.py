@@ -280,10 +280,8 @@ class TripDismissal(Base):
 
 
 class TripPlace(Base):
-    """A place this trip put on its own shortlist, rather than one the city's ingestion found.
-
-    The shortlist is the city's ingested places plus these, so a hand-added place belongs to the trip
-    that added it and a place outside the trip's city is still reachable.
+    """A place on this trip's shortlist. Written by hand from the add-place modal, 
+    and by an ingestion for every live trip in the city it resolved.
     """
 
     __tablename__ = "trip_places"

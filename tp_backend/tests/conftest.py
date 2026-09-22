@@ -20,6 +20,7 @@ from libs.db import (
     User,
     UserSession,
     YouTubeVideo,
+    claim_for_city_trips,
 )
 from libs.db.enums import Confidence, ExtractedFrom, Sentiment, Source
 from libs.places import CityDetails
@@ -87,11 +88,16 @@ def plan_body(**kw):
 
 
 def make_place(db, city_id=HELSINKI, place_id="p1", name="A Place", **kw):
-    """A resolved place. lat/lon and rating_count are always populated in real data."""
+    """A resolved place, claimed by the city's trips exactly as `places.resolve` would claim it.
+
+    lat/lon and rating_count are always populated in real data.
+    """
     db.add(Place(place_id=place_id, city_id=city_id, name=name,
                  lat=kw.pop("lat", 60.17), lon=kw.pop("lon", 24.94),
                  rating=kw.pop("rating", 4.5), rating_count=kw.pop("rating_count", 100),
                  confidence=kw.pop("confidence", Confidence.HIGH), **kw))
+    db.flush()
+    claim_for_city_trips(db, city_id, [place_id])
     db.commit()
     return place_id
 

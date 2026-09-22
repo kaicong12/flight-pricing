@@ -8,7 +8,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from libs.db import City, IngestRun, IngestTask, Trip
+from libs.db import City, IngestRun, IngestTask, Trip, claim_city_places
 from libs.db.enums import RunKind, RunStatus, Source, TaskKind
 from libs.places import CityDetails
 from libs.settings import settings
@@ -123,13 +123,19 @@ def ensure_trip_plan(session: Session, trip: Trip, force: bool = False) -> Inges
 
 
 def plan_after_ingest(session: Session, run_id: str) -> int:
-    """After a city's ingestion settles, draft for every trip waiting on that city."""
+    """After a city's ingestion settles, draft for every trip waiting on that city.
+
+    Also where a trip created mid-run catches up: neither its creation nor a resolve task can see the
+    other's uncommitted rows, so the claims are reconciled here rather than locked against.
+    """
     run = session.get(IngestRun, run_id)
     if run is None or run.kind != RunKind.CITY_INGEST or run.status != RunStatus.DONE:
         return 0
     trips = session.scalars(
         select(Trip).where(Trip.city_id == run.city_id, Trip.deleted.is_(False))
     ).all()
+    for t in trips:
+        claim_city_places(session, t.trip_id, run.city_id)
     return sum(1 for t in trips if ensure_trip_plan(session, t) is not None)
 
 

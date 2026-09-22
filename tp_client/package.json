@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "check": "for f in src/lib/*.check.ts; do echo \"== $f\" && tsx \"$f\" || exit 1; done"
   },
   "dependencies": {
     "@base-ui/react": "^1.7.0",
@@ -33,6 +34,7 @@
     "eslint": "^9",
     "eslint-config-next": "16.3.1",
     "tailwindcss": "^4",
+    "tsx": "^4.23.15",
     "typescript": "^5"
   },
   "packageManager": "npm@10.9.2"

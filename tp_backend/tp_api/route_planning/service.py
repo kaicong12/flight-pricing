@@ -136,18 +136,19 @@ def category_of(place: Place, facts: dict[str, tuple[str | None, str | None]]) -
     return place.category or facts.get(place.place_id, (None, None))[0]
 
 
-def in_shortlist(trip: Trip):
-    """Which places this trip may list: its city's, plus any it claimed in `trip_places`.
+def in_shortlist(trip: Trip | type[Trip]):
+    """Which places this trip may list: the ones it claimed in `trip_places`, and nothing else.
 
-    The claim is what reaches a place outside the trip's city, which is what a second city will need.
-    Inside the city it is redundant, and deliberately so: a hand-added place stays visible to every
-    trip in that city, the same as an ingested one. Visibility is never decided by `places.category`,
-    which `add_place` writes onto the row the whole city shares.
+    Given the `Trip` class rather than a row it correlates instead of naming one trip, which is how
+    `GET /trips` counts every trip in one query.
+
+    A trip claims its city's places when it is created and as a run resolves them, so this is not the
+    narrow set it looks like. `places.city_id` is deliberately absent: it is one column guessing at a
+    many-to-many, and a place a trip added from another city is filed under the wrong one forever.
     """
-    mine = (select(TripPlace.place_id)
+    return (select(TripPlace.place_id)
             .where(TripPlace.trip_id == trip.trip_id, TripPlace.place_id == Place.place_id)
             .exists())
-    return or_(Place.city_id == trip.city_id, mine)
 
 
 def shortlist(db: Session, trip_id: str, limit: int, offset: int,

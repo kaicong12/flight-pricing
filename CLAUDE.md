@@ -4,14 +4,12 @@ User enters a city, dates, flight times and one sentence about themselves. We sh
 travel videos and posts, show them as a list beside a map, and the user drags them into order. We
 route that exact sequence and warn about anything that doesn't work.
 
-**We do not optimise the order.** The user controls it; our job is routing plus validation.
-
 | | |
 |---|---|
 | Audience | Private group of friends |
 | Output | Ordered activity blocks + a route drawn on a map |
 | Collaboration | `user_trips.role`: owner, editor, viewer. Editors edit the itinerary directly — no approval step |
-| Auth | Google sign-in. Opaque session token in Postgres, not a JWT — sign out revokes |
+| Auth | Google sign-in. Opaque session token in Postgres, not a JWT — sign out revokes. A sign-in sweeps expired rows, so the table needs no cron |
 | Flights | Input only in v1 |
 | Cities | Any city on demand — async ingestion, client polls |
 | Stack | Next.js + Postgres, TypeScript web, **Python worker** (keeps the spike scripts) |
@@ -71,17 +69,24 @@ delete; editors change the plan; viewers read. `GET /users/search` feeds the sha
 hides what would only 403. Sharing is reachable from a trip card as well as the plan screen.
 
 **6. Plan.** `GET /trips/{id}/shortlist` ranks the trip's places by mention count and returns each
-mention as a link back to the video or note that named it. **The set is trip-scoped**: its city's places
-plus any this trip claimed in `trip_places` — one predicate, `service.in_shortlist`, that
-`replace_days` and `add_dismissal` share. The claim is what reaches a place filed under a *different*
-city, which is what a second city will need; inside the city it is redundant, and a hand-added place
-deliberately stays visible to every trip there, exactly like an ingested one. Visibility is never
+mention as a link back to the video or note that named it. **The set is trip-scoped**: the places this
+trip claimed in `trip_places`, and nothing else — one predicate, `service.in_shortlist`, that
+`replace_days`, `add_dismissal` and `GET /trips`' place count all share. Passed the `Trip` class
+rather than a row, it correlates instead of naming one trip, which is how that count stays one query.
+A claim is written three ways, all `ON CONFLICT DO NOTHING`: `/initiate-plan` claims the city's
+existing places, `places.resolve` claims each place it touches for every live trip in that city, and
+`plan_after_ingest` re-claims for every trip when a run settles — which is what a trip created
+mid-run catches up on, since neither side can see the other's uncommitted rows. `places.city_id` is
+therefore only where a place was first found; it never decides who can see it, so a venue added from
+another city is no longer filed wrong in any way that shows. Dismissals stay their own table: a later
+ingestion re-claiming a place must not resurrect one struck off. Visibility is never
 decided by `places.category`, which is a row the whole city shares. `GET
 /trips/{id}/places/search` and `POST /trips/{id}/places` add one the videos never named, from a modal
-on the plan screen: autocomplete near the city, then Place Details on the pick, then the same
-`places` row an ingestion would have written, claimed for this trip. **Nothing checks it is near the
-city** — a place across the country is a legitimate thing to plan, because no distance is modelled
-anywhere. It ranks last with no mentions, so the client prepends it. **A category is compulsory**, and
+on the plan screen: autocomplete *biased* toward the city, then Place Details on the pick, then the
+same `places` row an ingestion would have written, claimed for this trip. **Nothing checks it is near
+the city** — a place across the country is a legitimate thing to plan, because no distance is modelled
+anywhere, and a bias rather than a `locationRestriction` is what lets the modal find one. Resolution
+keeps its hard box: `search_venue` is guessing at a name and needs the geography to hold it down. It ranks last with no mentions, so the client prepends it. **A category is compulsory**, and
 is the one thing `places.category` exists for: every other category is a majority vote over
 `place_mentions`, which a hand-added place has none of, so without it the place is invisible under
 every filter chip. A person's answer beats the videos'. The user drags
@@ -128,6 +133,8 @@ account must not become one budget per host.
 Ctrl-C stops all of it. `make dev-container` runs the same backend from `docker-compose.yml` instead,
 with `docker-compose.local.yml` adding the `db` service RDS provides in production: no reload, but real
 container DNS and its logs reach Loki. `DATABASE_URL` is the only difference between the two stacks.
+`make test` is pytest plus `tp_client`'s `src/lib/*.check.ts` — the client has no test framework, so
+those standalone asserts are its only coverage and that target is the only thing that runs them.
 `make help` lists the rest. `docker-compose.yml` runs the three backend
 services on a t4g.micro against RDS; `tp_client` is on Vercel, so there is no `web` service. See
 `docs/deploy.md`.
@@ -173,10 +180,6 @@ file, one or two per function. Nothing else unless a line is genuinely non-obvio
 surprising API behaviour, a constraint invisible from the code — and then one short comment, not a
 paragraph. No section banners, restatements, usage examples, or rationale essays.
 
-**Docs.** This file is the planning reference: the flow, the decisions, what works. Keep it short and
-prune it when things change — it is not a research log. Visual language is
-`tp_client/docs/design-system.md`.
-
 **Spikes.** Throwaway exploration lives in `spikes/<topic>/`. Secrets stay in the repo-root `.env`
 (gitignored); scripts walk up to find it rather than holding their own copy.
 
@@ -185,42 +188,3 @@ prune it when things change — it is not a research log. Visual language is
 Future holiday hours are unfetchable, so a trip planned in August cannot be fully accurate for
 December. The UI needs a re-check-nearer-the-date affordance rather than presenting an early plan as
 final.
-
-# Open items
-
-1. **Restrict the API key** to Places + YouTube + Gemini. Routes is no longer called at all.
-2. **Confirm Places pricing** and whether caching lat/lon is permitted. Resolution is the biggest
-   spender: 84 `searchText` calls on one city. `place_hours` now caches opening hours on a
-   7-day TTL (`place_hours_ttl_days`), which is a judgement call about the terms, not a settled one.
-3. **Test transcript fetching from cloud egress**, not just a laptop. The failure mode to watch for
-   on EC2 is `PoTokenRequired`.
-4. **The generic-noun and chain stoplists in `tp_ingestions/places/names.py` are Norway-leaning.**
-   They will need a pass per new country, and there is no longer a dry-run that shows what a
-   country's names would query or drop.
-5. **`tp_client` has no test runner.** `src/lib/*.check.ts` are standalone instead — `npx tsx
-   src/lib/plan-state.check.ts` covers the reducer, `plan-types.check.ts` the grid maths. Nothing
-   runs them automatically, which is how `plan-types.check.ts` sat broken from 6ce4601 until it was
-   noticed by hand. They want a `make` target at least.
-6. **No pinned arrival times.** Durations are editable; block start times are always derived. The
-   design's "booked 17:00" affordance needs a per-item locked time.
-7. **Expired `sessions` rows are never collected.** Sign-out deletes its own row and a lapsed token
-   stops resolving, but nothing sweeps the table. One `DELETE ... WHERE expires_at < now()` on a
-   schedule, whenever the row count starts to matter.
-8. **The Google hop itself is only verified by hand.** Everything either side of it is covered —
-   `tests/test_auth.py` asserts the open-route set, so a new endpoint added without a session
-   dependency fails the suite — but nobody can click Google's consent screen in CI.
-9. **Sign-in has no rate limit.** `POST /auth/google` and `GET /auth/url` are open by necessity.
-10. **`/trips/{id}/places/search` still restricts autocomplete to 50km around the trip's city.**
-    `add_place` now accepts a place anywhere, but Places Autocomplete is given a hard
-    `locationRestriction`, not a bias, so a far one cannot be *found* from the modal. This is the
-    next thing to change when a trip may hold a second city.
-11. **A hand-added place takes its `city_id` from the trip that added it**, and `upsert_place` never
-    updates that column, so adding a Sydney venue to a Helsinki trip files it under Helsinki
-    permanently — a later Sydney ingestion attaches mentions but cannot reclaim it. `city_id` is a
-    single-valued guess at a many-to-many; the fix is scoping a mention to a city, not overwriting it.
-12. **`GET /trips`' "N places found" is still city-scoped** (`main.py`), so it under-counts a trip's
-    out-of-city claims and disagrees with the shortlist's own total. It should share `in_shortlist`.
-13. **Sharing has no invite for someone who has never signed in.** The dropdown searches `users`,
-    so a friend must have signed in here once before they can be added. An email invite that creates
-    the row first is the missing half — `users.user_id` is our own uuid precisely so it can exist
-    before any Google `sub` does.
