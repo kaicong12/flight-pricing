@@ -306,6 +306,15 @@ class TestItineraryWrite:
         days = client.get(f"/trips/{trip}/itinerary").json()["days"]
         assert [i["place_id"] for i in days[0]["items"]] == ["p2", "p1"]
 
+    def test_a_hand_set_category_survives_a_reread(self, client, db):
+        trip = make_trip(client)
+        make_place(db, place_id="hand", name="A Viewpoint", category="see")
+        client.put(f"/trips/{trip}/itinerary", json={"days": [{"day_index": 0, "items": [
+            {"place_id": "hand", "start_min": 900, "duration_min": 60}]}]})
+
+        days = client.get(f"/trips/{trip}/itinerary").json()["days"]
+        assert [i["category"] for i in days[0]["items"]] == ["see"]
+
     def test_an_empty_day_clears_it(self, client, db):
         trip = make_trip(client)
         seed(db, ("p1", "A", 1))

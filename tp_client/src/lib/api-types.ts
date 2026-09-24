@@ -43,6 +43,7 @@ export type Trip = {
   trip_id: string;
   name: string | null;
   city: City;
+  cities: City[];
   arrive_date: string;
   arrive_time: string | null;
   depart_date: string;
@@ -80,7 +81,7 @@ export type TripStatus = Trip & {
 export const DRAFT_PENDING = ["pending", "running"];
 
 export type InitiatePlanRequest = {
-  city_place_id: string;
+  city_place_ids: string[];
   arrive_date: string;
   arrive_time: string | null;
   depart_date: string;

@@ -14,6 +14,7 @@ from libs.db.models import (
     RedNotePost,
     ThrottleCall,
     Trip,
+    TripCity,
     TripDismissal,
     TripPlace,
     User,
@@ -21,7 +22,14 @@ from libs.db.models import (
     UserTrip,
     YouTubeVideo,
 )
-from libs.db.places import claim_city_places, claim_for_city_trips, upsert_place
+from libs.db.places import (
+    cities_by_trip,
+    claim_city_places,
+    claim_for_city_trips,
+    covers_city,
+    trip_cities,
+    upsert_place,
+)
 from libs.db.session import SessionLocal, engine, session
 
 __all__ = [
@@ -39,15 +47,19 @@ __all__ = [
     "SessionLocal",
     "ThrottleCall",
     "Trip",
+    "TripCity",
     "TripDismissal",
     "TripPlace",
     "User",
     "UserSession",
     "UserTrip",
     "YouTubeVideo",
+    "cities_by_trip",
     "claim_city_places",
     "claim_for_city_trips",
+    "covers_city",
     "engine",
     "session",
+    "trip_cities",
     "upsert_place",
 ]

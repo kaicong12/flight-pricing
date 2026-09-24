@@ -1,10 +1,12 @@
 """Request and response bodies for the planning API."""
 
 from datetime import UTC, date, datetime, time, timedelta
+from typing import Annotated
 
 from pydantic import BaseModel, Field, model_validator
 
 MAX_TRIP_DAYS = 14
+MAX_TRIP_CITIES = 5
 
 def today_utc() -> date:
     """Trip dates are local to the city, so compare against UTC and allow a day of slack."""
@@ -19,7 +21,8 @@ class TripPatch(BaseModel):
 
 
 class InitiatePlanRequest(BaseModel):
-    city_place_id: str = Field(min_length=1, max_length=255)
+    city_place_ids: list[Annotated[str, Field(min_length=1, max_length=255)]] = Field(
+        min_length=1, max_length=MAX_TRIP_CITIES)
     name: str | None = Field(default=None, max_length=NAME_MAX)
     arrive_date: date
     arrive_time: time | None = None
@@ -76,6 +79,7 @@ class TripOut(BaseModel):
     trip_id: str
     name: str | None = None
     city: CityOut
+    cities: list[CityOut] = []
     arrive_date: date
     arrive_time: time | None = None
     depart_date: date
@@ -98,6 +102,7 @@ class TripSummaryOut(BaseModel):
     trip_id: str
     name: str | None = None
     city: CityOut
+    cities: list[CityOut] = []
     arrive_date: date
     depart_date: date
     ingest: IngestOut | None = None

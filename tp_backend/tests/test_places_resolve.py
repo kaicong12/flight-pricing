@@ -1,12 +1,11 @@
 """places.resolve against stubbed Places. The cache, the geofence, and the merge on place_id."""
 
-from datetime import timedelta
 
 import pytest
-from conftest import HELSINKI, make_city
+from conftest import HELSINKI, make_city, make_trip
 from sqlalchemy import select
 
-from libs.db import Extraction, IngestRun, Place, PlaceMention, PlaceQuery, Trip, TripPlace
+from libs.db import Extraction, IngestRun, Place, PlaceMention, PlaceQuery, TripPlace
 from libs.db.enums import (
     Confidence,
     ErrorCode,
@@ -18,7 +17,6 @@ from libs.db.enums import (
 )
 from libs.places import PlacesError, VenueHit
 from libs.prompts import REDNOTE_OCR, REDNOTE_TEXT, YOUTUBE_TRANSCRIPT
-from tp_api.schemas import today_utc
 from tp_ingestions.errors import TaskError
 from tp_ingestions.places import resolve
 from tp_ingestions.queue import ClaimedTask
@@ -72,14 +70,6 @@ def task(run, source=Source.YOUTUBE, ref=VIDEO, prompt=YOUTUBE_TRANSCRIPT):
                                 "prompt_version": prompt.version_key, "model": prompt.model,
                                 "city_id": HELSINKI},
                        attempts=1, max_attempts=5)
-
-
-def make_trip(db, trip_id, deleted=False):
-    arrive = today_utc() + timedelta(days=30)
-    db.add(Trip(trip_id=trip_id, city_id=HELSINKI, arrive_date=arrive,
-                depart_date=arrive + timedelta(days=2), deleted=deleted))
-    db.commit()
-    return trip_id
 
 
 def stub(monkeypatch, fn):

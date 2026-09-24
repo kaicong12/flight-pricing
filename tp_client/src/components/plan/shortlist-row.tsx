@@ -17,11 +17,13 @@ import { cn } from "@/lib/utils";
 export function ShortlistRow({
   place,
   placedDay,
+  cityName,
   readOnly,
   onDismiss,
 }: {
   place: ShortlistPlace;
   placedDay: number | null;
+  cityName: string | null;
   readOnly: boolean;
   onDismiss: () => void;
 }) {
@@ -73,6 +75,11 @@ export function ShortlistRow({
       </div>
 
       <div className="mt-2.5 flex flex-wrap items-center gap-2">
+        {cityName && (
+          <span className="flex h-5 items-center rounded-full bg-page px-2 text-[11px] font-medium text-muted-foreground">
+            {cityName}
+          </span>
+        )}
         <SourceCount place={place} />
       </div>
     </li>

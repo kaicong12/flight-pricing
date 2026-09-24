@@ -47,8 +47,12 @@ def rednote_ocr(session: Session, task: ClaimedTask) -> dict:
     note = session.get(RedNotePost, note_id)
     if note is None or not note.image_urls:
         raise TaskError(ErrorCode.PERMANENT, f"rednote note {note_id} has no image cards")
-    if already_extracted(session, Source.REDNOTE, note_id, REDNOTE_OCR):
-        return {"note_id": note_id, "cached": True}
+    cached = already_extracted(session, Source.REDNOTE, note_id, REDNOTE_OCR)
+    if cached is not None:
+        return {"note_id": note_id, "cached": True,
+                "resolve_queued": enqueue_resolve(
+                    session, task, Source.REDNOTE, note_id, REDNOTE_OCR.version_key,
+                    REDNOTE_OCR.model) if cached else 0}
 
     # Gemini's gate first: it is the budget that can defer, and downloading before it would throw
     # away the images. The cards sit on a CDN, not the logged-in API, so they need no RedNote budget.

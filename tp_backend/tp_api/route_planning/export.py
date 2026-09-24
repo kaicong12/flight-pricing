@@ -15,10 +15,10 @@ from openpyxl.worksheet.worksheet import Worksheet
 from sqlalchemy.orm import Session
 
 from libs.db import Trip
-from libs.routing import PlanWarning, Stop, hhmm, plan_day, sun_times
+from libs.routing import PlanWarning, Stop, hhmm, plan_day
 from tp_api.deps import HoursLookup
 from tp_api.route_planning import service
-from tp_api.route_planning.utils import day_count, google_weekday, tz_minutes
+from tp_api.route_planning.utils import day_count, google_weekday
 
 INK, PAPER, SAND = "252B20", "FDFBF3", "F3F0E6"
 BRAND, BRAND_BG = "2C6B64", "E5EFEC"
@@ -129,16 +129,10 @@ def itinerary_sheet(ws: Worksheet, db: Session, trip: Trip, fetch: HoursLookup) 
         items = by_day.get(day, [])
         places = {r.Place.place_id: r.Place for r in items}
 
-        sunset = None
-        daylight = ""
-        if city.lat is not None and city.lon is not None:
-            tz_min = tz_minutes(city, day_date, next(
-                (h.utc_offset_minutes for h in hours.values()
-                 if h.utc_offset_minutes is not None), None))
-            sunrise, sunset = sun_times(day_date, city.lat, city.lon, tz_min)
-            # (None, None) is polar day or night, which the plan screen also shows as no daylight.
-            if sunrise is not None and sunset is not None:
-                daylight = f" · daylight {hhmm(sunrise)}–{hhmm(sunset)}"
+        sun = service.sun_by_place(db, [r.Place for r in items], day_date, hours)
+        sunrise, sunset = service.first_daylight(sun, [r.Place.place_id for r in items])
+        daylight = (f" · daylight {hhmm(sunrise)}–{hhmm(sunset)}"
+                    if sunrise is not None and sunset is not None else "")
 
         _band(ws, at, len(columns), f"Day {day + 1} · {day_date:%a %d %b} · "
               f"{len(items) or 'no'} block{'' if len(items) == 1 else 's'}{daylight}")
@@ -148,9 +142,10 @@ def itinerary_sheet(ws: Worksheet, db: Session, trip: Trip, fetch: HoursLookup) 
             [Stop(place_id=r.Place.place_id, name=r.Place.name,
                   category=service.category_of(r.Place, facts),
                   start_min=r.ItineraryItem.start_min, duration_min=r.ItineraryItem.duration_min,
-                  periods=hours[r.Place.place_id].periods if r.Place.place_id in hours else None)
+                  periods=hours[r.Place.place_id].periods if r.Place.place_id in hours else None,
+                  sunset_min=sun.get(r.Place.place_id, (None, None))[1])
              for r in items],
-            weekday=google_weekday(day_date), sunset_min=sunset)
+            weekday=google_weekday(day_date))
 
         found: dict[str, list[PlanWarning]] = {}
         for w in plan.warnings:

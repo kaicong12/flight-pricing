@@ -53,7 +53,7 @@ export function PlanForm() {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          city_place_id: city.place_id,
+          city_place_ids: [city.place_id],
           name: orNull(name),
           arrive_date: arriveDate,
           arrive_time: orNull(arriveTime),

@@ -19,6 +19,7 @@ export type SourceRef = {
 
 export type ShortlistPlace = {
   place_id: string;
+  city_id: string;
   name: string;
   address: string | null;
   lat: number | null;

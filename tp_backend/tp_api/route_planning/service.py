@@ -17,6 +17,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
 from libs.db import (
+    City,
     ItineraryItem,
     Place,
     PlaceHours,
@@ -26,10 +27,11 @@ from libs.db import (
     TripDismissal,
     TripPlace,
     YouTubeVideo,
+    trip_cities,
     upsert_place,
 )
 from libs.db.enums import Confidence, Sentiment, Source
-from libs.places import PlacesError
+from libs.places import PlacesError, distance_km
 from libs.routing import Stop, hhmm, plan_day, sun_times
 from libs.settings import settings
 from tp_api.deps import HoursLookup, VenueLookup, VenueSearch
@@ -195,7 +197,8 @@ def shortlist(db: Session, trip_id: str, limit: int, offset: int,
         cat = category_of(r.Place, facts)
         p = r.Place
         places.append(ShortlistPlaceOut(
-            place_id=p.place_id, name=p.name, address=p.address, lat=p.lat, lon=p.lon,
+            place_id=p.place_id, city_id=p.city_id, name=p.name, address=p.address,
+            lat=p.lat, lon=p.lon,
             primary_type=p.primary_type,
             category=cat, why_go=why_go, sources=srcs.get(p.place_id, []),
             mention_count=r.mention_count, in_itinerary=r.day_index is not None,
@@ -233,7 +236,7 @@ def read_days(db: Session, trip: Trip) -> ItineraryOut:
         days[item.day_index].items.append(ItemOut(
             place_id=place.place_id, name=place.name, lat=place.lat, lon=place.lon,
             start_min=item.start_min, duration_min=item.duration_min,
-            category=facts.get(place.place_id, (None, None))[0],
+            category=category_of(place, facts),
             primary_type=place.primary_type, reference_url=item.reference_url,
         ))
     return ItineraryOut(days=days)
@@ -311,6 +314,13 @@ def claim_place(db: Session, trip_id: str, place_id: str) -> None:
                                            TripDismissal.place_id == place_id))
 
 
+def nearest_city(cities: Sequence[City], lat: float, lon: float) -> City:
+    placed = [c for c in cities if c.lat is not None and c.lon is not None]
+    if not placed:
+        return cities[0]
+    return min(placed, key=lambda c: distance_km(c.lat, c.lon, lat, lon))
+
+
 def add_place(db: Session, trip_id: str, place_id: str, category: str,
               lookup: VenueLookup) -> ShortlistPlaceOut:
     """Store a hand-picked place and claim it for this trip, which is what shortlists it.
@@ -320,7 +330,6 @@ def add_place(db: Session, trip_id: str, place_id: str, category: str,
     one that lands outside the city.
     """
     trip = get_trip(db, trip_id)
-    city = trip.city
 
     existing = db.get(Place, place_id)
     if existing is not None:
@@ -340,6 +349,7 @@ def add_place(db: Session, trip_id: str, place_id: str, category: str,
         raise HTTPException(422, "that place has no location")
 
     # city_id records where the place was found, not a claim that it is inside the city.
+    city = nearest_city(trip_cities(db, trip), hit.lat, hit.lon)
     upsert_place(db, city, hit, hit.name, Confidence.HIGH, "added by hand", category)
     claim_place(db, trip_id, hit.place_id)
     db.commit()
@@ -359,8 +369,8 @@ def one_shortlist_place(db: Session, trip_id: str, place: Place) -> ShortlistPla
     mentions = db.scalar(select(func.count()).select_from(PlaceMention)
                          .where(PlaceMention.place_id == place.place_id)) or 0
     return ShortlistPlaceOut(
-        place_id=place.place_id, name=place.name, address=place.address, lat=place.lat,
-        lon=place.lon, primary_type=place.primary_type, category=cat, why_go=why_go,
+        place_id=place.place_id, city_id=place.city_id, name=place.name, address=place.address,
+        lat=place.lat, lon=place.lon, primary_type=place.primary_type, category=cat, why_go=why_go,
         sources=mention_sources(db, [place.place_id]).get(place.place_id, []),
         mention_count=mentions, in_itinerary=day_index is not None, day_index=day_index,
     )
@@ -422,6 +432,33 @@ def load_hours(db: Session, place_ids: list[str], fetch: HoursLookup) -> dict[st
     }
 
 
+def sun_by_place(db: Session, places: Sequence[Place], on: date,
+                 hours: dict[str, PlaceHours]) -> dict[str, tuple[float | None, float | None]]:
+    if not places:
+        return {}
+    cities = {c.city_id: c for c in db.scalars(
+        select(City).where(City.city_id.in_({p.city_id for p in places})))}
+    fallback = next((h.utc_offset_minutes for h in hours.values()
+                     if h.utc_offset_minutes is not None), None)
+    out = {}
+    for p in places:
+        city = cities.get(p.city_id)
+        lat = p.lat if p.lat is not None else getattr(city, "lat", None)
+        lon = p.lon if p.lon is not None else getattr(city, "lon", None)
+        if lat is None or lon is None:
+            continue
+        got = hours.get(p.place_id)
+        own = got.utc_offset_minutes if got is not None else None
+        tz_min = tz_minutes(city, on, own if own is not None else fallback)
+        out[p.place_id] = sun_times(on, lat, lon, tz_min)
+    return out
+
+
+def first_daylight(sun: dict[str, tuple[float | None, float | None]],
+                   place_ids: Sequence[str]) -> tuple[float | None, float | None]:
+    return next((sun[pid] for pid in place_ids if pid in sun), (None, None))
+
+
 def route_day(db: Session, trip_id: str, day_index: int,
               fetch_hours: HoursLookup) -> DayRouteOut:
     """Check one day in the order it is stored and say what does not work.
@@ -431,7 +468,6 @@ def route_day(db: Session, trip_id: str, day_index: int,
     """
     trip = get_trip(db, trip_id)
     day_date = check_day(trip, day_index)
-    city = trip.city
     rows = day_rows(db, trip_id, day_index)
 
     provisional = provisional_reasons(day_date)
@@ -449,23 +485,18 @@ def route_day(db: Session, trip_id: str, day_index: int,
     facts = mention_facts(db, place_ids)
     hours = load_hours(db, place_ids, fetch_hours)
 
-    tz_min = tz_minutes(
-        city, day_date,
-        next((h.utc_offset_minutes for h in hours.values() if h.utc_offset_minutes is not None),
-             None),
-    )
-    sunrise, sunset = (None, None)
-    if city.lat is not None and city.lon is not None:
-        sunrise, sunset = sun_times(day_date, city.lat, city.lon, tz_min)
+    sun = sun_by_place(db, [r.Place for r in rows], day_date, hours)
+    sunrise, sunset = first_daylight(sun, place_ids)
 
     stops = [
         Stop(place_id=r.Place.place_id, name=r.Place.name,
-             category=facts.get(r.Place.place_id, (None, None))[0],
+             category=category_of(r.Place, facts),
              start_min=r.ItineraryItem.start_min, duration_min=r.ItineraryItem.duration_min,
-             periods=hours[r.Place.place_id].periods if r.Place.place_id in hours else None)
+             periods=hours[r.Place.place_id].periods if r.Place.place_id in hours else None,
+             sunset_min=sun.get(r.Place.place_id, (None, None))[1])
         for r in rows
     ]
-    plan = plan_day(stops, weekday=google_weekday(day_date), sunset_min=sunset)
+    plan = plan_day(stops, weekday=google_weekday(day_date))
 
     return DayRouteOut(
         day_index=day_index, date=day_date, start_time=start,

@@ -6,7 +6,7 @@
 // reverting the last drag.
 
 import type { Itinerary, Shortlist, ShortlistPlace } from "./plan-types";
-import { initialState, planReducer } from "./plan-state";
+import { cityLabels, initialState, planReducer } from "./plan-state";
 
 function eq(got: unknown, want: unknown, label: string) {
   const a = JSON.stringify(got);
@@ -17,6 +17,7 @@ function eq(got: unknown, want: unknown, label: string) {
 function place(place_id: string, name: string, mention_count = 0): ShortlistPlace {
   return {
     place_id,
+    city_id: "c-helsinki",
     name,
     address: null,
     lat: 60.17,
@@ -110,5 +111,27 @@ const stale = planReducer(withBlock, { type: "saved", days: [0], itinerary, revi
 eq(stale.unsaved, [0], "a save for an older revision is ignored");
 const fresh = planReducer(withBlock, { type: "saved", days: [0], itinerary, revision: 1 });
 eq(fresh.unsaved, [], "a save for the current revision clears the day");
+
+const city = (city_id: string, name: string) => ({
+  city_id,
+  name,
+  country: null,
+  timezone: null,
+});
+const hel = city("hel", "Helsinki");
+eq(cityLabels([hel]).size, 0, "a one-city trip labels nothing");
+eq(
+  [...cityLabels([hel, city("sgp", "Singapore")])],
+  [
+    ["hel", "Helsinki"],
+    ["sgp", "Singapore"],
+  ],
+  "a two-city trip labels both",
+);
+eq(
+  cityLabels([hel, city("sgp", "Singapore")]).get("porto") ?? null,
+  null,
+  "a place filed under a city the trip does not cover has no label",
+);
 
 console.log("plan-state: all checks passed");

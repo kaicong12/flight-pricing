@@ -13,17 +13,26 @@ from sqlalchemy.orm import Session
 
 from libs import logs
 from libs.db import (
-    IngestRun,
+    City,
     IngestTask,
     Place,
     Trip,
+    TripCity,
     TripDismissal,
     User,
     UserTrip,
+    cities_by_trip,
     claim_city_places,
+    trip_cities,
 )
-from libs.db.enums import RunKind, TaskKind, TaskStatus, TripRole
-from libs.ingest import ensure_city, ensure_city_ingest, ensure_trip_plan
+from libs.db.enums import TaskKind, TaskStatus, TripRole
+from libs.ingest import (
+    ensure_city,
+    ensure_city_ingest,
+    ensure_trip_plan,
+    latest_runs,
+    trip_ingest,
+)
 from libs.places import NotACity, PlacesError
 from libs.settings import settings
 from tp_api import metrics
@@ -109,19 +118,24 @@ def search_cities_endpoint(
 
 @app.post("/initiate-plan", response_model=TripOut)
 def initiate_plan(body: InitiatePlanRequest, db: Db, lookup: Lookup, user: Me) -> TripOut:
-    try:
-        details = lookup(body.city_place_id)
-    except NotACity as e:
-        log.warning("initiate-plan rejected place_id=%s: not a city: %s", body.city_place_id, e)
-        raise HTTPException(422, f"not a city: {e}") from e
-    except PlacesError as e:
-        log.warning("initiate-plan places lookup failed place_id=%s: %s", body.city_place_id, e)
-        raise HTTPException(502, f"places lookup failed: {e}") from e
+    resolved: dict[str, City] = {}
+    for place_id in body.city_place_ids:
+        try:
+            details = lookup(place_id)
+        except NotACity as e:
+            log.warning("initiate-plan rejected place_id=%s: not a city: %s", place_id, e)
+            raise HTTPException(422, f"not a city: {e}") from e
+        except PlacesError as e:
+            log.warning("initiate-plan places lookup failed place_id=%s: %s", place_id, e)
+            raise HTTPException(502, f"places lookup failed: {e}") from e
+        city = ensure_city(db, details)
+        # Keyed on the resolved id, not the input: Places answers an alias with the canonical one.
+        resolved.setdefault(city.city_id, city)
+    cities = list(resolved.values())
 
-    city = ensure_city(db, details)
     trip = Trip(
         trip_id=str(uuid4()),
-        city_id=city.city_id,
+        city_id=cities[0].city_id,
         name=(body.name or "").strip() or None,
         arrive_date=body.arrive_date,
         arrive_time=body.arrive_time,
@@ -132,28 +146,32 @@ def initiate_plan(body: InitiatePlanRequest, db: Db, lookup: Lookup, user: Me) -
     db.add(trip)
     db.add(UserTrip(user_id=user.user_id, trip_id=trip.trip_id, role=TripRole.OWNER))
     db.flush()
-    # Unconditional: a city past its refresh TTL is not warm but still has the last run's places.
-    claim_city_places(db, trip.trip_id, city.city_id)
+    for city in cities:
+        db.add(TripCity(trip_id=trip.trip_id, city_id=city.city_id))
+        claim_city_places(db, trip.trip_id, city.city_id)
     db.commit()
 
-    run = ensure_city_ingest(db, city)
-    # A warm city queues no ingestion, so nothing would later trigger the draft.
-    if run is None:
+    runs = [r for r in (ensure_city_ingest(db, c) for c in cities) if r is not None]
+    if not runs:
         ensure_trip_plan(db, trip)
     # Which of the two paths a trip took is invisible from the response alone, and it decides whether
     # anything is coming: a warm city's plan screen fills from a draft, a cold one's from a run.
-    log.info("initiate-plan trip=%s city=%s place_id=%s ingest=%s", trip.trip_id[:8], city.name,
-             city.city_id, f"run:{run.run_id} {run.status}" if run else "warm, draft queued")
+    log.info("initiate-plan trip=%s cities=%s ingest=%s", trip.trip_id[:8],
+             " ".join(f"{c.name}:{c.city_id}" for c in cities),
+             f"run:{runs[0].run_id} {runs[0].status}"
+             + (f" +{len(runs) - 1} more" if len(runs) > 1 else "") if runs
+             else "warm, draft queued")
     return TripOut(
         trip_id=trip.trip_id,
         name=trip.name,
-        city=CityOut.model_validate(city, from_attributes=True),
+        city=CityOut.model_validate(cities[0], from_attributes=True),
+        cities=[CityOut.model_validate(c, from_attributes=True) for c in cities],
         arrive_date=trip.arrive_date,
         arrive_time=trip.arrive_time,
         depart_date=trip.depart_date,
         depart_time=trip.depart_time,
         extra_details=trip.extra_details,
-        ingest=IngestOut(run_id=run.run_id, status=run.status) if run else None,
+        ingest=IngestOut(run_id=runs[0].run_id, status=runs[0].status) if runs else None,
     )
 
 
@@ -185,17 +203,13 @@ def list_trips(db: Db, user: Me) -> list[TripSummaryOut]:
     if not trips:
         return []
 
-    city_ids = {t.city_id for t in trips}
-
     # One query each rather than per trip: the list is the landing screen and N trips share cities.
-    latest_run: dict[str, IngestRun] = {}
-    for run in db.scalars(
-        select(IngestRun)
-        .where(IngestRun.city_id.in_(city_ids), IngestRun.kind == RunKind.CITY_INGEST)
-        .order_by(IngestRun.requested_at.desc())
-    ):
-        if run.city_id is not None:
-            latest_run.setdefault(run.city_id, run)
+    covered = cities_by_trip(db, [t.trip_id for t in trips])
+    for t in trips:
+        covered.setdefault(t.trip_id, [t.city_id])
+    city_ids = {t.city_id for t in trips} | {cid for ids in covered.values() for cid in ids}
+    cities = {c.city_id: c for c in db.scalars(select(City).where(City.city_id.in_(city_ids)))}
+    latest_run = latest_runs(db, list(city_ids))
 
     counts: dict[str, tuple[int, int]] = {}
     if latest_run:
@@ -226,13 +240,20 @@ def list_trips(db: Db, user: Me) -> list[TripSummaryOut]:
 
     out = []
     for trip in trips:
-        run = latest_run.get(trip.city_id)
-        done, total = counts.get(run.run_id, (0, 0)) if run else (0, 0)
+        mine = covered.get(trip.trip_id, [trip.city_id])
+        run = trip_ingest(latest_run, mine)
+        done, total = (0, 0)
+        for cid in mine:
+            if cid in latest_run:
+                d, t = counts.get(latest_run[cid].run_id, (0, 0))
+                done, total = done + d, total + t
         out.append(
             TripSummaryOut(
                 trip_id=trip.trip_id,
                 name=trip.name,
-                city=CityOut.model_validate(trip.city, from_attributes=True),
+                city=CityOut.model_validate(cities[trip.city_id], from_attributes=True),
+                cities=[CityOut.model_validate(cities[c], from_attributes=True)
+                        for c in mine if c in cities],
                 arrive_date=trip.arrive_date,
                 depart_date=trip.depart_date,
                 ingest=IngestOut(run_id=run.run_id, status=run.status) if run else None,
@@ -252,18 +273,17 @@ def get_trip(trip_id: str, db: Db, role: Annotated[str, Depends(require_trip_acc
     if trip is None:
         raise HTTPException(404, "no such trip")
 
-    run = db.scalars(
-        select(IngestRun)
-        .where(IngestRun.city_id == trip.city_id, IngestRun.kind == RunKind.CITY_INGEST)
-        .order_by(IngestRun.requested_at.desc())
-    ).first()
+    cities = trip_cities(db, trip)
+    city_ids = [c.city_id for c in cities]
+    runs = latest_runs(db, city_ids)
+    run = trip_ingest(runs, city_ids)
+    run_ids = [runs[c].run_id for c in city_ids if c in runs]
 
-    # Counted, not stored: the checklist is a group-by so a restarted worker can't skew it.
     progress, failures = [], []
-    if run is not None:
+    if run_ids:
         rows = db.execute(
             select(IngestTask.kind, IngestTask.status, func.count().label("n"))
-            .where(IngestTask.run_id == run.run_id)
+            .where(IngestTask.run_id.in_(run_ids))
             .group_by(IngestTask.kind, IngestTask.status)
             .order_by(IngestTask.kind, IngestTask.status)
         ).all()
@@ -273,7 +293,7 @@ def get_trip(trip_id: str, db: Db, role: Annotated[str, Depends(require_trip_acc
         bad = db.execute(
             select(IngestTask.kind, IngestTask.status, IngestTask.error_code,
                    IngestTask.last_error, func.count().label("n"))
-            .where(IngestTask.run_id == run.run_id,
+            .where(IngestTask.run_id.in_(run_ids),
                    IngestTask.status.in_((TaskStatus.FAILED, TaskStatus.BLOCKED)))
             .group_by(IngestTask.kind, IngestTask.status, IngestTask.error_code,
                       IngestTask.last_error)
@@ -293,6 +313,7 @@ def get_trip(trip_id: str, db: Db, role: Annotated[str, Depends(require_trip_acc
         trip_id=trip.trip_id,
         name=trip.name,
         city=CityOut.model_validate(trip.city, from_attributes=True),
+        cities=[CityOut.model_validate(c, from_attributes=True) for c in cities],
         arrive_date=trip.arrive_date,
         arrive_time=trip.arrive_time,
         depart_date=trip.depart_date,
