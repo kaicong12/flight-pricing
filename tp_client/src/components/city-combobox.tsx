@@ -16,9 +16,11 @@ const DEBOUNCE_MS = 250;
 type Props = {
   selected: CitySuggestion | null;
   onSelect: (city: CitySuggestion | null) => void;
+  placeholder?: string;
+  exclude?: Set<string>;
 };
 
-export function CityCombobox({ selected, onSelect }: Props) {
+export function CityCombobox({ selected, onSelect, placeholder = "Helsinki", exclude }: Props) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   // Results are stamped with the query they answer, so "loading" is derived rather than a second
@@ -30,7 +32,9 @@ export function CityCombobox({ selected, onSelect }: Props) {
 
   const q = query.trim();
   const settled = results.q === q;
-  const suggestions = settled ? results.items : [];
+  const suggestions = settled
+    ? results.items.filter((s) => !exclude?.has(s.place_id))
+    : [];
   const loading = q.length >= 2 && !settled;
 
   useEffect(() => {
@@ -62,7 +66,7 @@ export function CityCombobox({ selected, onSelect }: Props) {
         className="flex h-11 w-full items-center justify-between rounded-[13px] border border-input px-3.5 text-left text-sm outline-none transition-colors hover:border-[#c6bda4] focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
       >
         <span className={cn(!selected && "text-muted-foreground")}>
-          {selected ? selected.description : "Helsinki"}
+          {selected ? selected.description : placeholder}
         </span>
         <ChevronsUpDownIcon className="size-4 shrink-0 opacity-40" />
       </PopoverTrigger>

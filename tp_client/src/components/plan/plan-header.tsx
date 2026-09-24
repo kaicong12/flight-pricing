@@ -11,7 +11,7 @@ import { TripName } from "@/components/trip-name";
 import type { Trip } from "@/lib/api-types";
 import type { ItineraryDay } from "@/lib/plan-types";
 import { PROVISIONAL_TEXT, shortTime } from "@/lib/plan-types";
-import { formatRange } from "@/lib/trips";
+import { cityNames, formatRange } from "@/lib/trips";
 import { cn } from "@/lib/utils";
 
 export function PlanHeader({
@@ -37,6 +37,7 @@ export function PlanHeader({
 }) {
   const arrive = shortTime(trip.arrive_time);
   const depart = shortTime(trip.depart_time);
+  const cities = cityNames(trip);
 
   return (
     <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-3">
@@ -46,7 +47,7 @@ export function PlanHeader({
             <TripName
               tripId={trip.trip_id}
               name={trip.name}
-              fallback={trip.city.name}
+              fallback={cities}
               className="text-3xl font-semibold tracking-[-0.015em]"
             />
           </h1>
@@ -63,7 +64,7 @@ export function PlanHeader({
         </div>
         <p className="mt-2 text-sm text-muted-foreground">
           {[
-            trip.name?.trim() ? trip.city.name : null,
+            trip.name?.trim() ? cities : null,
             formatRange(trip.arrive_date, trip.depart_date),
             arrive && `lands ${arrive}`,
             depart && `leaves ${depart}`,

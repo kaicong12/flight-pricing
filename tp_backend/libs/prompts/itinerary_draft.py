@@ -1,7 +1,7 @@
 """Drafting a first itinerary. The model owns the clock; plan_day judges it afterwards.
 
-Places are numbered rather than named by place_id, and km-from-centre is precomputed, so the model
-never copies an opaque string or does trigonometry.
+Places are numbered rather than named by place_id, and each one's city and km-from-that-city's-centre
+are precomputed, so the model never copies an opaque string or does trigonometry.
 """
 
 from libs.prompts.registry import Prompt
@@ -54,8 +54,10 @@ Both must be multiples of 30. Every block must fit inside its day's usable range
 start_min is at or after the range's first minute, and start_min + duration_min is at or before its
 last. A day's blocks must not overlap.
 
-"km" is straight-line distance from the city centre. Past about 5km a place is an excursion that
-eats most of a day. Things that need darkness belong after sunset; things that need daylight do not.
+Each place lists the city it is in and its straight-line distance from that city's own centre. Past
+about 5km a place is an excursion that eats most of a day. Keep a day inside one city unless the
+traveller asks otherwise. Things that need darkness belong after sunset in *that place's* city;
+things that need daylight do not.
 
 Places, by index:
 {places}
@@ -65,4 +67,4 @@ traveller rather than for coverage — leaving a famous place out is correct if 
 it. Never invent an index.
 {feedback}"""
 
-ITINERARY_DRAFT = Prompt(name="itinerary_draft", version="v2", template=TEMPLATE, schema=SCHEMA)
+ITINERARY_DRAFT = Prompt(name="itinerary_draft", version="v3", template=TEMPLATE, schema=SCHEMA)

@@ -10,6 +10,7 @@ import type { TripStatus } from "@/lib/api-types";
 import type { Itinerary, Shortlist } from "@/lib/plan-types";
 import { currentUser } from "@/lib/session";
 import { getJson } from "@/lib/tp-api";
+import { cityNames } from "@/lib/trips";
 
 export const dynamic = "force-dynamic";
 
@@ -18,7 +19,7 @@ const EMPTY_SHORTLIST: Shortlist = { total: 0, shown: 0, places: [] };
 export async function generateMetadata({ params }: PageProps<"/trip/[tripId]/plan">) {
   const { tripId } = await params;
   const trip = await getJson<TripStatus>(`/trips/${encodeURIComponent(tripId)}`);
-  return { title: trip ? `${trip.city.name} plan` : "Plan" };
+  return { title: trip ? `${cityNames(trip)} plan` : "Plan" };
 }
 
 export default async function PlanPage({ params }: PageProps<"/trip/[tripId]/plan">) {

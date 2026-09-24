@@ -26,13 +26,17 @@ def youtube_extract(session: Session, task: ClaimedTask) -> dict:
     if video is None:
         raise TaskError(ErrorCode.PERMANENT, f"video {video_id} was never inserted by search")
 
-    if session.scalar(
-        select(Extraction.id).where(
+    cached = session.scalar(
+        select(Extraction.place_count).where(
             Extraction.source == Source.YOUTUBE, Extraction.source_ref == video_id,
             Extraction.prompt_version == YOUTUBE_TRANSCRIPT.version_key,
             Extraction.model == YOUTUBE_TRANSCRIPT.model)
-    ) is not None:
-        return {"video_id": video_id, "cached": True}
+    )
+    if cached is not None:
+        return {"video_id": video_id, "cached": True,
+                "resolve_queued": enqueue_resolve(
+                    session, task, Source.YOUTUBE, video_id, YOUTUBE_TRANSCRIPT.version_key,
+                    YOUTUBE_TRANSCRIPT.model) if cached else 0}
 
     text = video.transcript
     if not text:

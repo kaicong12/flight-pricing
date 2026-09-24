@@ -1,5 +1,6 @@
 """Get-or-create a city and its ingest run. Everything here has to be safe to call concurrently."""
 
+from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
@@ -8,7 +9,15 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from libs.db import City, IngestRun, IngestTask, Trip, claim_city_places
+from libs.db import (
+    City,
+    IngestRun,
+    IngestTask,
+    Trip,
+    cities_by_trip,
+    claim_city_places,
+    covers_city,
+)
 from libs.db.enums import RunKind, RunStatus, Source, TaskKind
 from libs.places import CityDetails
 from libs.settings import settings
@@ -103,6 +112,7 @@ def ensure_trip_plan(session: Session, trip: Trip, force: bool = False) -> Inges
         select(IngestTask.task_id).where(
             IngestTask.kind == TaskKind.ROUTE_PLAN,
             IngestTask.payload["trip_id"].astext == trip.trip_id,
+            IngestTask.payload["manual"].astext.is_(None),
         )
     ).first():
         return None
@@ -115,28 +125,62 @@ def ensure_trip_plan(session: Session, trip: Trip, force: bool = False) -> Inges
         "run_id": run.run_id,
         "kind": TaskKind.ROUTE_PLAN,
         "source": Source.GEMINI,
-        "payload": {"trip_id": trip.trip_id},
+        "payload": {"trip_id": trip.trip_id} | ({"manual": True} if force else {}),
         "dedupe_key": f"{TaskKind.ROUTE_PLAN}:{trip.trip_id}",
     }])
     session.commit()
     return run
 
 
-def plan_after_ingest(session: Session, run_id: str) -> int:
-    """After a city's ingestion settles, draft for every trip waiting on that city.
+def latest_runs(session: Session, city_ids: Sequence[str]) -> dict[str, IngestRun]:
+    if not city_ids:
+        return {}
+    out: dict[str, IngestRun] = {}
+    for run in session.scalars(
+        select(IngestRun)
+        .where(IngestRun.city_id.in_(city_ids), IngestRun.kind == RunKind.CITY_INGEST)
+        # requested_at ties: now() is the transaction clock, so run_id breaks it.
+        .order_by(IngestRun.status.in_(ACTIVE).desc(), IngestRun.requested_at.desc(),
+                  IngestRun.run_id)
+    ):
+        if run.city_id is not None:
+            out.setdefault(run.city_id, run)
+    return out
 
-    Also where a trip created mid-run catches up: neither its creation nor a resolve task can see the
-    other's uncommitted rows, so the claims are reconciled here rather than locked against.
-    """
+
+def all_settled(runs: dict[str, IngestRun], city_ids: Sequence[str]) -> bool:
+    return not any(runs[c].status in ACTIVE for c in city_ids if c in runs)
+
+
+def drew_something(runs: dict[str, IngestRun], city_ids: Sequence[str]) -> bool:
+    return any(c not in runs or runs[c].status == RunStatus.DONE for c in city_ids)
+
+
+def trip_ingest(runs: dict[str, IngestRun], city_ids: Sequence[str]) -> IngestRun | None:
+    mine = [runs[c] for c in city_ids if c in runs]
+    for wanted in (ACTIVE, (RunStatus.NEEDS_CREDENTIALS,), (RunStatus.DONE,)):
+        match = next((r for r in mine if r.status in wanted), None)
+        if match is not None:
+            return match
+    return mine[0] if mine else None
+
+
+def plan_after_ingest(session: Session, run_id: str) -> int:
     run = session.get(IngestRun, run_id)
-    if run is None or run.kind != RunKind.CITY_INGEST or run.status != RunStatus.DONE:
+    if run is None or run.kind != RunKind.CITY_INGEST or run.status in ACTIVE:
         return 0
     trips = session.scalars(
-        select(Trip).where(Trip.city_id == run.city_id, Trip.deleted.is_(False))
+        select(Trip).where(covers_city(run.city_id), Trip.deleted.is_(False))
     ).all()
+    drafted = 0
     for t in trips:
-        claim_city_places(session, t.trip_id, run.city_id)
-    return sum(1 for t in trips if ensure_trip_plan(session, t) is not None)
+        city_ids = cities_by_trip(session, [t.trip_id]).get(t.trip_id) or [run.city_id]
+        for city_id in city_ids:
+            claim_city_places(session, t.trip_id, city_id)
+        runs = latest_runs(session, city_ids)
+        if all_settled(runs, city_ids) and drew_something(runs, city_ids):
+            drafted += ensure_trip_plan(session, t) is not None
+    return drafted
 
 
 def seed_search_tasks(session: Session, run: IngestRun, city: City) -> None:

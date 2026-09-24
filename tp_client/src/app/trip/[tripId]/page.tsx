@@ -10,7 +10,7 @@ import { TripProgress } from "@/components/trip-progress";
 import { type TripStatus } from "@/lib/api-types";
 import { currentUser } from "@/lib/session";
 import { getJson } from "@/lib/tp-api";
-import { formatRange, nightCount } from "@/lib/trips";
+import { cityNames, formatRange, nightCount } from "@/lib/trips";
 
 export const dynamic = "force-dynamic";
 
@@ -21,7 +21,7 @@ async function loadTrip(tripId: string): Promise<TripStatus | null> {
 export async function generateMetadata({ params }: PageProps<"/trip/[tripId]">) {
   const { tripId } = await params;
   const trip = await loadTrip(tripId);
-  return { title: trip ? `${trip.city.name} trip` : "Trip" };
+  return { title: trip ? `${cityNames(trip)} trip` : "Trip" };
 }
 
 export default async function TripPage({ params }: PageProps<"/trip/[tripId]">) {
@@ -35,6 +35,9 @@ export default async function TripPage({ params }: PageProps<"/trip/[tripId]">) 
   if (!trip) notFound();
 
   const nights = nightCount(trip.arrive_date, trip.depart_date);
+  const countries = [
+    ...new Set((trip.cities.length ? trip.cities : [trip.city]).map((c) => c.country).filter(Boolean)),
+  ].join(" · ");
 
   return (
     <div className="min-h-dvh bg-page pb-24">
@@ -49,14 +52,12 @@ export default async function TripPage({ params }: PageProps<"/trip/[tripId]">) 
 
         <div className="mt-4 flex flex-wrap items-end justify-between gap-x-6 gap-y-2">
           <div>
-            <h1 className="text-3xl font-semibold tracking-[-0.015em]">{trip.city.name}</h1>
+            <h1 className="text-3xl font-semibold tracking-[-0.015em]">{cityNames(trip)}</h1>
             <p className="mt-2 text-sm text-muted-foreground">
               {formatRange(trip.arrive_date, trip.depart_date)} · {nights === 1 ? "1 night" : `${nights} nights`}
             </p>
           </div>
-          {trip.city.country && (
-            <span className="font-mono text-[11.5px] text-faint">{trip.city.country}</span>
-          )}
+          {countries && <span className="font-mono text-[11.5px] text-faint">{countries}</span>}
         </div>
 
         {trip.deleted && (

@@ -53,4 +53,11 @@ def rednote_search(session: Session, task: ClaimedTask) -> dict:
          "dedupe_key": f"{TaskKind.REDNOTE_FETCH}:{n['note_id']}"}
         for n in fresh
     ])
-    return {"keyword": keyword, "found": len(notes), "cached": len(known), "queued": queued}
+    revisit = enqueue(session, [
+        {"run_id": task.run_id, "kind": TaskKind.REDNOTE_EXTRACT, "source": Source.REDNOTE,
+         "payload": {"note_id": note_id, "city_id": city_id},
+         "dedupe_key": f"{TaskKind.REDNOTE_EXTRACT}:{note_id}"}
+        for note_id in sorted(known)
+    ])
+    return {"keyword": keyword, "found": len(notes), "cached": len(known), "queued": queued,
+            "revisit_queued": revisit}

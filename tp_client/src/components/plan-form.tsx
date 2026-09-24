@@ -4,6 +4,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { X } from "lucide-react";
 
 import { CityCombobox } from "@/components/city-combobox";
 import { Button } from "@/components/ui/button";
@@ -17,7 +18,7 @@ const FIELD = "h-11 rounded-[13px] border-input px-3.5 text-sm";
 const LABEL = "text-[13px] font-semibold";
 
 const STEPS = [
-  "We search YouTube and RedNote for this city, in English and the local language.",
+  "We search YouTube and RedNote for each city, in English and the local language.",
   "Gemini pulls the place names out of transcripts and note bodies.",
   "Each name resolves to a Google place_id, so two sources naming one venue count as one place.",
   "You get a shortlist ranked by independent mentions. You choose the order.",
@@ -30,7 +31,7 @@ function orNull(value: string): string | null {
 
 export function PlanForm() {
   const router = useRouter();
-  const [city, setCity] = useState<CitySuggestion | null>(null);
+  const [cities, setCities] = useState<CitySuggestion[]>([]);
   const [name, setName] = useState("");
   const [arriveDate, setArriveDate] = useState("");
   const [arriveTime, setArriveTime] = useState("");
@@ -41,11 +42,17 @@ export function PlanForm() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const ready = city !== null && arriveDate !== "" && departDate !== "" && !submitting;
+  const anchor = cities[0] ?? null;
+  const chosen = new Set(cities.map((c) => c.place_id));
+  const ready = cities.length > 0 && arriveDate !== "" && departDate !== "" && !submitting;
+
+  function addCity(city: CitySuggestion | null) {
+    if (city && !chosen.has(city.place_id)) setCities([...cities, city]);
+  }
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
-    if (!city) return;
+    if (cities.length === 0) return;
     setSubmitting(true);
     setError(null);
     try {
@@ -53,7 +60,7 @@ export function PlanForm() {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          city_place_id: city.place_id,
+          city_place_ids: cities.map((c) => c.place_id),
           name: orNull(name),
           arrive_date: arriveDate,
           arrive_time: orNull(arriveTime),
@@ -91,9 +98,44 @@ export function PlanForm() {
           <Label htmlFor="city" className={LABEL}>
             Where are you going?
           </Label>
+          {cities.length > 0 && (
+            <ul className="mt-2 flex flex-wrap gap-2">
+              {cities.map((c, i) => (
+                <li
+                  key={c.place_id}
+                  className="flex h-8 items-center gap-1.5 rounded-full bg-page pr-1.5 pl-3 text-[13px]"
+                >
+                  <span>{c.main_text ?? c.description}</span>
+                  {i === 0 && (
+                    <span className="font-mono text-[10px] tracking-[0.04em] text-faint uppercase">
+                      anchor
+                    </span>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setCities(cities.filter((x) => x.place_id !== c.place_id))}
+                    aria-label={`Remove ${c.main_text ?? c.description}`}
+                    className="grid size-5 place-items-center rounded-full text-faint transition-colors hover:bg-alert-bg hover:text-alert outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+                  >
+                    <X className="size-3" />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
           <div className="mt-2">
-            <CityCombobox selected={city} onSelect={setCity} />
+            <CityCombobox
+              selected={null}
+              onSelect={addCity}
+              exclude={chosen}
+              placeholder={cities.length === 0 ? "Helsinki" : "Add another city"}
+            />
           </div>
+          <p className="mt-1.5 text-xs text-faint">
+            {cities.length > 1
+              ? "We ingest every city. The anchor names the trip and centres the map."
+              : "Add more than one for a multi-city trip."}
+          </p>
 
           <div className="mt-6">
             <Label htmlFor="name" className={LABEL}>
@@ -104,7 +146,7 @@ export function PlanForm() {
               maxLength={120}
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder={city ? `${city.main_text ?? city.description} trip` : "Optional"}
+              placeholder={anchor ? `${anchor.main_text ?? anchor.description} trip` : "Optional"}
               className="mt-2"
             />
             <p className="mt-1.5 text-xs text-faint">Optional — we will use the city name.</p>

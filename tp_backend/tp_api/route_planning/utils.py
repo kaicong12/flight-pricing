@@ -37,9 +37,8 @@ def google_weekday(d: date) -> int:
     return (d.weekday() + 1) % 7
 
 
-def tz_minutes(city: City, on: date, fallback: int | None) -> int:
-    """The city's UTC offset on the trip's date, so a summer plan is not shifted by winter time."""
-    if city.timezone:
+def tz_minutes(city: City | None, on: date, fallback: int | None) -> int:
+    if city is not None and city.timezone:
         try:
             offset = datetime.combine(on, time(12, 0), ZoneInfo(city.timezone)).utcoffset()
         except (ZoneInfoNotFoundError, ValueError):

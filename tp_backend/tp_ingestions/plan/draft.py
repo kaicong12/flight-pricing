@@ -11,7 +11,7 @@ from datetime import timedelta
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from libs.db import ItineraryItem, Trip
+from libs.db import City, ItineraryItem, Trip, trip_cities
 from libs.db.enums import TaskKind
 from libs.gemini import generate
 from libs.places import distance_km
@@ -49,13 +49,22 @@ def clock(m: int) -> str:
     return "24:00" if m >= 24 * 60 else hhmm(m)
 
 
-def render(trip: Trip, places, open_days, feedback: str = "") -> str:
+def render(session: Session, trip: Trip, places, open_days, feedback: str = "") -> str:
     """The whole prompt: the candidates, and the clock facts the model needs to time them."""
-    city = trip.city
+    cities = trip_cities(session, trip)
+    by_id = {c.city_id: c for c in cities}
+    missing = {p.city_id for p in places} - set(by_id)
+    if missing:
+        by_id |= {c.city_id: c
+                  for c in session.scalars(select(City).where(City.city_id.in_(missing)))}
+
     rows = []
     for i, p in enumerate(places):
-        km = distance_km(city.lat, city.lon, p.lat, p.lon) if p.lat and city.lat else 0.0
-        rows.append(f"{i:3}  {p.name} | {p.category or '-'} | {km:.1f}km | {p.mention_count} sources"
+        c = by_id.get(p.city_id)
+        known = None not in (getattr(c, "lat", None), getattr(c, "lon", None), p.lat, p.lon)
+        km = distance_km(c.lat, c.lon, p.lat, p.lon) if known else None
+        rows.append(f"{i:3}  {p.name} | {p.category or '-'} | {c.name if c else '?'} | "
+                    f"{'?' if km is None else format(km, '.1f')}km | {p.mention_count} sources"
                     + (f" | {p.why_go}" if p.why_go else ""))
 
     days = []
@@ -64,14 +73,16 @@ def render(trip: Trip, places, open_days, feedback: str = "") -> str:
         first, last = window(trip, i)
         line = (f"day {i}, {d:%A %d %B}: usable {clock(first)}-{clock(last)} "
                 f"(start_min {first} to {last})")
-        if city.lat is not None and city.lon is not None:
-            rise, set_ = sun_times(d, city.lat, city.lon, tz_minutes(city, d, None))
+        for c in cities:
+            if c.lat is None or c.lon is None:
+                continue
+            rise, set_ = sun_times(d, c.lat, c.lon, tz_minutes(c, d, None))
             if rise is not None:
-                line += f", sunrise {hhmm(rise)}, sunset {hhmm(set_)}"
+                line += f", {c.name} sunrise {hhmm(rise)} sunset {hhmm(set_)}"
         days.append(line)
 
     return ITINERARY_DRAFT.render(
-        city=f"{city.name}, {city.country}",
+        city=" and ".join(f"{c.name}, {c.country}" for c in cities),
         days_line="\n".join(days),
         traveller=trip.extra_details or "nothing in particular",
         open_days=", ".join(str(d) for d in open_days),
@@ -145,7 +156,7 @@ def propose(session: Session, trip: Trip, places, open_days) -> tuple[dict, int,
     best, fewest, feedback, shut = ({}, {}), None, "", set()
     for r in range(1, ROUNDS + 1):
         limits.gemini().take()
-        reply = generate(ITINERARY_DRAFT, render(trip, places, open_days, feedback))
+        reply = generate(ITINERARY_DRAFT, render(session, trip, places, open_days, feedback))
         chosen = keep(trip, reply, len(places), open_days, shut)
         bad = problems(session, trip, chosen, places)
 
@@ -179,9 +190,10 @@ def run(session: Session, task: ClaimedTask) -> dict:
     if not open_days:
         return {"skipped": "every day already has items"}
 
-    places = [p for p in shortlist(session, trip_id, LIMIT, 0, None).places if not p.in_itinerary]
+    limit = LIMIT * len(trip_cities(session, trip))
+    places = [p for p in shortlist(session, trip_id, limit, 0, None).places if not p.in_itinerary]
     if not places:
-        return {"skipped": "nothing resolved for this city yet"}
+        return {"skipped": "nothing resolved for this trip's cities yet"}
 
     chosen, rounds, bad = propose(session, trip, places, open_days)
     days = [DayIn(day_index=day,

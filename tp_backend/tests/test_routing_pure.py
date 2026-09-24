@@ -76,9 +76,9 @@ class TestDurations:
         assert MIN_DURATION == SLOT_MIN
 
 
-def stop(pid, name, *, start, category="see", minutes=60, periods=ARCTIC_CATHEDRAL):
+def stop(pid, name, *, start, category="see", minutes=60, periods=ARCTIC_CATHEDRAL, sunset=None):
     return Stop(place_id=pid, name=name, category=category, start_min=start,
-                duration_min=minutes, periods=periods)
+                duration_min=minutes, periods=periods, sunset_min=sunset)
 
 
 class TestPlanDay:
@@ -145,17 +145,24 @@ class TestPlanDay:
 
     def test_an_outdoor_stop_after_sunset(self):
         plan = plan_day([stop("a", "Fjellheisen", start=16 * 60, category="see",
-                              periods=FJELLHEISEN)], weekday=1, sunset_min=15 * 60 + 29)
+                              periods=FJELLHEISEN, sunset=15 * 60 + 29)], weekday=1)
         assert [w.code for w in plan.warnings] == [AFTER_SUNSET]
 
     def test_an_indoor_stop_after_sunset_is_fine(self):
         plan = plan_day([stop("a", "Bar", start=16 * 60, category="drink",
-                              periods=FJELLHEISEN)], weekday=1, sunset_min=15 * 60 + 29)
+                              periods=FJELLHEISEN, sunset=15 * 60 + 29)], weekday=1)
         assert plan.warnings == []
 
     def test_polar_night_raises_no_sunset_warning(self):
-        plan = plan_day([stop("a", "Fjellheisen", start=16 * 60, periods=FJELLHEISEN)], weekday=1, sunset_min=None)
+        plan = plan_day([stop("a", "Fjellheisen", start=16 * 60, periods=FJELLHEISEN)], weekday=1)
         assert plan.warnings == []
+
+    def test_each_stop_is_judged_against_its_own_sunset(self):
+        plan = plan_day([stop("dark", "Fjellheisen", start=17 * 60, periods=FJELLHEISEN,
+                              sunset=15 * 60 + 29),
+                         stop("light", "Barceloneta", start=17 * 60, periods=FJELLHEISEN,
+                              sunset=21 * 60)], weekday=1)
+        assert [(w.code, w.place_id) for w in plan.warnings] == [(AFTER_SUNSET, "dark")]
 
     def test_two_places_an_ocean_apart_are_not_objected_to(self):
         # Travel is not modelled, so nothing here can call a pair unreachable.

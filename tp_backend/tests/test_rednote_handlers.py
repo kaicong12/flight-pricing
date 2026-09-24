@@ -84,6 +84,50 @@ def worker(monkeypatch):
     return Worker(name="w1", poll_interval=0, reap_interval=1e9)
 
 
+PORTO = "ChIJraHNsVNlJA0R-2sVTNTODlM"
+
+
+@pytest.fixture
+def second_run(db):
+    make_city(db, city_id=PORTO, name="Porto")
+    r = IngestRun(run_id="run-2", city_id=PORTO, kind=RunKind.CITY_INGEST,
+                  status=RunStatus.RUNNING)
+    db.add(r)
+    db.commit()
+    return r
+
+
+def test_a_second_city_s_fetch_of_the_same_note_spends_no_rednote_call(db, run, second_run, post,
+                                                                      monkeypatch):
+    calls = []
+    monkeypatch.setattr(fetch.client, "fetch_note", lambda n, t: calls.append(n) or CARD)
+    fetch.rednote_fetch(db, task(run))
+    db.commit()
+
+    out = fetch.rednote_fetch(db, task(second_run, city_id=PORTO))
+    db.commit()
+
+    assert calls == [NOTE]
+    assert out["cached"] and out["extract_queued"] == 1
+
+
+def test_the_second_city_gets_its_own_ocr_for_a_note_whose_desc_named_nothing(db, run, second_run,
+                                                                             post, monkeypatch):
+    monkeypatch.setattr(fetch.client, "fetch_note", lambda n, t: CARD)
+    monkeypatch.setattr(extract.gemini, "generate", lambda *a, **k: result())
+    fetch.rednote_fetch(db, task(run))
+    extract.rednote_extract(db, task(run, kind=TaskKind.REDNOTE_EXTRACT))
+    db.commit()
+
+    out = extract.rednote_extract(db, task(second_run, kind=TaskKind.REDNOTE_EXTRACT,
+                                          city_id=PORTO))
+    db.commit()
+
+    assert out["cached"] and out["ocr_queued"] == 1
+    assert set(db.scalars(select(IngestTask.run_id)
+                          .where(IngestTask.kind == TaskKind.REDNOTE_OCR))) == {"run-1", "run-2"}
+
+
 def test_fetch_stores_the_note_body(db, run, post, monkeypatch):
     monkeypatch.setattr(fetch.client, "fetch_note", lambda n, t: CARD)
     monkeypatch.setattr(extract.gemini, "generate", lambda *a, **k: result([place()]))

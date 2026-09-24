@@ -5,7 +5,7 @@
 
 import { TERMINAL_STATUSES, type City, type Trip, type TripRole } from "@/lib/api-types";
 
-export type TripListItem = Pick<Trip, "trip_id" | "name" | "city" | "arrive_date" | "depart_date" | "ingest" | "your_role"> & {
+export type TripListItem = Pick<Trip, "trip_id" | "name" | "city" | "cities" | "arrive_date" | "depart_date" | "ingest" | "your_role"> & {
   tasks_done: number;
   tasks_total: number;
   place_count: number;
@@ -26,9 +26,17 @@ export type TripSummary = {
   progress_text: string;
 };
 
-/** The city name is the fallback, so an unnamed trip still reads as something. */
-export function tripTitle(trip: { name?: string | null; city?: City | null }): string {
-  return trip.name?.trim() || trip.city?.name || "Untitled trip";
+type Covered = { city?: City | null; cities?: City[] | null };
+
+/** Every city a trip covers, anchor first. */
+export function cityNames(trip: Covered): string {
+  const all = trip.cities?.length ? trip.cities : trip.city ? [trip.city] : [];
+  return all.map((c) => c.name).join(" + ");
+}
+
+/** The city names are the fallback, so an unnamed trip still reads as something. */
+export function tripTitle(trip: Covered & { name?: string | null }): string {
+  return trip.name?.trim() || cityNames(trip) || "Untitled trip";
 }
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -63,7 +71,7 @@ function summarise(item: TripListItem): TripSummary {
     name: item.name ?? null,
     your_role: item.your_role,
     title: tripTitle(item),
-    city: item.city?.name ?? "",
+    city: cityNames(item),
     country: item.city?.country ?? "",
     start_date: item.arrive_date,
     dates: formatRange(item.arrive_date, item.depart_date),

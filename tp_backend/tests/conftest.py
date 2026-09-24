@@ -17,6 +17,8 @@ from libs.db import (
     Place,
     PlaceMention,
     RedNotePost,
+    Trip,
+    TripCity,
     User,
     UserSession,
     YouTubeVideo,
@@ -76,10 +78,21 @@ HELSINKI_DETAILS = CityDetails(place_id=HELSINKI, name="Helsinki", country="FI",
                                timezone="Europe/Helsinki", lat=60.17, lon=24.94)
 
 
+def make_trip(db, trip_id, city_ids=(HELSINKI,), deleted=False, **kw):
+    arrive = kw.pop("arrive_date", today_utc() + timedelta(days=30))
+    db.add(Trip(trip_id=trip_id, city_id=city_ids[0], arrive_date=arrive,
+                depart_date=kw.pop("depart_date", arrive + timedelta(days=2)),
+                deleted=deleted, **kw))
+    for city_id in city_ids:
+        db.add(TripCity(trip_id=trip_id, city_id=city_id))
+    db.commit()
+    return trip_id
+
+
 def plan_body(**kw):
     """A valid /initiate-plan payload, dated relative to today so it never goes stale."""
     arrive = today_utc() + timedelta(days=30)
-    return {"city_place_id": HELSINKI,
+    return {"city_place_ids": [HELSINKI],
             "arrive_date": arrive.isoformat(),
             "arrive_time": "14:30",
             "depart_date": (arrive + timedelta(days=3)).isoformat(),

@@ -60,18 +60,20 @@ def rednote_fetch(session: Session, task: ClaimedTask) -> dict:
     if note is None:
         raise TaskError(ErrorCode.PERMANENT, f"rednote note {note_id} was never inserted by search")
 
-    limits.rednote().take()
-    card = client.fetch_note(note_id, task.payload.get("xsec_token") or note.xsec_token)
-    if not card or not (card.get("desc") or "").strip():
-        raise TaskError(ErrorCode.PERMANENT, f"rednote note {note_id} returned no body")
+    stored = bool((note.description or "").strip())
+    if not stored:
+        limits.rednote().take()
+        card = client.fetch_note(note_id, task.payload.get("xsec_token") or note.xsec_token)
+        if not card or not (card.get("desc") or "").strip():
+            raise TaskError(ErrorCode.PERMANENT, f"rednote note {note_id} returned no body")
 
-    note.description = clean(card["desc"])
-    note.description_en = translated(card)
-    note.image_urls = preview_urls(card)
-    note.tags = tag_names(card)
-    note.posted_at = posted_at(card)
-    if card.get("title"):
-        note.title = card["title"]
+        note.description = clean(card["desc"])
+        note.description_en = translated(card)
+        note.image_urls = preview_urls(card)
+        note.tags = tag_names(card)
+        note.posted_at = posted_at(card)
+        if card.get("title"):
+            note.title = card["title"]
 
     # Its own task, not a child call: this body cost a RedNote call from a 50/h budget, so a Gemini
     # failure must not roll it back. rednote.extract then retries against the stored body for free.
@@ -79,5 +81,5 @@ def rednote_fetch(session: Session, task: ClaimedTask) -> dict:
         {"run_id": task.run_id, "kind": TaskKind.REDNOTE_EXTRACT, "source": Source.REDNOTE,
          "payload": {"note_id": note_id, "city_id": task.payload.get("city_id")},
          "dedupe_key": f"{TaskKind.REDNOTE_EXTRACT}:{note_id}"}])
-    return {"note_id": note_id, "chars": len(note.description),
+    return {"note_id": note_id, "chars": len(note.description), "cached": stored,
             "images": len(note.image_urls), "extract_queued": queued}

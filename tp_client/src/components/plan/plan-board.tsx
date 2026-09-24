@@ -25,6 +25,7 @@ import { useCallback, useEffect, useMemo, useReducer, useState } from "react";
 import type { Trip } from "@/lib/api-types";
 import {
   type PlanState,
+  cityLabels,
   dayOf,
   initialState,
   placedDays,
@@ -83,6 +84,7 @@ export function PlanBoard({
   const route = state.routes[state.activeDay];
   const isStale = state.stale.includes(state.activeDay);
   const placed = useMemo(() => placedDays(state), [state]);
+  const cityNames = useMemo(() => cityLabels(trip.cities), [trip.cities]);
   const provisional = useMemo(
     () => Object.values(state.routes).find((r) => r.provisional.length > 0)?.provisional ?? [],
     [state.routes],
@@ -303,6 +305,7 @@ export function PlanBoard({
           places={state.shortlist}
           total={state.total}
           placedDays={placed}
+          cityNames={cityNames}
           category={category}
           loading={!settled}
           tripId={trip.trip_id}

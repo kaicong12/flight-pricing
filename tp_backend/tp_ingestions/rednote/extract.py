@@ -21,13 +21,12 @@ log = logging.getLogger("rednote.extract")
 BODY_LIMIT = 6000
 
 
-def already_extracted(session: Session, source: Source, ref: str, prompt: Prompt) -> bool:
-    """uq_extraction_ref_version is how a source is never paid for twice, zero-yield notes included."""
+def already_extracted(session: Session, source: Source, ref: str, prompt: Prompt) -> int | None:
     return session.scalar(
-        select(Extraction.id).where(Extraction.source == source, Extraction.source_ref == ref,
-                                    Extraction.prompt_version == prompt.version_key,
-                                    Extraction.model == prompt.model)
-    ) is not None
+        select(Extraction.place_count).where(
+            Extraction.source == source, Extraction.source_ref == ref,
+            Extraction.prompt_version == prompt.version_key, Extraction.model == prompt.model)
+    )
 
 
 def city_name(session: Session, task: ClaimedTask) -> str:
@@ -38,10 +37,26 @@ def city_name(session: Session, task: ClaimedTask) -> str:
     return (city_id and session.scalar(select(City.name).where(City.city_id == city_id))) or ""
 
 
+def queue_ocr(session: Session, task: ClaimedTask, note: RedNotePost, city: str) -> int:
+    if not note.image_urls:
+        return 0
+    return enqueue(session, [
+        {"run_id": task.run_id, "kind": TaskKind.REDNOTE_OCR, "source": Source.REDNOTE,
+         "payload": {"note_id": note.note_id, "city_id": task.payload.get("city_id"),
+                     "city_name": city},
+         "dedupe_key": f"{TaskKind.REDNOTE_OCR}:{note.note_id}"}])
+
+
 def extract_note(session: Session, task: ClaimedTask, note: RedNotePost) -> dict:
     """Run REDNOTE_TEXT over the note's desc and record the result."""
-    if already_extracted(session, Source.REDNOTE, note.note_id, REDNOTE_TEXT):
-        return {"note_id": note.note_id, "cached": True}
+    cached = already_extracted(session, Source.REDNOTE, note.note_id, REDNOTE_TEXT)
+    if cached is not None:
+        return {"note_id": note.note_id, "cached": True,
+                "ocr_queued": 0 if cached
+                else queue_ocr(session, task, note, city_name(session, task)),
+                "resolve_queued": enqueue_resolve(
+                    session, task, Source.REDNOTE, note.note_id, REDNOTE_TEXT.version_key,
+                    REDNOTE_TEXT.model) if cached else 0}
 
     city = city_name(session, task)
     rendered = REDNOTE_TEXT.render(city=city, title=note.title or "",
@@ -58,13 +73,7 @@ def extract_note(session: Session, task: ClaimedTask, note: RedNotePost) -> dict
         place_count=len(places), result=result))
 
     # Desc-first: OCR is ~10x the tokens, so it runs only for the ~38% of notes whose text names nothing.
-    queued = 0
-    if not places and note.image_urls:
-        queued = enqueue(session, [
-            {"run_id": task.run_id, "kind": TaskKind.REDNOTE_OCR, "source": Source.REDNOTE,
-             "payload": {"note_id": note.note_id, "city_id": task.payload.get("city_id"),
-                         "city_name": city},
-             "dedupe_key": f"{TaskKind.REDNOTE_OCR}:{note.note_id}"}])
+    queued = 0 if places else queue_ocr(session, task, note, city)
 
     resolve = enqueue_resolve(session, task, Source.REDNOTE, note.note_id,
                               REDNOTE_TEXT.version_key, REDNOTE_TEXT.model) if places else 0

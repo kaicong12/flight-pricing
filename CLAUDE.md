@@ -1,6 +1,6 @@
 # Trip Planner
 
-User enters a city, dates, flight times and one sentence about themselves. We shortlist places from
+User enters one or more cities, dates, flight times and one sentence about themselves. We shortlist places from
 travel videos and posts, show them as a list beside a map, and the user drags them into order. We
 route that exact sequence and warn about anything that doesn't work.
 
@@ -11,7 +11,7 @@ route that exact sequence and warn about anything that doesn't work.
 | Collaboration | `user_trips.role`: owner, editor, viewer. Editors edit the itinerary directly — no approval step |
 | Auth | Google sign-in. Opaque session token in Postgres, not a JWT — sign out revokes. A sign-in sweeps expired rows, so the table needs no cron |
 | Flights | Input only in v1 |
-| Cities | Any city on demand — async ingestion, client polls |
+| Cities | Any city on demand — async ingestion, client polls. A trip covers several: `trip_cities` is the coverage, `trips.city_id` only the anchor the UI renders |
 | Stack | Next.js + Postgres, TypeScript web, **Python worker** (keeps the spike scripts) |
 | Queue | Postgres `SKIP LOCKED`. Not `pg-boss` (Node-only). No Redis — the work is quota-bound |
 | Deploy | Railway/Render/Fly first, EKS later |
@@ -34,10 +34,16 @@ needs no validation. That is what keeps a JWT library out of the dependencies. `
 venue's identity and Google's `sub` is a person's, but `users.user_id` is our own uuid: sharing a
 trip with a friend who has never signed in needs a row before any `sub` exists.
 
-**1. Create.** `POST /initiate-plan` resolves the city through Google Places, writes a `trips` row,
-and calls `ensure_city_ingest`. A city ingested within `city_refresh_days` (30) is warm and queues
-nothing; otherwise this creates one `ingest_runs` row plus its seed tasks. Two friends planning the
-same city join one run — a unique index on active runs per city enforces that.
+**1. Create.** The form collects cities as removable chips — the first one marked `anchor` — and
+`POST /initiate-plan` takes that `city_place_ids` list, resolves each through Google Places,
+writes a `trips` row plus one `trip_cities` row per city, and calls `ensure_city_ingest` for each.
+The first city is the **anchor**: `trips.city_id`, what every card renders and what biases
+autocomplete. `trip_cities` is the coverage, and it is what everything downstream reads —
+`places.city_id` never decides who can see a place. Dedupe is keyed on the *resolved* id, because
+Places answers an alias with the canonical one. A city ingested within `city_refresh_days` (30) is
+warm and queues nothing; otherwise this creates one `ingest_runs` row per cold city plus its seed
+tasks. Two friends planning the same city join one run — a unique index on active runs per city
+enforces that, across trips and across the cities of one trip.
 
 **2. Discover.** The worker claims tasks with `FOR UPDATE SKIP LOCKED`. Seed tasks are
 `youtube.search` (one per language) and `rednote.search`; their handlers fan out one task per video
@@ -49,7 +55,10 @@ back a paid fetch: `rednote.fetch` stores the body and queues `rednote.extract`,
 `youtube.extract` commits the transcript before it calls Gemini. A failed extraction therefore
 retries against stored text and spends no RedNote call. OCR is a separate task too, queued only when
 the note's `desc` named nothing. Output is candidate place *names* in `extractions` — prose and
-opinion only, never facts.
+opinion only, never facts. Two cities of one trip can both find the same note or video: the **fetch
+is paid once** — a stored body drops straight through to the extract — while the extract, the OCR and
+the resolution all stay **per city**, since the second city's venues fall outside the first's
+geofence and resolving once is how a multi-city trip loses half of a shared source.
 
 **4. Resolve.** `places.resolve` turns one extraction's candidates into `places` + `place_mentions`
 via Places `searchText`. **`place_id` is the identity, never the name** — that is what makes two
@@ -57,9 +66,15 @@ sources naming one venue count once, and what makes the LLM's run-to-run renamin
 `place_queries` caches hits only, so a repeat pass over a city is cheap.
 
 **5. Watch.** `GET /trips/{id}` returns the trip plus a group-by of its tasks; `GET /trips` returns
-one row per trip for the list. The client polls until the run reaches a terminal status.
-`DELETE /trips/{id}` sets `trips.deleted`, which drops it from the list — soft, because the ordering
-work is worth more than the row.
+one row per trip for the list. Both carry `cities`, anchor first. **One status for the whole trip**, so
+the client's terminal check needs to know nothing about how many cities it covers: still ingesting
+until *every* city has settled, and the task counts are summed across every city's run rather than
+reporting whichever one is representative. A warm city queues no run at all, and no active run means
+already settled — otherwise a trip would poll forever for a row that never comes. The client polls
+until that status is terminal. One `cityNames` in `lib/trips.ts` is every screen's title — card,
+checklist and plan header all read "Singapore + Helsinki", so no screen names the anchor as if it
+were the trip. `DELETE /trips/{id}` sets `trips.deleted`, which drops it from the
+list — soft, because the ordering work is worth more than the row.
 
 **5b. Share.** `user_trips.role` is the whole permission model: `require_trip_access` returns the
 caller's role and `require_edit`/`require_admin` compose on top, so a role is checked where the route
@@ -73,17 +88,22 @@ mention as a link back to the video or note that named it. **The set is trip-sco
 trip claimed in `trip_places`, and nothing else — one predicate, `service.in_shortlist`, that
 `replace_days`, `add_dismissal` and `GET /trips`' place count all share. Passed the `Trip` class
 rather than a row, it correlates instead of naming one trip, which is how that count stays one query.
-A claim is written three ways, all `ON CONFLICT DO NOTHING`: `/initiate-plan` claims the city's
-existing places, `places.resolve` claims each place it touches for every live trip in that city, and
-`plan_after_ingest` re-claims for every trip when a run settles — which is what a trip created
-mid-run catches up on, since neither side can see the other's uncommitted rows. `places.city_id` is
+A claim is written three ways, all `ON CONFLICT DO NOTHING`, and each of them runs once per city the
+trip covers: `/initiate-plan` claims every city's existing places, `places.resolve` claims each place
+it touches for every live trip *covering* that city — `covers_city` over `trip_cities`, never
+`trips.city_id` — and `plan_after_ingest` re-claims all of a trip's cities whenever any one of its
+runs settles, which is what a trip created mid-run catches up on, since neither side can see the
+other's uncommitted rows. A city's places are whatever `places.city_id` **or** `place_queries` names,
+so a venue this city resolved but another city had already stored still reaches the trip.
+`places.city_id` is
 therefore only where a place was first found; it never decides who can see it, so a venue added from
 another city is no longer filed wrong in any way that shows. Dismissals stay their own table: a later
 ingestion re-claiming a place must not resurrect one struck off. Visibility is never
 decided by `places.category`, which is a row the whole city shares. `GET
 /trips/{id}/places/search` and `POST /trips/{id}/places` add one the videos never named, from a modal
-on the plan screen: autocomplete *biased* toward the city, then Place Details on the pick, then the
-same `places` row an ingestion would have written, claimed for this trip. **Nothing checks it is near
+on the plan screen: autocomplete *biased* toward the anchor, then Place Details on the pick, then the
+same `places` row an ingestion would have written, filed under whichever of the trip's cities is
+nearest and claimed for this trip. **Nothing checks it is near
 the city** — a place across the country is a legitimate thing to plan, because no distance is modelled
 anywhere, and a bias rather than a `locationRestriction` is what lets the modal find one. Resolution
 keeps its hard box: `search_venue` is guessing at a name and needs the geography to hold it down. It ranks last with no mentions, so the client prepends it. **A category is compulsory**, and
@@ -92,8 +112,11 @@ is the one thing `places.category` exists for: every other category is a majorit
 every filter chip. A person's answer beats the videos'. The user drags
 them into days; `PUT /trips/{id}/itinerary` replaces whole days, because a drag is a statement about
 a sequence and positions are dense and derived. `POST /trips/{id}/days/{n}/route` then checks that
-exact order against Place Details hours and local daylight and returns structured warning codes — the
-client owns the English. **Travel between blocks is not modelled at all** — not the time, not the
+exact order against Place Details hours and daylight and returns structured warning codes — the
+client owns the English. **Daylight is per place, not per trip**: the sun is computed from each
+block's own lat/lon in its own city's zone, so one day spanning two cities has two sunsets, and
+`first_daylight` reports the window of the first block that has one. **Travel between blocks is not
+modelled at all** — not the time, not the
 distance, not whether a route exists. A day may name two places on opposite sides of the world and
 nothing objects; the map draws numbered pins and no line. `itinerary_items.reference_url` is the
 user's own link on a block — a booking, a listing, a receipt — stored and opened, never fetched; the
@@ -106,8 +129,11 @@ the warning English lives in `export.py` because a spreadsheet has no client to 
 **7. Draft.** `route.plan` fills a trip's *empty* days so the plan screen opens filled — **one Gemini
 call in a loop, not an agent**: the shortlist is already a closed ranked set and `plan_day` already
 judges hours, so the model only proposes an arrangement and never goes looking. A day the user has
-touched is theirs. It is queued automatically once (warm city at `/initiate-plan`, otherwise when the
-city run settles DONE) and on demand by `POST /trips/{id}/draft`, which the plan screen's "Draft my
+touched is theirs. The shortlist it arranges is the trip's, so one draft covers every city at once.
+It is queued automatically once — at `/initiate-plan` when every city was warm, otherwise by the
+last run to settle, and only when **every** city has settled and **at least one** reached DONE, so a
+half-ingested trip is never drafted and a trip with one failed city still is — and on demand by
+`POST /trips/{id}/draft`, which the plan screen's "Draft my
 days" button calls. `GET /trips/{id}` reports the task as `draft` plus a progress row, which is what
 the checklist polls — without it a draft in flight looks like a feature that does not exist.
 
@@ -155,6 +181,8 @@ Proven live on Tromsø, Bergen, Porto and Singapore (~36 tasks each). Tromsø's 
 end to end: real opening hours and a `closes_before_done` warning. The trips
 themselves were deleted when `user_trips` arrived, since they predate any owner — the cities and
 places are city-scoped and stayed, so re-creating a Tromsø trip is warm and re-tests the same path.
+A Helsinki + Singapore trip proves the multi-city path on warm cities: one interleaved shortlist, one
+draft over both, and a single day whose two blocks are judged against two different sunsets.
 
 # Sources
 

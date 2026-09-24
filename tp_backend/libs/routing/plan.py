@@ -1,7 +1,7 @@
 """Check one day of pinned activity blocks and say what is wrong with it.
 
-Pure: the caller supplies the hours and the daylight, so this never touches the network and the whole
-of the validation is testable.
+Pure: every stop arrives carrying its own hours and its own sunset, so this never touches the network
+and the whole of the validation is testable.
 
 Every block carries its own start time. Nothing here derives a time and nothing here moves a block —
 the user put it at 14:00, so it stays at 14:00 and the warnings say what does not work.
@@ -42,6 +42,7 @@ class Stop:
     start_min: int
     duration_min: int
     periods: list[dict] | None = None  # None = never fetched; [] = Places publishes none
+    sunset_min: float | None = None
 
 
 @dataclass(frozen=True)
@@ -80,16 +81,7 @@ def in_time_order(stops: list[Stop]) -> list[Stop]:
     return sorted(stops, key=lambda s: (s.start_min, s.place_id))
 
 
-def plan_day(
-    stops: list[Stop],
-    *,
-    weekday: int,
-    sunset_min: float | None = None,
-) -> DayPlan:
-    """Validate a day of pinned blocks.
-
-    `stops` may arrive in any order. `weekday` is Google's 0=Sunday.
-    """
+def plan_day(stops: list[Stop], *, weekday: int) -> DayPlan:
     blocks: list[Block] = []
     warnings: list[PlanWarning] = []
 
@@ -115,9 +107,11 @@ def plan_day(
                     "name": stop.name, "start": hhmm(stop.start_min),
                     "need_min": stop.duration_min, "closes": hhmm(open_to)}))
 
-        if (stop.category in OUTDOOR) and sunset_min is not None and stop.start_min > sunset_min:
+        if (stop.category in OUTDOOR) and stop.sunset_min is not None \
+                and stop.start_min > stop.sunset_min:
             warnings.append(PlanWarning(AFTER_SUNSET, stop.place_id, {
-                "name": stop.name, "start": hhmm(stop.start_min), "sunset": hhmm(sunset_min)}))
+                "name": stop.name, "start": hhmm(stop.start_min),
+                "sunset": hhmm(stop.sunset_min)}))
 
         blocks.append(Block(place_id=stop.place_id, name=stop.name, start_min=stop.start_min,
                             end_min=end_min, duration_min=stop.duration_min,

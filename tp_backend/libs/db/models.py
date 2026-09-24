@@ -136,11 +136,6 @@ class UserSession(Base):
 
 
 class Trip(Base):
-    """One person's plan for a city. Dates and times are local wall clock; the zone is city.timezone.
-
-    Storing an instant instead would drift, because a trip months out can cross a DST boundary.
-    """
-
     __tablename__ = "trips"
     __table_args__ = (
         CheckConstraint("depart_date >= arrive_date", name="ck_trip_dates"),
@@ -289,6 +284,16 @@ class TripPlace(Base):
     trip_id: Mapped[str] = mapped_column(ForeignKey("trips.trip_id", ondelete="CASCADE"),
                                          primary_key=True)
     place_id: Mapped[str] = mapped_column(ForeignKey("places.place_id"), primary_key=True)
+    created_at: Mapped[datetime] = _ts(nullable=False, server_default=func.now())
+
+
+class TripCity(Base):
+    __tablename__ = "trip_cities"
+    __table_args__ = (Index("ix_trip_cities_city", "city_id"),)
+
+    trip_id: Mapped[str] = mapped_column(ForeignKey("trips.trip_id", ondelete="CASCADE"),
+                                         primary_key=True)
+    city_id: Mapped[str] = mapped_column(ForeignKey("cities.city_id"), primary_key=True)
     created_at: Mapped[datetime] = _ts(nullable=False, server_default=func.now())
 
 

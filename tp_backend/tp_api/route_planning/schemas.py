@@ -33,6 +33,7 @@ class SourceRefOut(BaseModel):
 
 class ShortlistPlaceOut(BaseModel):
     place_id: str
+    city_id: str
     name: str
     address: str | None = None
     lat: float | None = None

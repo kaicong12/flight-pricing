@@ -128,6 +128,7 @@ def test_a_finished_draft_can_be_asked_for_again(client, db):
     assert client.post(f"/trips/{trip_id}/draft").json()["status"] == TaskStatus.PENDING
     assert db.scalars(
         select(IngestTask.status).where(IngestTask.kind == TaskKind.ROUTE_PLAN)
+        .order_by(IngestTask.task_id)
     ).all() == [TaskStatus.DONE, TaskStatus.PENDING]
 
 
