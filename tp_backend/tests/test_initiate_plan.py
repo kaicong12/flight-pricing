@@ -9,10 +9,7 @@ from libs.db import City, IngestRun, IngestTask, Place, Trip, TripPlace
 from libs.db.enums import Confidence, RunStatus, TaskKind
 from libs.ingest import plan_after_ingest
 from libs.places import NotACity, PlacesError
-from tp_api.schemas import (
-    MAX_TRIP_DAYS,
-    today_utc,
-)
+from tp_api.schemas import today_utc
 
 
 def test_creates_trip_city_run_and_search_tasks(client, db):
@@ -132,14 +129,6 @@ def test_past_arrival_is_rejected(client):
     past = today_utc() - timedelta(days=5)
     r = client.post("/initiate-plan", json=plan_body(
         arrive_date=past.isoformat(), depart_date=today_utc().isoformat()))
-    assert r.status_code == 422
-
-
-def test_overlong_trip_is_rejected(client):
-    arrive = today_utc() + timedelta(days=10)
-    r = client.post("/initiate-plan", json=plan_body(
-        arrive_date=arrive.isoformat(),
-        depart_date=(arrive + timedelta(days=MAX_TRIP_DAYS + 1)).isoformat()))
     assert r.status_code == 422
 
 

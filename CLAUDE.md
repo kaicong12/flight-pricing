@@ -120,11 +120,29 @@ modelled at all** — not the time, not the
 distance, not whether a route exists. A day may name two places on opposite sides of the world and
 nothing objects; the map draws numbered pins and no line. `itinerary_items.reference_url` is the
 user's own link on a block — a booking, a listing, a receipt — stored and opened, never fetched; the
-plan screen edits it from the block itself and saving one does not re-check the day. `GET
-/trips/{id}/export.xlsx` is those same days as a workbook: Itinerary, a band per day and the warning
-in the app's own amber and clay, with a `Ref` column **only when some block has a link**, plus
-Shortlist, whose `Source` column is the video or note that named the place. It re-reads hours, and
-the warning English lives in `export.py` because a spreadsheet has no client to own it.
+plan screen edits it from the block itself and saving one does not re-check the day.
+
+**A block need not be a place.** A flight, a hotel night, a booked husky sled: `itinerary_items.kind`
+is `place` or `custom`, and a `ck_itinerary_identity` CHECK makes it either a `place_id` or a
+`block_id` + `title`, never both. The identity is the client-minted `block_id`, **not the title** — the
+same stay appears on three nights and two legs of one journey share a name, so a name could never
+address a row. `keyOf()` is the client's one identity helper for the same reason. Postgres counts
+NULLs as distinct, so `uq_itinerary_trip_place` and `uq_itinerary_trip_block` coexist with no partial
+index. A custom block carries a `description` — the booking reference, the terminal, the address —
+which is the whole point: it is where a flight or an accommodation is found again. It builds no `Stop`,
+so `plan_day` never judges it against hours or daylight and `route_day` fetches hours only for the
+places; `first_daylight` therefore reports the first block that *has* a sun, which is why an
+all-flight day shows no daylight at all. `route.plan` reads them as `own_blocks` and drops any pick
+that overlaps one — a day holding just a flight is still an empty day to draft around. The plan grid
+reveals a **"+" on hover** over any free slot, CSS-only via `group/slot`, and the dialog is mounted
+only while open so its `key` resets it rather than an effect.
+
+`GET /trips/{id}/export.xlsx` is those same days as a workbook: Itinerary, a band per day and the
+warning in the app's own amber and clay, with a `Ref` column **only when some block has a link** and a
+`Details` column only when one has a description, plus Shortlist, whose `Source` column is the video
+or note that named the place. Day and Date are **merged down each day's rows**, so the number is
+written once rather than repeated beside every block. It re-reads hours, and the warning English lives
+in `export.py` because a spreadsheet has no client to own it.
 
 **7. Draft.** `route.plan` fills a trip's *empty* days so the plan screen opens filled — **one Gemini
 call in a loop, not an agent**: the shortlist is already a closed ranked set and `plan_day` already
@@ -183,6 +201,14 @@ themselves were deleted when `user_trips` arrived, since they predate any owner 
 places are city-scoped and stayed, so re-creating a Tromsø trip is warm and re-tests the same path.
 A Helsinki + Singapore trip proves the multi-city path on warm cities: one interleaved shortlist, one
 draft over both, and a single day whose two blocks are judged against two different sunsets.
+
+A **six-city, 14-day Nordic trip** — Oslo, Stockholm, Rovaniemi, Tromsø, Helsinki, Tallinn, 462 places
+— is the end-to-end proof: every city warm, all 14 days drafted automatically, then 22 custom blocks
+for the flights, the five stays, the husky sled, the reindeer camp, the aurora chase and both Tallinn
+ferries. Four days that `route_day` flagged (a coffee bar before it opened, a bistro that does Tuesday
+lunch only) were re-arranged until clean; what still warns is honest — Google has no hours for the
+Oslo Opera House roof, and Tromsø's polar night means days 9–11 report no daylight window at all
+because the sun does not rise.
 
 # Sources
 

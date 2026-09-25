@@ -32,7 +32,7 @@ from libs.db import (
 )
 from libs.db.enums import Confidence, Sentiment, Source
 from libs.places import PlacesError, distance_km
-from libs.routing import Stop, hhmm, plan_day, sun_times
+from libs.routing import Block, Stop, hhmm, plan_day, sun_times
 from libs.settings import settings
 from tp_api.deps import HoursLookup, VenueLookup, VenueSearch
 from tp_api.route_planning.schemas import (
@@ -208,14 +208,28 @@ def shortlist(db: Session, trip_id: str, limit: int, offset: int,
     return ShortlistOut(total=rows[0].total if rows else 0, shown=len(places), places=places)
 
 
+def block_out(item: ItineraryItem, routed: Block | None) -> BlockOut:
+    """One row as the client reads it: a judged place block, or a custom one echoed as stored."""
+    if routed is None:
+        return BlockOut(kind=item.kind, block_id=item.block_id, name=item.title,
+                        description=item.description, start=hhmm(item.start_min),
+                        end=hhmm(item.start_min + item.duration_min),
+                        duration_min=item.duration_min)
+    return BlockOut(kind=item.kind, place_id=routed.place_id, name=routed.name,
+                    start=hhmm(routed.start_min), end=hhmm(routed.end_min),
+                    duration_min=routed.duration_min,
+                    open_from=hhmm(routed.open_from) if routed.open_from is not None else None,
+                    open_to=hhmm(routed.open_to) if routed.open_to is not None else None)
+
+
 def day_rows(db: Session, trip_id: str,
-             day_index: int | None = None) -> list[Row[tuple[ItineraryItem, Place]]]:
-    """One day's stored items, or the whole trip's, each joined to its place and in order."""
+             day_index: int | None = None) -> list[Row[tuple[ItineraryItem, Place | None]]]:
+    """One day's stored items, or the whole trip's, in order. A custom block has no place."""
     stmt = (
         select(ItineraryItem, Place)
-        .join(Place, Place.place_id == ItineraryItem.place_id)
+        .outerjoin(Place, Place.place_id == ItineraryItem.place_id)
         .where(ItineraryItem.trip_id == trip_id)
-        .order_by(ItineraryItem.day_index, ItineraryItem.start_min, ItineraryItem.place_id)
+        .order_by(ItineraryItem.day_index, ItineraryItem.start_min, ItineraryItem.id)
     )
     if day_index is not None:
         stmt = stmt.where(ItineraryItem.day_index == day_index)
@@ -225,7 +239,7 @@ def day_rows(db: Session, trip_id: str,
 def read_days(db: Session, trip: Trip) -> ItineraryOut:
     """Every day of the trip, empty ones included, so the client never derives the dates itself."""
     rows = day_rows(db, trip.trip_id)
-    facts = mention_facts(db, [r.Place.place_id for r in rows])
+    facts = mention_facts(db, [r.Place.place_id for r in rows if r.Place])
 
     days = [DayOut(day_index=i, date=trip.arrive_date + timedelta(days=i), items=[])
             for i in range(day_count(trip))]
@@ -234,10 +248,13 @@ def read_days(db: Session, trip: Trip) -> ItineraryOut:
         if item.day_index >= len(days):
             continue
         days[item.day_index].items.append(ItemOut(
-            place_id=place.place_id, name=place.name, lat=place.lat, lon=place.lon,
+            kind=item.kind, place_id=item.place_id, block_id=item.block_id,
+            name=place.name if place else item.title, description=item.description,
+            lat=place.lat if place else None, lon=place.lon if place else None,
             start_min=item.start_min, duration_min=item.duration_min,
-            category=category_of(place, facts),
-            primary_type=place.primary_type, reference_url=item.reference_url,
+            category=category_of(place, facts) if place else None,
+            primary_type=place.primary_type if place else None,
+            reference_url=item.reference_url,
         ))
     return ItineraryOut(days=days)
 
@@ -263,9 +280,13 @@ def replace_days(db: Session, trip_id: str, body: ItineraryIn) -> ItineraryOut:
                     f"{hhmm(item.start_min)} for {item.duration_min} min does not fit",
                 )
 
-    place_ids = [i.place_id for d in body.days for i in d.items]
+    items = [i for d in body.days for i in d.items]
+    place_ids = [i.place_id for i in items if i.place_id]
+    block_ids = [i.block_id for i in items if i.block_id]
     if len(set(place_ids)) != len(place_ids):
         raise HTTPException(422, "a place is listed twice")
+    if len(set(block_ids)) != len(block_ids):
+        raise HTTPException(422, "a block is listed twice")
 
     if place_ids:
         known = set(db.scalars(
@@ -275,16 +296,20 @@ def replace_days(db: Session, trip_id: str, body: ItineraryIn) -> ItineraryOut:
         if missing:
             raise HTTPException(422, f"not a place on this trip: {missing[0]}")
 
-    # Delete by submitted place_id as well as by day, so dragging a place in from an unlisted day
-    # moves it instead of colliding with uq_itinerary_trip_place.
+    # Delete by submitted identity too: a block dragged in from an unlisted day would otherwise
+    # collide with uq_itinerary_trip_place or uq_itinerary_trip_block.
     conditions = [ItineraryItem.day_index.in_([d.day_index for d in body.days])]
     if place_ids:
         conditions.append(ItineraryItem.place_id.in_(place_ids))
+    if block_ids:
+        conditions.append(ItineraryItem.block_id.in_(block_ids))
     db.execute(delete(ItineraryItem).where(ItineraryItem.trip_id == trip_id, or_(*conditions)))
 
     for d in body.days:
         for item in d.items:
-            db.add(ItineraryItem(trip_id=trip_id, place_id=item.place_id, day_index=d.day_index,
+            db.add(ItineraryItem(trip_id=trip_id, kind=item.kind, place_id=item.place_id,
+                                 block_id=item.block_id, title=item.title,
+                                 description=item.description, day_index=d.day_index,
                                  start_min=item.start_min, duration_min=item.duration_min,
                                  reference_url=item.reference_url))
     db.commit()
@@ -481,11 +506,13 @@ def route_day(db: Session, trip_id: str, day_index: int,
     # The day starts when its first block does. Rows are already in time order.
     start = time(rows[0].ItineraryItem.start_min // 60, rows[0].ItineraryItem.start_min % 60)
 
-    place_ids = [r.Place.place_id for r in rows]
+    # A custom block has no hours to judge, so it is echoed back in time order and never routed.
+    place_rows = [r for r in rows if r.Place]
+    place_ids = [r.Place.place_id for r in place_rows]
     facts = mention_facts(db, place_ids)
     hours = load_hours(db, place_ids, fetch_hours)
 
-    sun = sun_by_place(db, [r.Place for r in rows], day_date, hours)
+    sun = sun_by_place(db, [r.Place for r in place_rows], day_date, hours)
     sunrise, sunset = first_daylight(sun, place_ids)
 
     stops = [
@@ -494,17 +521,14 @@ def route_day(db: Session, trip_id: str, day_index: int,
              start_min=r.ItineraryItem.start_min, duration_min=r.ItineraryItem.duration_min,
              periods=hours[r.Place.place_id].periods if r.Place.place_id in hours else None,
              sunset_min=sun.get(r.Place.place_id, (None, None))[1])
-        for r in rows
+        for r in place_rows
     ]
     plan = plan_day(stops, weekday=google_weekday(day_date))
+    routed = {b.place_id: b for b in plan.blocks}
 
     return DayRouteOut(
         day_index=day_index, date=day_date, start_time=start,
-        blocks=[BlockOut(place_id=b.place_id, name=b.name, start=hhmm(b.start_min),
-                         end=hhmm(b.end_min), duration_min=b.duration_min,
-                         open_from=hhmm(b.open_from) if b.open_from is not None else None,
-                         open_to=hhmm(b.open_to) if b.open_to is not None else None)
-                for b in plan.blocks],
+        blocks=[block_out(r.ItineraryItem, routed.get(r.ItineraryItem.place_id)) for r in rows],
         daylight=(DaylightOut(sunrise=hhmm(sunrise), sunset=hhmm(sunset))
                   if sunrise is not None and sunset is not None else None),
         warnings=[WarningOut(code=w.code, place_id=w.place_id, detail=w.detail)

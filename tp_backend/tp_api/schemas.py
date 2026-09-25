@@ -5,8 +5,6 @@ from typing import Annotated
 
 from pydantic import BaseModel, Field, model_validator
 
-MAX_TRIP_DAYS = 14
-MAX_TRIP_CITIES = 5
 
 def today_utc() -> date:
     """Trip dates are local to the city, so compare against UTC and allow a day of slack."""
@@ -22,7 +20,7 @@ class TripPatch(BaseModel):
 
 class InitiatePlanRequest(BaseModel):
     city_place_ids: list[Annotated[str, Field(min_length=1, max_length=255)]] = Field(
-        min_length=1, max_length=MAX_TRIP_CITIES)
+        min_length=1)
     name: str | None = Field(default=None, max_length=NAME_MAX)
     arrive_date: date
     arrive_time: time | None = None
@@ -34,8 +32,6 @@ class InitiatePlanRequest(BaseModel):
     def _check_span(self):
         if self.depart_date < self.arrive_date:
             raise ValueError("depart_date is before arrive_date")
-        if (self.depart_date - self.arrive_date).days > MAX_TRIP_DAYS:
-            raise ValueError(f"trip is longer than {MAX_TRIP_DAYS} days")
         if self.arrive_date < today_utc() - timedelta(days=1):
             raise ValueError("arrive_date is in the past")
         return self

@@ -12,7 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from libs.db import City, ItineraryItem, Trip, trip_cities
-from libs.db.enums import TaskKind
+from libs.db.enums import BlockKind, TaskKind
 from libs.gemini import generate
 from libs.places import distance_km
 from libs.prompts import ITINERARY_DRAFT
@@ -49,7 +49,29 @@ def clock(m: int) -> str:
     return "24:00" if m >= 24 * 60 else hhmm(m)
 
 
-def render(session: Session, trip: Trip, places, open_days, feedback: str = "") -> str:
+def own_blocks(session: Session, trip_id: str) -> dict[int, list[ItemIn]]:
+    """The user's own blocks per day — flights, stays, bookings.
+
+    A drafted day schedules around them and re-submits them, because replace_days rewrites the day
+    whole and would otherwise drop what the user typed.
+    """
+    rows = session.execute(
+        select(ItineraryItem.day_index, ItineraryItem.block_id, ItineraryItem.title,
+               ItineraryItem.description, ItineraryItem.start_min, ItineraryItem.duration_min,
+               ItineraryItem.reference_url)
+        .where(ItineraryItem.trip_id == trip_id, ItineraryItem.kind == BlockKind.CUSTOM)).all()
+
+    out: dict[int, list[ItemIn]] = {}
+    for r in rows:
+        out.setdefault(r.day_index, []).append(
+            ItemIn(kind=BlockKind.CUSTOM, block_id=r.block_id, title=r.title,
+                   description=r.description, start_min=r.start_min,
+                   duration_min=r.duration_min, reference_url=r.reference_url))
+    return out
+
+
+def render(session: Session, trip: Trip, places, open_days, feedback: str = "",
+           own=None) -> str:
     """The whole prompt: the candidates, and the clock facts the model needs to time them."""
     cities = trip_cities(session, trip)
     by_id = {c.city_id: c for c in cities}
@@ -79,6 +101,9 @@ def render(session: Session, trip: Trip, places, open_days, feedback: str = "") 
             rise, set_ = sun_times(d, c.lat, c.lon, tz_minutes(c, d, None))
             if rise is not None:
                 line += f", {c.name} sunrise {hhmm(rise)} sunset {hhmm(set_)}"
+        for b in (own or {}).get(i, ()):
+            line += (f", BUSY {clock(b.start_min)}-{clock(b.start_min + b.duration_min)} "
+                     f"({b.title}) — leave this time free")
         days.append(line)
 
     return ITINERARY_DRAFT.render(
@@ -92,9 +117,10 @@ def render(session: Session, trip: Trip, places, open_days, feedback: str = "") 
     )
 
 
-def keep(trip: Trip, reply: dict, n: int, open_days, shut=()) -> dict:
+def keep(trip: Trip, reply: dict, n: int, open_days, shut=(), own=None) -> dict:
     """Refuse what replace_days would 422 — bad index, bad day, repeat, off-grid, no fit — and
-    anything already proven closed all day, which no amount of asking stops the model reusing."""
+    anything already proven closed all day, which no amount of asking stops the model reusing.
+    A pick overlapping one of the user's own blocks goes too: that time is already spoken for."""
     out, seen = {}, set()
     for d in reply.get("days") or []:
         day = d.get("day")
@@ -102,6 +128,7 @@ def keep(trip: Trip, reply: dict, n: int, open_days, shut=()) -> dict:
             continue
         first, last = window(trip, day)
         floor = -(-first // SLOT_MIN) * SLOT_MIN  # ceiling-divide: first grid minute after landing
+        busy = [(b.start_min, b.start_min + b.duration_min) for b in (own or {}).get(day, ())]
 
         chosen = []
         for it in d.get("picks") or []:
@@ -110,7 +137,7 @@ def keep(trip: Trip, reply: dict, n: int, open_days, shut=()) -> dict:
                 continue
             start = max(floor, snap(it.get("start_min", floor)))
             dur = max(SLOT_MIN, snap(it.get("duration_min", 60)))
-            if start + dur > last:
+            if start + dur > last or any(start < e and s < start + dur for s, e in busy):
                 continue
             seen.add(i)
             chosen.append((i, start, dur))
@@ -148,7 +175,7 @@ def problems(session: Session, trip: Trip, chosen: dict, places) -> dict:
     return out
 
 
-def propose(session: Session, trip: Trip, places, open_days) -> tuple[dict, int, dict]:
+def propose(session: Session, trip: Trip, places, open_days, own=None) -> tuple[dict, int, dict]:
     """Propose, let plan_day judge, hand back the named violations.
 
     Stops clean, or the first round that fails to beat the best so far, and always returns that best.
@@ -156,8 +183,8 @@ def propose(session: Session, trip: Trip, places, open_days) -> tuple[dict, int,
     best, fewest, feedback, shut = ({}, {}), None, "", set()
     for r in range(1, ROUNDS + 1):
         limits.gemini().take()
-        reply = generate(ITINERARY_DRAFT, render(session, trip, places, open_days, feedback))
-        chosen = keep(trip, reply, len(places), open_days, shut)
+        reply = generate(ITINERARY_DRAFT, render(session, trip, places, open_days, feedback, own))
+        chosen = keep(trip, reply, len(places), open_days, shut, own)
         bad = problems(session, trip, chosen, places)
 
         n = sum(map(len, bad.values()))
@@ -183,22 +210,26 @@ def run(session: Session, task: ClaimedTask) -> dict:
     if trip is None or trip.deleted:
         return {"skipped": "no such trip"}
 
+    # Only a place claims a day. A day holding just a flight is still open, and gets planned around it.
     taken = set(session.scalars(
-        select(ItineraryItem.day_index).where(ItineraryItem.trip_id == trip_id).distinct()
+        select(ItineraryItem.day_index).where(ItineraryItem.trip_id == trip_id,
+                                              ItineraryItem.kind == BlockKind.PLACE).distinct()
     ).all())
     open_days = [i for i in range(day_count(trip)) if i not in taken]
     if not open_days:
         return {"skipped": "every day already has items"}
+    own = own_blocks(session, trip_id)
 
     limit = LIMIT * len(trip_cities(session, trip))
     places = [p for p in shortlist(session, trip_id, limit, 0, None).places if not p.in_itinerary]
     if not places:
         return {"skipped": "nothing resolved for this trip's cities yet"}
 
-    chosen, rounds, bad = propose(session, trip, places, open_days)
+    chosen, rounds, bad = propose(session, trip, places, open_days, own)
     days = [DayIn(day_index=day,
-                  items=[ItemIn(place_id=places[i].place_id, start_min=st, duration_min=du)
-                         for i, st, du in picks])
+                  items=own.get(day, [])
+                  + [ItemIn(place_id=places[i].place_id, start_min=st, duration_min=du)
+                     for i, st, du in picks])
             for day, picks in sorted(chosen.items()) if picks]
     if not days:
         return {"skipped": "nothing survived validation", "rounds": rounds}

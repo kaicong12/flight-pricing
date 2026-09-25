@@ -27,6 +27,7 @@ from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 from libs.db.enums import (
+    BlockKind,
     Category,
     Confidence,
     ErrorCode,
@@ -223,18 +224,28 @@ class PlaceMention(Base):
 
 
 class ItineraryItem(Base):
-    """One activity block: a place the user pinned to a time on a day.
+    """One activity block: a place the user pinned to a time on a day, or their own entry.
 
     `start_min` is local minutes past midnight and is the user's statement, never derived. Sequence
     falls out of it, so there is no position column — and two blocks may share a start time, because
     overlapping them is a legitimate thing to say about a day.
+
+    A `custom` block is a flight, a stay or a booking: it carries its own `title` and a client-minted
+    `block_id`, because the same title may repeat within one day and `place_id` is the only identity a
+    place block has.
     """
 
     __tablename__ = "itinerary_items"
     __table_args__ = (
         # A venue belongs to one day of a trip, which is what makes the shortlist's "already added"
-        # flag a join rather than a scan.
+        # flag a join rather than a scan. NULL place_ids are distinct, so custom rows sit outside it.
         UniqueConstraint("trip_id", "place_id", name="uq_itinerary_trip_place"),
+        UniqueConstraint("trip_id", "block_id", name="uq_itinerary_trip_block"),
+        _in("kind", BlockKind),
+        CheckConstraint(
+            "(kind = 'place' AND place_id IS NOT NULL AND title IS NULL AND block_id IS NULL) OR "
+            "(kind = 'custom' AND title IS NOT NULL AND place_id IS NULL AND block_id IS NOT NULL)",
+            name="ck_itinerary_identity"),
         CheckConstraint("day_index >= 0", name="ck_itinerary_day"),
         # End may run past midnight; a start may not, or it belongs to the next day.
         CheckConstraint("start_min >= 0 AND start_min < 1440", name="ck_itinerary_start"),
@@ -246,7 +257,12 @@ class ItineraryItem(Base):
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     trip_id: Mapped[str] = mapped_column(ForeignKey("trips.trip_id", ondelete="CASCADE"),
                                          nullable=False)
-    place_id: Mapped[str] = mapped_column(ForeignKey("places.place_id"), nullable=False)
+    kind: Mapped[str] = mapped_column(String(16), nullable=False,
+                                      server_default=BlockKind.PLACE)
+    place_id: Mapped[str | None] = mapped_column(ForeignKey("places.place_id"), nullable=True)
+    block_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    title: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
     day_index: Mapped[int] = mapped_column(Integer, nullable=False)
     start_min: Mapped[int] = mapped_column(Integer, nullable=False)
     duration_min: Mapped[int] = mapped_column(Integer, nullable=False)
@@ -255,7 +271,7 @@ class ItineraryItem(Base):
     updated_at: Mapped[datetime] = _ts(nullable=False, server_default=func.now(),
                                        onupdate=func.now())
 
-    place: Mapped[Place] = relationship()
+    place: Mapped[Place | None] = relationship()
 
 
 class TripDismissal(Base):

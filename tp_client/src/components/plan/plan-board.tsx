@@ -37,7 +37,13 @@ import type {
   Shortlist,
   ShortlistPlace,
 } from "@/lib/plan-types";
-import { DEFAULT_DURATION, MIN_DURATION, SLOT_MIN, availableWindow } from "@/lib/plan-types";
+import {
+  DEFAULT_DURATION,
+  MIN_DURATION,
+  SLOT_MIN,
+  availableWindow,
+  keyOf,
+} from "@/lib/plan-types";
 
 import { DayColumn } from "./day-column";
 import { DayMap } from "./day-map";
@@ -103,7 +109,11 @@ export function PlanBoard({
         days: days.map((index) => ({
           day_index: index,
           items: (state.days.find((d) => d.day_index === index)?.items ?? []).map((i) => ({
+            kind: i.kind,
             place_id: i.place_id,
+            block_id: i.block_id,
+            title: i.kind === "custom" ? i.name : null,
+            description: i.description,
             start_min: i.start_min,
             duration_min: i.duration_min,
             reference_url: i.reference_url,
@@ -266,12 +276,12 @@ export function PlanBoard({
       return;
     }
 
-    const placeId = activeId.slice("item:".length);
-    const fromDay = dayOf(state, placeId);
+    const key = activeId.slice("item:".length);
+    const fromDay = dayOf(state, key);
     if (fromDay === null) return;
 
     // toDay is the block's own day, never the drop's: dragging changes when, never which day.
-    dispatch({ type: "pin", placeId, fromDay, toDay: fromDay, startMin: slotMin });
+    dispatch({ type: "pin", key, fromDay, toDay: fromDay, startMin: slotMin });
   }
 
   if (!day) return null;
@@ -328,17 +338,21 @@ export function PlanBoard({
             stale={isStale}
             readOnly={!canEdit}
             available={availableWindow(trip, state.activeDay, state.days.length)}
-            onRemove={(placeId) =>
-              dispatch({ type: "remove", day: state.activeDay, placeId })
+            onRemove={(key) => dispatch({ type: "remove", day: state.activeDay, key })}
+            onReference={(key, url) =>
+              dispatch({ type: "reference", day: state.activeDay, key, url })
             }
-            onReference={(placeId, url) =>
-              dispatch({ type: "reference", day: state.activeDay, placeId, url })
+            onAddCustom={(startMin, draft, durationMin) =>
+              dispatch({ type: "addCustom", day: state.activeDay, startMin, durationMin, draft })
             }
-            onResize={(placeId, startMin, durationMin) => {
+            onEditCustom={(key, draft) =>
+              dispatch({ type: "editCustom", day: state.activeDay, key, draft })
+            }
+            onResize={(key, startMin, durationMin) => {
               // A top-edge drag changes both, so both go through, each guarded against a no-op.
-              dispatch({ type: "pin", placeId, fromDay: state.activeDay,
+              dispatch({ type: "pin", key, fromDay: state.activeDay,
                          toDay: state.activeDay, startMin });
-              dispatch({ type: "duration", day: state.activeDay, placeId,
+              dispatch({ type: "duration", day: state.activeDay, key,
                          minutes: durationMin });
             }}
           />
@@ -396,7 +410,7 @@ function labelFor(state: PlanState, dragId: string): string {
   }
   const id = dragId.slice("item:".length);
   for (const d of state.days) {
-    const found = d.items.find((i) => i.place_id === id);
+    const found = d.items.find((i) => keyOf(i) === id);
     if (found) return found.name;
   }
   return "Place";

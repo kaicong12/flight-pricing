@@ -46,9 +46,17 @@ export type VenueSuggestion = {
   context: string | null;
 };
 
+/** A venue from the shortlist, or the user's own entry — a flight, a stay, a booked activity. */
+export type BlockKind = "place" | "custom";
+
 export type ItineraryItem = {
-  place_id: string;
+  kind: BlockKind;
+  place_id: string | null;
+  /** A custom block's identity, minted here. A place block has none; its place_id is its identity. */
+  block_id: string | null;
   name: string;
+  /** Free text on a custom block: the flight number, the hotel address, the pickup point. */
+  description: string | null;
   lat: number | null;
   lon: number | null;
   /** Local minutes past midnight. The user's statement, never derived. */
@@ -60,6 +68,10 @@ export type ItineraryItem = {
   reference_url: string | null;
 };
 
+/** What identifies a block on screen and in the reducer. */
+export const keyOf = (i: { place_id: string | null; block_id: string | null }) =>
+  i.place_id ?? i.block_id ?? "";
+
 export type ItineraryDay = {
   day_index: number;
   date: string;
@@ -69,8 +81,11 @@ export type ItineraryDay = {
 export type Itinerary = { days: ItineraryDay[] };
 
 export type PlanBlock = {
-  place_id: string;
+  kind: BlockKind;
+  place_id: string | null;
+  block_id: string | null;
   name: string;
+  description: string | null;
   start: string;
   end: string;
   duration_min: number;
@@ -202,7 +217,7 @@ export type PlacedItem = { item: ItineraryItem; lane: number; lanes: number };
  */
 export function layout(items: ItineraryItem[]): PlacedItem[] {
   const sorted = [...items].sort(
-    (a, b) => a.start_min - b.start_min || a.place_id.localeCompare(b.place_id),
+    (a, b) => a.start_min - b.start_min || keyOf(a).localeCompare(keyOf(b)),
   );
   const out: PlacedItem[] = [];
   let cluster: PlacedItem[] = [];
