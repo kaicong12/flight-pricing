@@ -10,11 +10,20 @@
 import { useState } from "react";
 
 import { useDraggable } from "@dnd-kit/core";
-import { Link2, X } from "lucide-react";
+import { Link2, Pencil, X } from "lucide-react";
 
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import type { PlacedItem, PlanBlock, PlanWarning } from "@/lib/plan-types";
-import { DAY_START_MIN, MIN_DURATION, SLOT_MIN, endOf, hhmm, resize, slotAt } from "@/lib/plan-types";
+import {
+  DAY_START_MIN,
+  MIN_DURATION,
+  SLOT_MIN,
+  endOf,
+  hhmm,
+  keyOf,
+  resize,
+  slotAt,
+} from "@/lib/plan-types";
 import { cn } from "@/lib/utils";
 
 export function ActivityBlock({
@@ -26,6 +35,7 @@ export function ActivityBlock({
   onRemove,
   onReference,
   onResize,
+  onEdit,
 }: {
   placed: PlacedItem;
   block: PlanBlock | undefined;
@@ -35,13 +45,16 @@ export function ActivityBlock({
   onRemove: () => void;
   onReference: (url: string | null) => void;
   onResize: (startMin: number, durationMin: number) => void;
+  /** Given for a custom block only: a place's name and type are Google's, not the user's. */
+  onEdit?: () => void;
 }) {
   const { item, lane, lanes } = placed;
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
-    id: `item:${item.place_id}`,
+    id: `item:${keyOf(item)}`,
     data: { kind: "item", item },
     disabled: readOnly,
   });
+  const own = item.kind === "custom";
 
   const broken = warnings.length > 0;
   // At the 30-minute minimum there is only room for one line, so the times move to the title.
@@ -85,7 +98,11 @@ export function ActivityBlock({
       <div
         className={cn(
           "group/block relative flex h-full flex-col overflow-hidden border px-2.5 py-1",
-          broken ? "border-alert/45 bg-alert-bg" : "border-border bg-surface",
+          broken
+            ? "border-alert/45 bg-alert-bg"
+            : own
+              ? "border-dashed border-brand/50 bg-brand-bg"
+              : "border-border bg-surface",
           isDragging && "z-10 opacity-90 shadow-lift",
         )}
       >
@@ -122,6 +139,11 @@ export function ActivityBlock({
                 .join(" · ")}
             </p>
           )}
+          {item.description && (
+            <p className="mt-0.5 line-clamp-3 text-[11px] leading-[1.35] whitespace-pre-line text-ink-soft">
+              {item.description}
+            </p>
+          )}
         </div>
 
         {readOnly ? (
@@ -138,6 +160,18 @@ export function ActivityBlock({
           ) : null
         ) : (
           <>
+            {onEdit && (
+              <button
+                type="button"
+                onPointerDown={(e) => e.stopPropagation()}
+                onClick={onEdit}
+                aria-label={`Edit ${item.name}`}
+                className="absolute top-0.5 right-10.5 grid size-5 place-items-center rounded text-faint opacity-0 transition-opacity group-hover/block:opacity-100 hover:text-ink focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring/50"
+              >
+                <Pencil className="size-3" />
+              </button>
+            )}
+
             <Reference name={item.name} url={item.reference_url} onSave={onReference} />
 
             <button

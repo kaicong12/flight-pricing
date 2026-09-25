@@ -6,9 +6,9 @@ it already owns the copy for trip notes.
 
 from datetime import date, time, timedelta
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
-from libs.db.enums import Category
+from libs.db.enums import BlockKind, Category
 from tp_api.schemas import today_utc
 
 MAX_STOPS_PER_DAY = 25
@@ -23,6 +23,8 @@ SPECIAL_HOURS_HORIZON_DAYS = 7
 REGULAR_HOURS_ONLY_NOTE = "regular_hours_only"
 
 REFERENCE_URL_MAX = 2048
+TITLE_MAX = 120
+DESCRIPTION_MAX = 1000
 
 
 class SourceRefOut(BaseModel):
@@ -54,8 +56,13 @@ class ShortlistOut(BaseModel):
 
 
 class ItemOut(BaseModel):
-    place_id: str
+    """`name` resolves to the place's or the custom block's own title, so a client needs neither."""
+
+    kind: str = BlockKind.PLACE
+    place_id: str | None = None
+    block_id: str | None = None
     name: str
+    description: str | None = None
     lat: float | None = None
     lon: float | None = None
     start_min: int
@@ -76,14 +83,31 @@ class ItineraryOut(BaseModel):
 
 
 class ItemIn(BaseModel):
-    """A block the user pinned. Both times are grid-aligned, which the database also enforces."""
+    """A block the user pinned. Both times are grid-aligned, which the database also enforces.
 
-    place_id: str = Field(min_length=1, max_length=255)
+    A place block carries a `place_id`; a custom one carries a `block_id` the client minted and a
+    title. The database enforces the same either/or.
+    """
+
+    kind: BlockKind = BlockKind.PLACE
+    place_id: str | None = Field(default=None, min_length=1, max_length=255)
+    block_id: str | None = Field(default=None, min_length=1, max_length=36)
+    title: str | None = Field(default=None, min_length=1, max_length=TITLE_MAX)
+    description: str | None = Field(default=None, max_length=DESCRIPTION_MAX)
     start_min: int = Field(ge=0, lt=24 * 60, multiple_of=SLOT_MIN)
     duration_min: int = Field(ge=MIN_DURATION, le=24 * 60, multiple_of=SLOT_MIN)
     # Only the scheme is checked: a booking link is the user's to keep, and we never fetch it.
     reference_url: str | None = Field(default=None, max_length=REFERENCE_URL_MAX,
                                       pattern=r"^https?://\S+$")
+
+    @model_validator(mode="after")
+    def _check_identity(self):
+        if self.kind is BlockKind.PLACE:
+            if not self.place_id or self.block_id or self.title:
+                raise ValueError("a place block takes a place_id and nothing else")
+        elif not self.block_id or not self.title or self.place_id:
+            raise ValueError("a custom block takes a block_id and a title")
+        return self
 
 
 class DayIn(BaseModel):
@@ -94,7 +118,7 @@ class DayIn(BaseModel):
 class ItineraryIn(BaseModel):
     """Only the listed days are touched. Days the client leaves out are left alone."""
 
-    days: list[DayIn] = Field(min_length=1, max_length=16)
+    days: list[DayIn] = Field(min_length=1)
 
 
 class DismissalIn(BaseModel):
@@ -115,8 +139,11 @@ class PlaceAddIn(BaseModel):
 
 
 class BlockOut(BaseModel):
-    place_id: str
+    kind: str = BlockKind.PLACE
+    place_id: str | None = None
+    block_id: str | None = None
     name: str
+    description: str | None = None
     start: str
     end: str
     duration_min: int

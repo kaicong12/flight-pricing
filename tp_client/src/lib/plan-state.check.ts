@@ -6,7 +6,8 @@
 // reverting the last drag.
 
 import type { Itinerary, Shortlist, ShortlistPlace } from "./plan-types";
-import { cityLabels, initialState, planReducer } from "./plan-state";
+import { keyOf } from "./plan-types";
+import { cityLabels, initialState, placedDays, planReducer } from "./plan-state";
 
 function eq(got: unknown, want: unknown, label: string) {
   const a = JSON.stringify(got);
@@ -88,20 +89,20 @@ eq(withBlock.revision, 1, "placing a block bumps the revision");
 const linked = planReducer(withBlock, {
   type: "reference",
   day: 0,
-  placeId: "p1",
+  key: "p1",
   url: "https://airbnb.com/rooms/1",
 });
 eq(linked.days[0].items[0].reference_url, "https://airbnb.com/rooms/1", "the link is stored");
 eq(linked.unsaved, [0], "a link marks the day unsaved");
 eq(linked.stale, withBlock.stale, "a link does not re-route the day");
 eq(
-  planReducer(linked, { type: "reference", day: 0, placeId: "p1", url: "https://airbnb.com/rooms/1" })
+  planReducer(linked, { type: "reference", day: 0, key: "p1", url: "https://airbnb.com/rooms/1" })
     .revision,
   linked.revision,
   "re-saving the same link changes nothing",
 );
 eq(
-  planReducer(linked, { type: "reference", day: 0, placeId: "p1", url: null }).days[0].items[0]
+  planReducer(linked, { type: "reference", day: 0, key: "p1", url: null }).days[0].items[0]
     .reference_url,
   null,
   "clearing the link removes it",
@@ -133,5 +134,30 @@ eq(
   null,
   "a place filed under a city the trip does not cover has no label",
 );
+
+const draft = { title: "Hotel Bristol", description: "Kristian IVs gate 7" };
+let twice = planReducer(base, { type: "addCustom", day: 0, startMin: 21 * 60, durationMin: 120, draft });
+twice = planReducer(twice, { type: "addCustom", day: 0, startMin: 8 * 60, durationMin: 60, draft });
+const [early, late] = twice.days[0].items;
+eq(twice.days[0].items.length, 2, "both blocks are kept");
+eq(early.start_min < late.start_min, true, "and are in time order");
+eq(keyOf(early) !== keyOf(late), true, "each gets its own id");
+eq([early.place_id, early.kind], [null, "custom"], "a custom block claims no place");
+
+const renamed = planReducer(twice, {
+  type: "editCustom",
+  day: 0,
+  key: keyOf(late),
+  draft: { title: "Hotel Bristol · night 2", description: null },
+});
+eq(renamed.days[0].items.map((i) => i.name), ["Hotel Bristol", "Hotel Bristol · night 2"],
+   "editing one leaves its twin alone");
+eq(renamed.stale, twice.stale, "a rename does not re-route the day");
+
+const removed = planReducer(twice, { type: "remove", day: 0, key: keyOf(early) });
+eq(removed.days[0].items.map((i) => keyOf(i)), [keyOf(late)], "removing one leaves its twin");
+
+// The shortlist's "on day 3" badge is a place lookup, and a flight is on no shortlist.
+eq(placedDays(twice).size, 0, "a custom block claims no shortlist row");
 
 console.log("plan-state: all checks passed");

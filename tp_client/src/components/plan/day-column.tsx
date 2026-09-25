@@ -5,9 +5,13 @@
 // Each half hour is its own droppable, so a drop reports a time rather than a pixel offset. Blocks
 // are absolutely positioned from their own start_min, and overlapping ones share the width in lanes.
 
-import { useDroppable } from "@dnd-kit/core";
+import { useState } from "react";
 
-import type { DayRoute, ItineraryDay, PlanWarning } from "@/lib/plan-types";
+import { useDroppable } from "@dnd-kit/core";
+import { PlusIcon } from "lucide-react";
+
+import type { CustomDraft } from "@/lib/plan-state";
+import type { DayRoute, ItineraryDay, ItineraryItem, PlanWarning } from "@/lib/plan-types";
 import {
   DAY_END_MIN,
   DAY_START_MIN,
@@ -15,12 +19,14 @@ import {
   SLOT_MIN,
   formatDayTab,
   hhmm,
+  keyOf,
   layout,
   warningText,
 } from "@/lib/plan-types";
 import { cn } from "@/lib/utils";
 
 import { ActivityBlock } from "./activity-block";
+import { CustomBlockDialog } from "./custom-block";
 
 const SLOT_PX = 26;
 const SLOTS = Math.round((DAY_END_MIN - DAY_START_MIN) / SLOT_MIN);
@@ -34,6 +40,8 @@ export function DayColumn({
   onRemove,
   onReference,
   onResize,
+  onAddCustom,
+  onEditCustom,
 }: {
   day: ItineraryDay;
   route: DayRoute | undefined;
@@ -41,11 +49,17 @@ export function DayColumn({
   readOnly: boolean;
   /** Minutes the flight leaves usable. Outside it, a slot is shown but takes no drop. */
   available: { from: number; to: number };
-  onRemove: (placeId: string) => void;
-  onReference: (placeId: string, url: string | null) => void;
-  onResize: (placeId: string, startMin: number, durationMin: number) => void;
+  onRemove: (key: string) => void;
+  onReference: (key: string, url: string | null) => void;
+  onResize: (key: string, startMin: number, durationMin: number) => void;
+  onAddCustom: (startMin: number, draft: CustomDraft, durationMin: number) => void;
+  onEditCustom: (key: string, draft: CustomDraft) => void;
 }) {
-  const byPlace = new Map((route?.blocks ?? []).map((b) => [b.place_id, b]));
+  // Which half hour the "+" was clicked on, or the block being renamed. One dialog serves both.
+  const [adding, setAdding] = useState<number | null>(null);
+  const [editing, setEditing] = useState<ItineraryItem | null>(null);
+
+  const byPlace = new Map((route?.blocks ?? []).map((b) => [keyOf(b), b]));
   const perPlace = new Map<string, PlanWarning[]>();
   const dayWide: PlanWarning[] = [];
   for (const w of stale ? [] : (route?.warnings ?? [])) {
@@ -88,7 +102,9 @@ export function DayColumn({
 
       {day.items.length === 0 && (
         <p className="mt-3.5 text-[13px] text-muted-foreground">
-          Drag a place from the shortlist onto the time you want it.
+          Drag a place from the shortlist onto the time you want it, or hover the grid for a
+          {" "}
+          <span className="font-medium text-ink">+</span> to add a flight or a stay.
         </p>
       )}
 
@@ -115,21 +131,23 @@ export function DayColumn({
               minute={m}
               // A slot has to fit the shortest block there is, or dropping on it cannot work.
               blocked={m < available.from || m + MIN_DURATION > available.to}
+              onAdd={readOnly ? undefined : () => setAdding(m)}
             />
           ))}
 
           {placed.map((p) => (
             <ActivityBlock
-              key={p.item.place_id}
+              key={keyOf(p.item)}
               placed={p}
-              block={byPlace.get(p.item.place_id)}
-              warnings={perPlace.get(p.item.place_id) ?? []}
+              block={byPlace.get(keyOf(p.item))}
+              warnings={perPlace.get(keyOf(p.item)) ?? []}
               slotPx={SLOT_PX}
               readOnly={readOnly}
-              onRemove={() => onRemove(p.item.place_id)}
-              onReference={(url) => onReference(p.item.place_id, url)}
+              onRemove={() => onRemove(keyOf(p.item))}
+              onReference={(url) => onReference(keyOf(p.item), url)}
+              onEdit={p.item.kind === "custom" ? () => setEditing(p.item) : undefined}
               onResize={(startMin, durationMin) =>
-                onResize(p.item.place_id, startMin, durationMin)
+                onResize(keyOf(p.item), startMin, durationMin)
               }
             />
           ))}
@@ -150,12 +168,48 @@ export function DayColumn({
           )}
         </ul>
       )}
+
+      {(adding !== null || editing) && (
+        <CustomBlockDialog
+          key={editing ? keyOf(editing) : adding}
+          startMin={adding ?? editing?.start_min ?? DAY_START_MIN}
+          room={Math.max(0, available.to - (adding ?? DAY_START_MIN))}
+          editing={
+            editing
+              ? {
+                  title: editing.name,
+                  description: editing.description,
+                  durationMin: editing.duration_min,
+                }
+              : null
+          }
+          onClose={() => {
+            setAdding(null);
+            setEditing(null);
+          }}
+          onSubmit={(draft, durationMin) => {
+            if (editing) onEditCustom(keyOf(editing), draft);
+            else if (adding !== null) onAddCustom(adding, draft, durationMin);
+          }}
+        />
+      )}
     </div>
   );
 }
 
-/** One half hour. Being a droppable is what makes a drop report a time rather than a pixel. */
-function Slot({ day, minute, blocked }: { day: number; minute: number; blocked: boolean }) {
+/** One half hour. Being a droppable is what makes a drop report a time rather than a pixel, and a
+ * block sitting over a slot takes the pointer, so the hover "+" never offers a busy one. */
+function Slot({
+  day,
+  minute,
+  blocked,
+  onAdd,
+}: {
+  day: number;
+  minute: number;
+  blocked: boolean;
+  onAdd?: () => void;
+}) {
   const { setNodeRef, isOver } = useDroppable({
     id: `slot:${day}:${minute}`,
     data: { kind: "slot", day, minute },
@@ -167,7 +221,7 @@ function Slot({ day, minute, blocked }: { day: number; minute: number; blocked: 
       ref={setNodeRef}
       aria-hidden={blocked}
       className={cn(
-        "border-t",
+        "group/slot relative border-t",
         minute % 60 === 0 ? "border-border" : "border-hairline",
         // Tinted gaps, not transparent ones: at 5% ink on paper the hatch was easy to miss, and
         // an hour the flight has taken away has to read as unusable at a glance.
@@ -175,7 +229,21 @@ function Slot({ day, minute, blocked }: { day: number; minute: number; blocked: 
         isOver && "bg-brand-bg",
       )}
       style={{ height: SLOT_PX }}
-    />
+    >
+      {!blocked && onAdd && (
+        <button
+          type="button"
+          onClick={onAdd}
+          aria-label={`Add a block at ${hhmm(minute)}`}
+          className="absolute inset-0 flex items-center justify-center gap-1.5 text-[11px] font-medium text-brand opacity-0 transition-opacity group-hover/slot:opacity-100 focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring/50"
+        >
+          <span className="grid size-4 place-items-center rounded-full border border-brand/40 bg-brand-bg">
+            <PlusIcon className="size-2.5" />
+          </span>
+          {hhmm(minute)}
+        </button>
+      )}
+    </div>
   );
 }
 

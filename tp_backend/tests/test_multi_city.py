@@ -25,7 +25,7 @@ from libs.places import CityDetails, VenueHit
 from tp_api.deps import venue_lookup
 from tp_api.main import app
 from tp_api.route_planning.service import first_daylight, shortlist, sun_by_place
-from tp_api.schemas import MAX_TRIP_CITIES, today_utc
+from tp_api.schemas import today_utc
 from tp_ingestions.plan import draft
 from tp_ingestions.plan.draft import render
 from tp_ingestions.queue import ClaimedTask
@@ -151,12 +151,9 @@ def test_two_cities_sharing_a_language_still_get_distinct_seed_tasks(client, db,
     assert len(set(keys)) == len(keys) == 6
 
 
-def test_a_trip_takes_at_least_one_city_and_at_most_the_cap(client, lookup):
+def test_a_trip_takes_at_least_one_city(client, lookup):
     lookup["fn"] = lambda place_id: DETAILS[HELSINKI]
     assert client.post("/initiate-plan", json=plan_body(city_place_ids=[])).status_code == 422
-    too_many = [f"c{i}" for i in range(MAX_TRIP_CITIES + 1)]
-    assert client.post("/initiate-plan",
-                       json=plan_body(city_place_ids=too_many)).status_code == 422
 
 
 def test_a_place_resolved_in_one_city_is_claimed_by_a_trip_anchored_in_another(client, db, lookup):

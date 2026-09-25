@@ -88,6 +88,13 @@ class CredentialState(StrEnum):
     MISSING = "missing"
 
 
+class BlockKind(StrEnum):
+    """Whether an itinerary block is a resolved venue or the user's own entry."""
+
+    PLACE = "place"
+    CUSTOM = "custom"
+
+
 class TripRole(StrEnum):
     """What a member may do with a trip. Ranked: owner > editor > viewer."""
 

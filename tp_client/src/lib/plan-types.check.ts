@@ -11,6 +11,7 @@ import {
   availableWindow,
   endOf,
   hhmm,
+  keyOf,
   layout,
   resize,
   slotAt,
@@ -25,8 +26,11 @@ function eq(got: unknown, want: unknown, label: string) {
 }
 
 const item = (place_id: string, start_min: number, duration_min = 60): ItineraryItem => ({
+  kind: "place",
   place_id,
+  block_id: null,
   name: place_id.toUpperCase(),
+  description: null,
   lat: null,
   lon: null,
   start_min,
@@ -35,6 +39,16 @@ const item = (place_id: string, start_min: number, duration_min = 60): Itinerary
   primary_type: null,
   reference_url: null,
 });
+
+const custom = (block_id: string, start_min: number, duration_min = 60): ItineraryItem => ({
+  ...item(block_id, start_min, duration_min),
+  kind: "custom",
+  place_id: null,
+  block_id,
+});
+
+eq(keyOf(item("p1", 600)), "p1", "a place is its place_id");
+eq(keyOf(custom("b1", 600)), "b1", "a custom block is its block_id");
 
 eq(snap(614), 600, "snap down");
 eq(snap(616), 630, "snap up");
