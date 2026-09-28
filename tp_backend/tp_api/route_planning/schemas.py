@@ -35,7 +35,8 @@ class SourceRefOut(BaseModel):
 
 class ShortlistPlaceOut(BaseModel):
     place_id: str
-    city_id: str
+    # None when the place is in none of the trip's cities, which a hand-added one may not be.
+    city_id: str | None = None
     name: str
     address: str | None = None
     lat: float | None = None

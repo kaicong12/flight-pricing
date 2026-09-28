@@ -81,7 +81,7 @@ export function ShortlistPanel({
               key={place.place_id}
               place={place}
               placedDay={placedDays.get(place.place_id) ?? null}
-              cityName={cityNames.get(place.city_id) ?? null}
+              cityName={(place.city_id && cityNames.get(place.city_id)) || null}
               readOnly={readOnly}
               onDismiss={() => onDismiss(place)}
             />

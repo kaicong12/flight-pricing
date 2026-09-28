@@ -459,6 +459,29 @@ def test_a_hand_added_place_is_filed_under_the_nearest_city_it_could_be_in(clien
     assert [w["place_id"] for w in body["warnings"] if w["code"] == "after_sunset"] == ["por"]
 
 
+def test_a_place_in_none_of_the_trip_s_cities_is_labelled_with_none_of_them(client, db, lookup):
+    trip_id = client.post("/initiate-plan", json=two_cities(lookup)).json()["trip_id"]
+    hits = {
+        "kl": VenueHit(place_id="kl", name="GSC Mid Valley Megamall",
+                       address="Mid Valley City, 59200 Kuala Lumpur", lat=3.1180, lon=101.6779,
+                       rating=4.2, rating_count=800, primary_type="Movie Theater", types=["movie"]),
+        "loyly": VenueHit(place_id="loyly", name="Löyly", address="Hernesaarenranta 4, Helsinki",
+                          lat=60.1487, lon=24.9280, rating=4.5, rating_count=3000,
+                          primary_type="Sauna", types=["spa"]),
+    }
+    app.dependency_overrides[venue_lookup] = lambda: (lambda pid: hits[pid])
+
+    added = {pid: client.post(f"/trips/{trip_id}/places",
+                              json={"place_id": pid, "category": "do"}).json() for pid in hits}
+
+    assert db.get(Place, "kl").city_id == HELSINKI
+    assert added["kl"]["city_id"] is None
+    assert added["loyly"]["city_id"] == HELSINKI
+    by_id = {p.place_id: p for p in shortlist(db, trip_id, 40, 0, None).places}
+    assert by_id["kl"].city_id is None
+    assert by_id["loyly"].city_id == HELSINKI
+
+
 def test_the_day_s_window_is_the_first_block_that_has_one():
     assert first_daylight({"b": (300.0, 1200.0)}, ["a", "b"]) == (300.0, 1200.0)
     assert first_daylight({}, ["a"]) == (None, None)
