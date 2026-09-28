@@ -191,13 +191,14 @@ def shortlist(db: Session, trip_id: str, limit: int, offset: int,
     if category:
         rows = [r for r in rows if category_of(r.Place, facts) == category]
 
+    cities = trip_cities(db, trip)
     places = []
     for r in rows:
         _, why_go = facts.get(r.Place.place_id, (None, None))
         cat = category_of(r.Place, facts)
         p = r.Place
         places.append(ShortlistPlaceOut(
-            place_id=p.place_id, city_id=p.city_id, name=p.name, address=p.address,
+            place_id=p.place_id, city_id=filed_city_id(p, cities), name=p.name, address=p.address,
             lat=p.lat, lon=p.lon,
             primary_type=p.primary_type,
             category=cat, why_go=why_go, sources=srcs.get(p.place_id, []),
@@ -346,6 +347,21 @@ def nearest_city(cities: Sequence[City], lat: float, lon: float) -> City:
     return min(placed, key=lambda c: distance_km(c.lat, c.lon, lat, lon))
 
 
+def filed_city_id(place: Place, cities: Sequence[City]) -> str | None:
+    """The city a place can honestly be labelled with, or None when it is in none of them.
+
+    `nearest_city` has to answer with one of the trip's cities, so a hand-added venue on another
+    continent is still filed under whichever was least far away. The label has no such obligation.
+    """
+    city = next((c for c in cities if c.city_id == place.city_id), None)
+    if city is None or city.lat is None or city.lon is None:
+        return place.city_id
+    if place.lat is None or place.lon is None:
+        return place.city_id
+    km = distance_km(city.lat, city.lon, place.lat, place.lon)
+    return place.city_id if km * 1000 <= settings().places_search_radius_m else None
+
+
 def add_place(db: Session, trip_id: str, place_id: str, category: str,
               lookup: VenueLookup) -> ShortlistPlaceOut:
     """Store a hand-picked place and claim it for this trip, which is what shortlists it.
@@ -362,7 +378,7 @@ def add_place(db: Session, trip_id: str, place_id: str, category: str,
         existing.category = category
         claim_place(db, trip_id, place_id)
         db.commit()
-        return one_shortlist_place(db, trip_id, existing)
+        return one_shortlist_place(db, trip, existing)
 
     try:
         hit = lookup(place_id)
@@ -382,19 +398,20 @@ def add_place(db: Session, trip_id: str, place_id: str, category: str,
     place = db.get(Place, hit.place_id)
     if place is None:
         raise HTTPException(500, "the place was not stored")
-    return one_shortlist_place(db, trip_id, place)
+    return one_shortlist_place(db, trip, place)
 
 
-def one_shortlist_place(db: Session, trip_id: str, place: Place) -> ShortlistPlaceOut:
+def one_shortlist_place(db: Session, trip: Trip, place: Place) -> ShortlistPlaceOut:
     facts = mention_facts(db, [place.place_id])
     why_go = facts.get(place.place_id, (None, None))[1]
     cat = category_of(place, facts)
     day_index = db.scalar(select(ItineraryItem.day_index).where(
-        ItineraryItem.trip_id == trip_id, ItineraryItem.place_id == place.place_id))
+        ItineraryItem.trip_id == trip.trip_id, ItineraryItem.place_id == place.place_id))
     mentions = db.scalar(select(func.count()).select_from(PlaceMention)
                          .where(PlaceMention.place_id == place.place_id)) or 0
     return ShortlistPlaceOut(
-        place_id=place.place_id, city_id=place.city_id, name=place.name, address=place.address,
+        place_id=place.place_id, city_id=filed_city_id(place, trip_cities(db, trip)),
+        name=place.name, address=place.address,
         lat=place.lat, lon=place.lon, primary_type=place.primary_type, category=cat, why_go=why_go,
         sources=mention_sources(db, [place.place_id]).get(place.place_id, []),
         mention_count=mentions, in_itinerary=day_index is not None, day_index=day_index,
