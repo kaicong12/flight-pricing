@@ -108,3 +108,44 @@ class TripSummaryOut(BaseModel):
     place_count: int = 0
 
 
+
+
+UPLOAD_MAX_BYTES = 5 * 1024 * 1024
+
+
+class UploadIn(BaseModel):
+    """An exported workbook, base64. The start date may move; the trip's length never does."""
+
+    file: str = Field(min_length=1, max_length=UPLOAD_MAX_BYTES * 4 // 3 + 4)
+    arrive_date: date | None = None
+    name: str | None = Field(default=None, max_length=NAME_MAX)
+
+
+class UploadBlockOut(BaseModel):
+    kind: str
+    name: str
+    start: str
+    end: str
+
+
+class UploadDayOut(BaseModel):
+    day_index: int
+    date: date
+    blocks: list[UploadBlockOut]
+
+
+class UploadSkipOut(BaseModel):
+    row: int
+    reason: str
+
+
+class UploadPreviewOut(BaseModel):
+    name: str | None
+    cities: list[str]
+    arrive_date: date
+    arrive_time: time | None
+    depart_date: date
+    depart_time: time | None
+    extra_details: str | None
+    days: list[UploadDayOut]
+    skipped: list[UploadSkipOut]

@@ -4,6 +4,7 @@ import Link from "next/link";
 
 import { AppHeader } from "@/components/app-header";
 import { TripCard } from "@/components/trip-card";
+import { UploadTrip } from "@/components/upload-trip";
 import { currentUser } from "@/lib/session";
 import { getJson } from "@/lib/tp-api";
 import { toTripList } from "@/lib/trips";
@@ -43,12 +44,15 @@ function List({ trips, ingesting, meId }: {
             {ingesting > 0 && ` ${ingesting === 1 ? "One is" : `${ingesting} are`} still reading videos.`}
           </p>
         </div>
-        <Link
-          href="/"
-          className="flex h-10 shrink-0 items-center rounded-full bg-ink px-4 text-[13.5px] font-medium whitespace-nowrap text-primary-foreground transition-colors hover:bg-ink-hover outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
-        >
-          Plan a city trip
-        </Link>
+        <div className="flex flex-wrap gap-2">
+          <UploadTrip />
+          <Link
+            href="/"
+            className="flex h-10 shrink-0 items-center rounded-full bg-ink px-4 text-[13.5px] font-medium whitespace-nowrap text-primary-foreground transition-colors hover:bg-ink-hover outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+          >
+            Plan a city trip
+          </Link>
+        </div>
       </div>
 
       <div className="mt-7 grid gap-5 [grid-template-columns:repeat(auto-fill,minmax(min(340px,100%),1fr))]">
@@ -77,6 +81,9 @@ function Empty() {
       >
         Plan a city trip
       </Link>
+      <div className="mt-4">
+        <UploadTrip look="link" />
+      </div>
     </main>
   );
 }

@@ -17,6 +17,10 @@ OPEN_EARLY_ALL_WEEK = [{"open": {"day": d, "hour": 9, "minute": 0},
                         "close": {"day": d, "hour": 10, "minute": 0}} for d in range(7)]
 
 
+def visible(ws, row):
+    return [c.value for c in ws[row] if not ws.column_dimensions[c.column_letter].hidden]
+
+
 def export(client, trip):
     r = client.get(f"/trips/{trip}/export.xlsx")
     assert r.status_code == 200, r.text
@@ -40,7 +44,7 @@ def test_a_block_carries_its_times_and_category(client, db):
 
     ws = export(client, trip)["Itinerary"]
 
-    assert [c.value for c in ws[3]] == ["Day", "Date", "#", "Start", "End", "Block", "Category",
+    assert visible(ws, 3) == ["Day", "Date", "#", "Start", "End", "Block", "Category",
                                         "Warning"]
     # Row 4 is the day band, so the first block is row 5.
     assert [ws.cell(row=5, column=c).value for c in (1, 3, 4, 5, 6, 7)] == [
@@ -49,14 +53,14 @@ def test_a_block_carries_its_times_and_category(client, db):
 
 def test_the_ref_column_exists_only_when_a_block_has_a_link(client, db):
     trip = a_trip_with_one_block(client, db)
-    assert [c.value for c in export(client, trip)["Itinerary"][3]][-1] == "Warning"
+    assert visible(export(client, trip)["Itinerary"], 3)[-1] == "Warning"
 
     client.put(f"/trips/{trip}/itinerary", json={"days": [{"day_index": 0, "items": [
         {"place_id": "p1", "start_min": 900, "duration_min": 90,
          "reference_url": "https://www.airbnb.com/rooms/12345"}]}]})
 
     ws = export(client, trip)["Itinerary"]
-    assert [c.value for c in ws[3]][-1] == "Ref"
+    assert visible(ws, 3)[-1] == "Ref"
     assert ws.cell(row=5, column=9).hyperlink.target == "https://www.airbnb.com/rooms/12345"
 
 
@@ -126,7 +130,7 @@ def test_a_custom_block_brings_its_details_and_no_warning(client, db):
 
     ws = export(client, trip)["Itinerary"]
 
-    assert [c.value for c in ws[3]] == ["Day", "Date", "#", "Start", "End", "Block", "Category",
+    assert visible(ws, 3) == ["Day", "Date", "#", "Start", "End", "Block", "Category",
                                         "Warning", "Details"]
     assert [ws.cell(row=6, column=c).value for c in (4, 6, 7, 8, 9)] == [
         "21:00", "Hotel Bristol", None, None, "Kristian IVs gate 7, check in from 15:00"]
@@ -186,7 +190,7 @@ def test_the_expenses_sheet_carries_a_column_per_person(client, db):
 
     ws = export(client, trip)["Expenses"]
 
-    assert [c.value for c in ws[3]] == ["Day", "Date", "Expense", "Paid by", "Amount", "Cur",
+    assert visible(ws, 3) == ["Day", "Date", "Expense", "Paid by", "Amount", "Cur",
                                         "A", "Bob"]
     assert ws.cell(row=5, column=3).value == "Sauna · Löyly"
     assert ws.cell(row=5, column=5).value == 40.0

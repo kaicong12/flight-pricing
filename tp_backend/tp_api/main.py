@@ -1,13 +1,17 @@
 """The planning API. Creates a trip, then makes sure its city has been ingested."""
 
+import base64
+import binascii
 import logging
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
+from datetime import date, timedelta
 from typing import Annotated
 from uuid import uuid4
 
 from anyio import to_thread
 from fastapi import Depends, FastAPI, HTTPException, Query
+from pydantic import ValidationError
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -50,7 +54,10 @@ from tp_api.deps import (
 )
 from tp_api.expenses import router as expenses_router
 from tp_api.route_planning import router as planning_router
-from tp_api.route_planning.service import in_shortlist
+from tp_api.route_planning.export import until
+from tp_api.route_planning.schemas import DayIn, ItineraryIn
+from tp_api.route_planning.service import claim_place, in_shortlist, replace_days
+from tp_api.route_planning.utils import day_count
 from tp_api.schemas import (
     CityOut,
     CitySuggestionOut,
@@ -62,9 +69,15 @@ from tp_api.schemas import (
     TripPatch,
     TripStatusOut,
     TripSummaryOut,
+    UploadBlockOut,
+    UploadDayOut,
+    UploadIn,
+    UploadPreviewOut,
+    UploadSkipOut,
 )
 from tp_api.sharing import router as sharing_router
 from tp_api.sharing import users_router
+from tp_api.uploads import NotOurExport, Upload, read
 
 
 @asynccontextmanager
@@ -120,6 +133,12 @@ def search_cities_endpoint(
 
 @app.post("/initiate-plan", response_model=TripOut)
 def initiate_plan(body: InitiatePlanRequest, db: Db, lookup: Lookup, user: Me) -> TripOut:
+    return create_trip(db, lookup, user, body)
+
+
+def create_trip(db: Session, lookup: CityLookup, user: User, body: InitiatePlanRequest,
+                seed: Callable[[Trip], None] | None = None) -> TripOut:
+    """`seed` writes the trip's first days before anything is queued, so a draft sees them."""
     resolved: dict[str, City] = {}
     for place_id in body.city_place_ids:
         try:
@@ -152,6 +171,8 @@ def initiate_plan(body: InitiatePlanRequest, db: Db, lookup: Lookup, user: Me) -
         db.add(TripCity(trip_id=trip.trip_id, city_id=city.city_id))
         claim_city_places(db, trip.trip_id, city.city_id)
     db.commit()
+    if seed:
+        seed(trip)
 
     runs = [r for r in (ensure_city_ingest(db, c) for c in cities) if r is not None]
     if not runs:
@@ -175,6 +196,67 @@ def initiate_plan(body: InitiatePlanRequest, db: Db, lookup: Lookup, user: Me) -
         extra_details=trip.extra_details,
         ingest=IngestOut(run_id=runs[0].run_id, status=runs[0].status) if runs else None,
     )
+
+
+def uploaded(db: Session, body: UploadIn) -> Upload:
+    try:
+        content = base64.b64decode(body.file, validate=True)
+        return read(db, content, body.arrive_date)
+    except binascii.Error as e:
+        raise HTTPException(422, "That is not an .xlsx file.") from e
+    except NotOurExport as e:
+        raise HTTPException(422, str(e)) from e
+
+
+@app.post("/uploads/preview", response_model=UploadPreviewOut)
+def preview_upload(body: UploadIn, db: Db, user: Me) -> UploadPreviewOut:
+    """What "Upload new trip" would create, and which rows it would leave out. Writes nothing."""
+    upload = uploaded(db, body)
+    info = upload.trip
+    names = dict(db.execute(select(Place.place_id, Place.name)
+                            .where(Place.place_id.in_(upload.place_ids))).all())
+    start = date.fromisoformat(info["arrive_date"])
+    return UploadPreviewOut(
+        name=body.name if body.name is not None else info["name"],
+        cities=[c["name"] for c in info["cities"]],
+        arrive_date=start, depart_date=date.fromisoformat(info["depart_date"]),
+        arrive_time=info["arrive_time"], depart_time=info["depart_time"],
+        extra_details=info["extra_details"],
+        days=[UploadDayOut(day_index=d, date=start + timedelta(days=d), blocks=[
+            UploadBlockOut(kind=i.kind, name=names.get(i.place_id, "") if i.place_id else i.title,
+                           start=f"{i.start_min // 60:02d}:{i.start_min % 60:02d}",
+                           end=until(d, i.start_min + i.duration_min))
+            for i in sorted(items, key=lambda i: i.start_min)])
+            for d, items in sorted(upload.days.items())],
+        skipped=[UploadSkipOut(row=r, reason=why) for r, why in upload.skipped],
+    )
+
+
+@app.post("/uploads", response_model=TripOut)
+def create_from_upload(body: UploadIn, db: Db, lookup: Lookup, user: Me) -> TripOut:
+    """A new trip the caller owns, seeded from the file. Costs, members and dismissals stay behind."""
+    upload = uploaded(db, body)
+    info = upload.trip
+    try:
+        plan = InitiatePlanRequest(
+            city_place_ids=[c["city_id"] for c in info["cities"]],
+            name=body.name if body.name is not None else info["name"],
+            arrive_date=info["arrive_date"], arrive_time=info["arrive_time"],
+            depart_date=info["depart_date"], depart_time=info["depart_time"],
+            extra_details=info["extra_details"])
+    except ValidationError as e:
+        raise HTTPException(422, e.errors()[0]["msg"].removeprefix("Value error, ")) from e
+
+    def seed(trip: Trip) -> None:
+        for place_id in upload.place_ids:
+            claim_place(db, trip.trip_id, place_id)
+        db.commit()
+        days = [DayIn(day_index=d, items=items) for d, items in sorted(upload.days.items())
+                if d < day_count(trip)]
+        if days:
+            replace_days(db, trip.trip_id, ItineraryIn(days=days))
+
+    return create_trip(db, lookup, user, plan, seed)
 
 
 DONE_TASK_STATUSES = (TaskStatus.DONE, TaskStatus.SKIPPED)
