@@ -225,3 +225,48 @@ class TestTheTab:
         friend(db, trip, "Bob")
         members = client.get(f"/trips/{trip}/expenses").json()["members"]
         assert {m["name"] for m in members} == {"A Friend", "Bob"}
+
+
+class TestSharingAfterTheFact:
+    def newcomer(self, db, name="Bob"):
+        db.add(User(user_id=f"u-{name.lower()}", google_sub=f"sub-{name}",
+                    email=f"{name.lower()}@example.com", name=name))
+        db.commit()
+        return f"u-{name.lower()}"
+
+    def shares(self, client, trip):
+        [expense] = client.get(f"/trips/{trip}/expenses").json()["expenses"]
+        return {s["user_id"]: s["amount_cents"] for s in expense["shares"]}
+
+    def test_a_cost_from_before_the_share_splits_with_the_new_member(self, client, trip, db):
+        client.post(f"/trips/{trip}/expenses", json=cost(amount_cents=1000))
+        bob = self.newcomer(db)
+        r = client.post(f"/trips/{trip}/members", json={"user_id": bob, "role": TripRole.EDITOR})
+        assert r.status_code == 200, r.text
+        assert self.shares(client, trip) == {"u-test": 500, bob: 500}
+
+    def test_a_deliberate_subset_is_left_alone(self, client, trip, db):
+        bob = friend(db, trip, "Bob")
+        client.post(f"/trips/{trip}/expenses", json=cost(amount_cents=1000,
+                                                         participants=["u-test"]))
+        cara = self.newcomer(db, "Cara")
+        assert client.post(f"/trips/{trip}/members", json={"user_id": cara}).status_code == 200
+        assert self.shares(client, trip) == {"u-test": 1000}
+        assert bob not in self.shares(client, trip)
+
+    def test_an_uneven_split_is_left_alone(self, client, trip, db):
+        bob = friend(db, trip, "Bob")
+        client.post(f"/trips/{trip}/expenses", json=cost(
+            amount_cents=1000, participants=[],
+            shares=[{"user_id": "u-test", "amount_cents": 250}, {"user_id": bob, "amount_cents": 750}]))
+        cara = self.newcomer(db, "Cara")
+        assert client.post(f"/trips/{trip}/members", json={"user_id": cara}).status_code == 200
+        assert self.shares(client, trip) == {"u-test": 250, bob: 750}
+
+    def test_a_role_change_re_splits_nothing(self, client, trip, db):
+        bob = friend(db, trip, "Bob", role=TripRole.VIEWER)
+        client.post(f"/trips/{trip}/expenses", json=cost(amount_cents=1000,
+                                                         participants=["u-test"]))
+        r = client.post(f"/trips/{trip}/members", json={"user_id": bob, "role": TripRole.EDITOR})
+        assert r.status_code == 200, r.text
+        assert self.shares(client, trip) == {"u-test": 1000}

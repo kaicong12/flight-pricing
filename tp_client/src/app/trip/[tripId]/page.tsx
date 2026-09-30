@@ -43,7 +43,8 @@ export default async function TripPage({ params }: PageProps<"/trip/[tripId]">) 
   return (
     <div className="min-h-dvh bg-page pb-24">
       <AppHeader user={user} />
-      <main className="mx-auto w-full max-w-[820px] px-7 pt-11">
+      <TripTabs tripId={trip.trip_id} />
+      <main className="mx-auto w-full max-w-[820px] px-7 pt-8">
         <Link
           href="/trips"
           className="font-mono text-[11px] tracking-[0.04em] text-faint uppercase transition-colors hover:text-ink outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
@@ -51,11 +52,7 @@ export default async function TripPage({ params }: PageProps<"/trip/[tripId]">) 
           ← All trips
         </Link>
 
-        <div className="mt-4">
-          <TripTabs tripId={trip.trip_id} />
-        </div>
-
-        <div className="mt-6 flex flex-wrap items-end justify-between gap-x-6 gap-y-2">
+        <div className="mt-5 flex flex-wrap items-end justify-between gap-x-6 gap-y-2">
           <div>
             <h1 className="text-3xl font-semibold tracking-[-0.015em]">{cityNames(trip)}</h1>
             <p className="mt-2 text-sm text-muted-foreground">

@@ -192,6 +192,33 @@ def add_expense(db: Session, trip_id: str, body: ExpenseIn) -> ExpenseOut:
     return _out(expense, _blocks(db, trip_id))
 
 
+def include_member(db: Session, trip_id: str, user_id: str) -> int:
+    """Extend to a member shared with later every cost that split across everyone at the time.
+
+    "Whoever was there" is what the form means by its default, so a cost entered while the trip was
+    solo named one person only because one person was on it. A deliberate subset or an uneven split
+    is somebody's own arithmetic and is left alone.
+    """
+    others = _member_ids(db, trip_id) - {user_id}
+    if not others:
+        return 0
+
+    people = sorted(others | {user_id})
+    touched = 0
+    for expense in db.scalars(_live(trip_id)).unique():
+        was = {s.user_id: s.amount_cents for s in expense.shares}
+        if set(was) != others or was != split_evenly(expense.amount_cents, sorted(was)):
+            continue
+        expense.shares = [ExpenseShare(user_id=u, amount_cents=a)
+                          for u, a in split_evenly(expense.amount_cents, people).items()]
+        touched += 1
+
+    if touched:
+        db.commit()
+        log.info("re-split trip=%s with=%s costs=%d", trip_id[:8], user_id[:8], touched)
+    return touched
+
+
 def _get(db: Session, trip_id: str, expense_id: str) -> Expense:
     expense = db.get(Expense, expense_id)
     if expense is None or expense.trip_id != trip_id or expense.deleted:

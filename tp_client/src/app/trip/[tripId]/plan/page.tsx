@@ -45,20 +45,17 @@ export default async function PlanPage({ params }: PageProps<"/trip/[tripId]/pla
   return (
     <div className="min-h-dvh bg-page pb-16">
       <AppHeader user={user} />
-      <main className="mx-auto w-full max-w-[1560px] px-7 pt-9">
-        <TripTabs tripId={trip.trip_id} />
-
-        <div className="mt-6">
-          <PlanBoard
-            trip={trip}
-            center={center}
-            initialItinerary={itinerary}
-            initialShortlist={shortlist ?? EMPTY_SHORTLIST}
-            initialExpenses={expenses}
-            meId={user.user_id}
-            canEdit={trip.your_role !== "viewer"}
-          />
-        </div>
+      <TripTabs tripId={trip.trip_id} />
+      <main className="mx-auto w-full max-w-[1560px] px-7 pt-8">
+        <PlanBoard
+          trip={trip}
+          center={center}
+          initialItinerary={itinerary}
+          initialShortlist={shortlist ?? EMPTY_SHORTLIST}
+          initialExpenses={expenses}
+          meId={user.user_id}
+          canEdit={trip.your_role !== "viewer"}
+        />
       </main>
     </div>
   );
