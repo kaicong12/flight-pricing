@@ -1,8 +1,4 @@
-"""Planning a trip that covers two cities far apart: one shortlist, one day, one draft, one workbook.
-
-Everything here is Helsinki + Porto over midsummer, where the two sunsets are an hour and a half
-apart — close enough that both are plausible, far enough that using the wrong one is visible.
-"""
+"""Planning a trip that covers two cities far apart: one shortlist, one day, one draft, one workbook."""
 
 from datetime import timedelta
 from io import BytesIO

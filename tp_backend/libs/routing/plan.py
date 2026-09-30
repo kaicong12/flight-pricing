@@ -14,11 +14,8 @@ from dataclasses import dataclass
 
 from libs.routing.hours import CLOSED, Window, window_for
 
-# The grid the client drags against, so a duration is always a whole number of slots.
+# The drag and draft snap; a stored block is to the minute.
 SLOT_MIN = 30
-MIN_DURATION = SLOT_MIN
-
-DEFAULT_DURATION = 60
 
 # Categories worth doing in daylight. A closed museum is a hard failure; a dark viewpoint is a
 # wasted trip, which is the same problem one step softer.

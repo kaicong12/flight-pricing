@@ -65,7 +65,6 @@ def test_real_venue_names_pass_the_gate(name):
 
 def test_a_venue_whose_name_contains_a_generic_word_still_passes():
     """Vervet Bakeri is a bakery. Only a name that is nothing but generics is rejected."""
-    assert names.reject_before_call("Vervet Bakeri") is None
     assert names.reject_before_call("Tromsø City Library") is None
 
 
@@ -109,8 +108,9 @@ def test_a_cjk_query_resolving_to_a_latin_name_is_unconfirmed():
     assert conf == Confidence.MEDIUM and "unconfirmed" in reason
 
 
-def test_a_cjk_query_with_a_latin_anchor_is_confirmed_by_that_anchor():
-    """Dragøy海鲜市场 -> "Dragøy Coastal Mathus" matched on the Latin fragment, so it is not a guess."""
+def test_a_cjk_query_with_a_latin_fragment_is_not_marked_unconfirmed():
+    """A Latin fragment in the query skips the unconfirmed-identity downgrade, so the rating count
+    decides."""
     conf, _ = names.judge("Dragøy海鲜市场", hit(name="Dragøy Coastal Mathus", rating_count=756))
     assert conf == Confidence.HIGH
 

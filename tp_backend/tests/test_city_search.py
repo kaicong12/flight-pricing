@@ -75,6 +75,6 @@ def test_limit_is_passed_through(api):
     assert [s["place_id"] for s in r.json()] == ["ChIJ_helsinki", "ChIJ_helsingborg"]
 
 
-def test_limit_above_ten_is_rejected(api):
+def test_a_limit_outside_one_to_ten_is_rejected(api):
     assert api.get("/cities/search", params={"q": "helsin", "limit": 11}).status_code == 422
     assert api.get("/cities/search", params={"q": "helsin", "limit": 0}).status_code == 422

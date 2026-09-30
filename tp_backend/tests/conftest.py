@@ -156,7 +156,7 @@ def hours():
 
 @pytest.fixture
 def user(db):
-    """A signed-in account. Real rows, not an overridden dependency, because trip access is a join."""
+    """A signed-in account. Real rows, not an overridden dependency, because access reads user_trips."""
     u = User(user_id="u-test", google_sub="sub-test", email="friend@example.com", name="A Friend",
              picture="https://lh3.googleusercontent.com/a/test=s96-c")
     db.add(u)

@@ -170,7 +170,7 @@ class TestShortlist:
 
         assert client.get(f"/trips/{trip}/shortlist").json()["places"][0]["why_go"] is None
 
-    def test_total_is_the_whole_city_while_shown_is_the_page(self, client, db):
+    def test_total_is_the_whole_shortlist_while_shown_is_the_page(self, client, db):
         trip = make_trip(client)
         seed(db, *[(f"p{i}", f"Place {i}", i) for i in range(1, 6)])
 
@@ -187,7 +187,7 @@ class TestShortlist:
         assert [p["name"] for p in first] == ["Place 5", "Place 4"]
         assert [p["name"] for p in second] == ["Place 3", "Place 2"]
 
-    def test_another_citys_places_are_not_listed(self, client, db):
+    def test_a_place_the_trip_never_claimed_is_not_listed(self, client, db):
         trip = make_trip(client)
         from conftest import make_city
         make_city(db, city_id="other", name="Bergen")
@@ -254,7 +254,7 @@ class TestDismissals:
         assert client.get(f"/trips/{a}/shortlist").json()["places"] == []
         assert len(client.get(f"/trips/{b}/shortlist").json()["places"]) == 1
 
-    def test_a_place_from_another_city_is_rejected(self, client, db):
+    def test_dismissing_a_place_not_on_the_trip_is_rejected(self, client, db):
         trip = make_trip(client)
         assert client.post(f"/trips/{trip}/dismissals",
                            json={"place_id": "nope"}).status_code == 422
@@ -409,7 +409,7 @@ class TestItineraryWrite:
                        json={"days": [{"day_index": 9, "items": []}]})
         assert r.status_code == 422
 
-    def test_a_place_from_another_city_is_rejected(self, client, db):
+    def test_a_place_the_trip_never_claimed_is_rejected(self, client, db):
         trip = make_trip(client)
         from conftest import make_city
         make_city(db, city_id="other", name="Bergen")
@@ -419,7 +419,7 @@ class TestItineraryWrite:
             {"day_index": 0, "items": [{"place_id": "p9", "start_min": 900, "duration_min": 60}]}]})
         assert r.status_code == 422
 
-    def test_a_duration_off_the_grid_is_rejected(self, client, db):
+    def test_a_zero_duration_is_rejected(self, client, db):
         trip = make_trip(client)
         seed(db, ("p1", "A", 1))
         r = client.put(f"/trips/{trip}/itinerary", json={"days": [
@@ -502,7 +502,7 @@ class TestRouteDay:
         body = client.post(f"/trips/{trip}/days/0/route", json={}).json()
         assert body["blocks"] == []
 
-    def test_block_times_are_the_pinned_ones_not_a_derived_schedule(self, client, db, hours):
+    def test_block_times_are_the_pinned_ones(self, client, db, hours):
         trip = make_trip(client)
         seed(db, ("p1", "A", 1), ("p2", "B", 1))
         put_day(client, trip, ["p1", "p2"], start=900, step=90)
@@ -510,7 +510,6 @@ class TestRouteDay:
 
         body = client.post(f"/trips/{trip}/days/0/route", json={}).json()
 
-        # 15:00 and 16:30 as stored. The old endpoint would have derived 16:10 from the 10 min walk.
         assert [(b["start"], b["end"]) for b in body["blocks"]] == [("15:00", "16:00"),
                                                                     ("16:30", "17:30")]
         assert body["start_time"] == "15:00:00"
@@ -522,7 +521,7 @@ class TestRouteDay:
         hours["fn"] = open_hours
 
         block = client.post(f"/trips/{trip}/days/0/route",
-                            json={"start_time": "10:00"}).json()["blocks"][0]
+                            json={}).json()["blocks"][0]
         assert (block["open_from"], block["open_to"]) == ("09:00", "18:00")
 
     def test_a_block_that_runs_past_closing_warns(self, client, db, hours):
@@ -569,7 +568,6 @@ class TestRouteDay:
         assert body["daylight"]["sunrise"] < body["daylight"]["sunset"]
 
     def test_the_days_start_time_is_its_first_block(self, client, db):
-        """No day-level start any more: the flight time and the 09:00 default both stop mattering."""
         trip = make_trip(client)  # plan_body arrives at 14:30
         seed(db, ("p1", "A", 1))
         put_day(client, trip, ["p1"], start=19 * 60)
@@ -582,16 +580,6 @@ class TestRouteDay:
         trip = make_trip(client)
         body = client.post(f"/trips/{trip}/days/1/route", json={}).json()
         assert body["start_time"] is None
-
-    def test_two_places_an_ocean_apart_are_not_an_error(self, client, db):
-        """Travel is not modelled, so nothing here can call a day impossible."""
-        trip = make_trip(client)
-        seed(db, ("p1", "A", 1), ("p2", "B", 1))
-        put_day(client, trip, ["p1", "p2"])
-
-        body = client.post(f"/trips/{trip}/days/0/route", json={}).json()
-        assert [b["start"] for b in body["blocks"]] == ["15:00", "16:30"]
-        assert "no_route" not in [w["code"] for w in body["warnings"]]
 
     def test_an_unreachable_places_call_leaves_hours_unknown_rather_than_failing(
             self, client, db, hours):

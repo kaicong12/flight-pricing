@@ -8,11 +8,8 @@ from libs.routing.plan import (
     AFTER_SUNSET,
     CLOSED_TODAY,
     CLOSES_BEFORE_DONE,
-    DEFAULT_DURATION,
-    MIN_DURATION,
     NO_HOURS,
     OPENS_LATER,
-    SLOT_MIN,
     Stop,
 )
 from tp_api.route_planning.utils import pieces
@@ -69,14 +66,6 @@ class TestWindowFor:
         assert window_for([], 1) is None
 
 
-class TestDurations:
-    def test_the_default_is_one_hour_and_grid_aligned(self):
-        # There are no per-category durations any more: one hour, and the user drags from there.
-        assert DEFAULT_DURATION == 60
-        assert DEFAULT_DURATION % SLOT_MIN == 0
-        assert MIN_DURATION == SLOT_MIN
-
-
 def stop(pid, name, *, start, category="see", minutes=60, periods=ARCTIC_CATHEDRAL, sunset=None):
     return Stop(place_id=pid, name=name, category=category, start_min=start,
                 duration_min=minutes, periods=periods, sunset_min=sunset)
@@ -84,7 +73,6 @@ def stop(pid, name, *, start, category="see", minutes=60, periods=ARCTIC_CATHEDR
 
 class TestPlanDay:
     def test_blocks_keep_exactly_the_times_they_were_given(self):
-        # The old plan_day derived these by accumulating durations and travel. Now they are input.
         plan = plan_day(
             [stop("a", "A", start=600, minutes=60), stop("b", "B", start=690, minutes=30)],
             weekday=1,
@@ -164,13 +152,6 @@ class TestPlanDay:
                          stop("light", "Barceloneta", start=17 * 60, periods=FJELLHEISEN,
                               sunset=21 * 60)], weekday=1)
         assert [(w.code, w.place_id) for w in plan.warnings] == [(AFTER_SUNSET, "dark")]
-
-    def test_two_places_an_ocean_apart_are_not_objected_to(self):
-        # Travel is not modelled, so nothing here can call a pair unreachable.
-        plan = plan_day([stop("a", "Bergen", start=600), stop("b", "Tromso", start=700)],
-                        weekday=1)
-        assert [b.place_id for b in plan.blocks] == ["a", "b"]
-        assert plan.warnings == []
 
 
 class TestHhmm:

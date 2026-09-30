@@ -105,8 +105,7 @@ eq(hhmm(1290), "21:30", "hhmm");
 eq(hhmm(1470), "00:30", "hhmm wraps past midnight");
 
 // A warning names the block it is about, and an unknown code degrades to the code itself rather
-// than to "undefined". `travel_does_not_fit` was asserted here until travel-time validation was
-// removed; there is deliberately nothing to replace it with.
+// than to "undefined".
 eq(
   warningText({ code: "closes_before_done", place_id: "b",
                 detail: { start: "16:00", need_min: 90, closes: "17:00" } }, "Polar Museum"),

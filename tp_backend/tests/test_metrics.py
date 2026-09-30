@@ -43,11 +43,12 @@ def test_the_route_label_is_the_template_not_the_path(client):
 
 def test_the_status_label_carries_the_response_code(client):
     before = observations("/trips/{trip_id}", status="404")
+    ok_before = observations("/trips/{trip_id}", status="200")
 
     client.get("/trips/nope")
 
     assert observations("/trips/{trip_id}", status="404") == before + 1
-    assert observations("/trips/{trip_id}", status="200") == 0
+    assert observations("/trips/{trip_id}", status="200") == ok_before
 
 
 def test_an_unmatched_path_is_not_recorded(client):

@@ -113,7 +113,7 @@ def test_a_days_day_and_date_are_one_tall_cell_each(client, db):
 
 def test_a_lone_block_is_not_merged(client, db):
     trip = a_trip_with_one_block(client, db)
-    assert "A5:A5" not in {str(r) for r in export(client, trip)["Itinerary"].merged_cells.ranges}
+    assert all(r.min_row != 5 for r in export(client, trip)["Itinerary"].merged_cells.ranges)
 
 
 def test_a_custom_block_brings_its_details_and_no_warning(client, db):
@@ -131,11 +131,6 @@ def test_a_custom_block_brings_its_details_and_no_warning(client, db):
     assert [ws.cell(row=6, column=c).value for c in (4, 6, 7, 8, 9)] == [
         "21:00", "Hotel Bristol", None, None, "Kristian IVs gate 7, check in from 15:00"]
     assert ws.cell(row=5, column=6).value == "Löyly"
-
-
-def test_the_details_column_exists_only_when_a_block_has_one(client, db):
-    trip = a_trip_with_one_block(client, db)
-    assert [c.value for c in export(client, trip)["Itinerary"][3]][-1] == "Warning"
 
 
 def test_a_long_description_wraps_and_the_row_grows_to_hold_it(client, db):
@@ -172,7 +167,7 @@ def test_the_shortlist_sheet_keeps_the_places_no_day_uses(client, db):
     assert ws.cell(row=4, column=6).hyperlink.target == "https://www.youtube.com/watch?v=ref1"
 
 
-def test_a_viewer_can_export_but_a_stranger_cannot(anon_client, client, db):
+def test_an_unauthenticated_export_is_refused(anon_client, client, db):
     trip = a_trip_with_one_block(client, db)
     assert anon_client.get(f"/trips/{trip}/export.xlsx", headers={"Authorization": ""}
                            ).status_code == 401

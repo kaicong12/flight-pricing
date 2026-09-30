@@ -3,9 +3,9 @@
 from datetime import timedelta
 
 import pytest
-from conftest import make_city, make_place, make_trip
+from conftest import HELSINKI, make_city, make_place, make_trip
 
-from libs.db import User, UserTrip
+from libs.db import City, User, UserTrip
 from libs.db.enums import BlockKind, TripRole
 from tp_api.expenses.service import split_evenly
 from tp_api.schemas import today_utc
@@ -214,8 +214,10 @@ class TestBalances:
 
 
 class TestTheTab:
-    def test_it_suggests_the_anchor_citys_currency_first(self, client, trip):
-        assert client.get(f"/trips/{trip}/expenses").json()["currency"] == "EUR"
+    def test_it_suggests_the_anchor_citys_currency_first(self, client, trip, db):
+        db.get(City, HELSINKI).country = "NO"
+        db.commit()
+        assert client.get(f"/trips/{trip}/expenses").json()["currency"] == "NOK"
 
     def test_then_whatever_the_trip_last_spent_in(self, client, trip):
         client.post(f"/trips/{trip}/expenses", json=cost(currency="NOK"))

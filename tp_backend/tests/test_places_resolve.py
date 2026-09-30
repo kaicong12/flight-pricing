@@ -111,7 +111,8 @@ def test_a_candidate_becomes_a_place_and_a_mention(db, run, monkeypatch):
 
 def test_a_resolved_place_is_claimed_for_the_citys_live_trips(db, run, monkeypatch):
     """A claim is the whole shortlist, so resolving is also what puts a place on a waiting trip."""
-    live, gone = make_trip(db, "t-live"), make_trip(db, "t-gone", deleted=True)
+    live = make_trip(db, "t-live")
+    make_trip(db, "t-gone", deleted=True)
     extraction(db, [yt_place()])
     counting(monkeypatch)
 
@@ -119,7 +120,6 @@ def test_a_resolved_place_is_claimed_for_the_citys_live_trips(db, run, monkeypat
     db.commit()
 
     assert set(db.scalars(select(TripPlace.trip_id))) == {live}
-    assert gone not in set(db.scalars(select(TripPlace.trip_id)))
 
 
 def test_a_cached_hit_is_claimed_as_well(db, run, monkeypatch):
@@ -344,7 +344,6 @@ def test_a_missing_extraction_is_permanent(db, run, monkeypatch):
 def test_a_city_without_coordinates_cannot_be_geofenced(db, run, monkeypatch):
     """The bounding box is the defence against a garble resolving hundreds of km away."""
     extraction(db, [yt_place()])
-    db.get(IngestRun, "run-1")
     from libs.db import City
     db.get(City, HELSINKI).lat = None
     db.commit()

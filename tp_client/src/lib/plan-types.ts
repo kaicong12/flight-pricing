@@ -1,4 +1,4 @@
-// Mirrors tp_api/plan_schemas.py by hand — there is no codegen step. Warnings arrive as codes; the
+// Mirrors tp_api/route_planning/schemas.py by hand — there is no codegen step. Warnings arrive as codes; the
 // English for them lives here.
 
 // The grid a block is dragged against. A typed time may be any minute; a drag snaps to this.
@@ -158,7 +158,7 @@ export function formatDayTab(iso: string): string {
  * The window a day's blocks must fit inside. The flight is the only hard bound there is: you cannot
  * be somewhere before you land or after you leave, so those minutes are not offered at all.
  *
- * Mirrors _available_window in tp_api/plan_routes.py, which rejects anything outside it.
+ * Mirrors available_window in tp_api/route_planning/utils.py, which rejects anything outside it.
  */
 export function availableWindow(
   trip: { arrive_time: string | null; depart_time: string | null },

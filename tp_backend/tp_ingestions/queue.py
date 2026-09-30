@@ -1,4 +1,4 @@
-"""Claiming and settling tasks. The SQL here is the contract tests/test_schema_guarantees.py pins."""
+"""Claiming and settling tasks. tests/test_worker.py pins this SQL through the real worker."""
 
 from dataclasses import dataclass
 from datetime import datetime, timedelta

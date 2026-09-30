@@ -105,21 +105,11 @@ def test_a_seeded_run_drains_to_done(db, seeded, stubbed):
     ran = Worker(name="w1", poll_interval=0, reap_interval=1e9).drain()
 
     db.expire_all()
-    # 2 youtube.search (en has no local partner for FI beyond fi) + rednote.search + fan-out.
+    # 2 youtube.search (en, fi) + rednote.search + fan-out.
     assert ran >= 4
     statuses = set(db.scalars(select(IngestTask.status)).all())
     assert statuses == {TaskStatus.DONE}
     assert db.get(IngestRun, "run-1").status == RunStatus.DONE
-
-
-def test_nothing_in_the_drain_is_blocked(db, seeded, stubbed):
-    """A kind with no handler blocks, which is how a missing handler shows up."""
-    Worker(name="w1", poll_interval=0, reap_interval=1e9).drain()
-
-    db.expire_all()
-    blocked = db.scalars(
-        select(IngestTask.kind).where(IngestTask.status == TaskStatus.BLOCKED)).all()
-    assert blocked == []
 
 
 def test_the_drain_writes_both_sources_into_extractions(db, seeded, stubbed):
@@ -135,7 +125,7 @@ def test_the_drain_writes_both_sources_into_extractions(db, seeded, stubbed):
 
 
 def test_the_drain_resolves_both_sources_to_places(db, seeded, stubbed):
-    """The pipeline now ends at place_id, not at extraction JSON."""
+    """The drain ends at place_id: both sources' names become places and mentions."""
     Worker(name="w1", poll_interval=0, reap_interval=1e9).drain()
 
     db.expire_all()

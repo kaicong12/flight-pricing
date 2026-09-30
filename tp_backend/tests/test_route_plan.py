@@ -15,7 +15,7 @@ def picks(*items) -> dict:
     return {"days": [{"day": 0, "picks": list(items)}]}
 
 
-def test_window_is_clamped_to_the_drawable_grid():
+def test_window_is_clamped_to_the_waking_day():
     assert window(trip(arrive=time(1, 36)), 0) == (8 * 60, 23 * 60)
     assert window(trip(arrive=time(14, 45)), 0) == (885, 23 * 60)
     assert window(trip(depart=time(18, 5), days=2), 1) == (8 * 60, 1085)
