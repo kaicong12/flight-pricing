@@ -3,8 +3,6 @@
 from libs.routing.daylight import sun_times
 from libs.routing.hours import CLOSED, HoursHit, fetch_hours, window_for
 from libs.routing.plan import (
-    DEFAULT_DURATION,
-    MIN_DURATION,
     OUTDOOR,
     SLOT_MIN,
     Block,
@@ -18,8 +16,6 @@ from libs.routing.plan import (
 
 __all__ = [
     "CLOSED",
-    "DEFAULT_DURATION",
-    "MIN_DURATION",
     "OUTDOOR",
     "SLOT_MIN",
     "Block",

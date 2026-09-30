@@ -14,11 +14,8 @@ from dataclasses import dataclass
 
 from libs.routing.hours import CLOSED, Window, window_for
 
-# The grid the client drags against, so a duration is always a whole number of slots.
+# The drag and draft snap; a stored block is to the minute.
 SLOT_MIN = 30
-MIN_DURATION = SLOT_MIN
-
-DEFAULT_DURATION = 60
 
 # Categories worth doing in daylight. A closed museum is a hard failure; a dark viewpoint is a
 # wasted trip, which is the same problem one step softer.
@@ -67,7 +64,6 @@ class PlanWarning:
 class DayPlan:
     blocks: list[Block]
     warnings: list[PlanWarning]
-    finish_min: int
 
 
 def hhmm(minutes: float) -> str:
@@ -117,5 +113,4 @@ def plan_day(stops: list[Stop], *, weekday: int) -> DayPlan:
                             end_min=end_min, duration_min=stop.duration_min,
                             open_from=open_from, open_to=open_to))
 
-    finish = max((b.end_min for b in blocks), default=0)
-    return DayPlan(blocks=blocks, warnings=warnings, finish_min=finish)
+    return DayPlan(blocks=blocks, warnings=warnings)

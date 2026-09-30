@@ -10,9 +10,11 @@ import {
   MIN_DURATION,
   availableWindow,
   endOf,
+  endsOn,
   hhmm,
   keyOf,
   layout,
+  piecesOn,
   resize,
   slotAt,
   snap,
@@ -60,6 +62,28 @@ eq(resize(a, "bottom", 545), { start_min: 540, duration_min: MIN_DURATION }, "bo
 eq(resize(a, "top", 500), { start_min: 510, duration_min: 90 }, "top grows upward, end fixed");
 eq(resize(a, "top", 590), { start_min: 570, duration_min: 30 }, "top floors at 30, end fixed");
 
+eq(resize(a, "bottom", 90, 1440), { start_min: 540, duration_min: 990 }, "last-day bottom adds the offset");
+
+const night = custom("n1", 1350, 460);
+const days = [
+  { day_index: 0, date: "2026-10-01", items: [] },
+  { day_index: 1, date: "2026-10-02", items: [night] },
+  { day_index: 2, date: "2026-10-03", items: [item("x", 600)] },
+];
+eq(
+  piecesOn(days, 1).map((p) => [keyOf(p.item), p.offset, p.from, p.to]),
+  [["n1", 0, 1350, 1440]],
+  "the first day draws up to midnight",
+);
+eq(
+  piecesOn(days, 2).map((p) => [keyOf(p.item), p.offset, p.from, p.to]),
+  [["n1", 1440, 0, 370], ["x", 0, 600, 660]],
+  "the next day draws the tail beside its own blocks",
+);
+eq(piecesOn(days, 0), [], "nothing reaches back to an earlier day");
+eq(endsOn(night, 1), { day: 2, min: 370 }, "an overnight flight lands the next morning");
+eq(endsOn(custom("m", 1380, 60), 0), { day: 0, min: 1440 }, "midnight belongs to the day before");
+
 const lanes = (items: ItineraryItem[]) =>
   layout(items).map((p) => [p.item.place_id, p.lane, p.lanes]);
 
@@ -81,8 +105,7 @@ eq(hhmm(1290), "21:30", "hhmm");
 eq(hhmm(1470), "00:30", "hhmm wraps past midnight");
 
 // A warning names the block it is about, and an unknown code degrades to the code itself rather
-// than to "undefined". `travel_does_not_fit` was asserted here until travel-time validation was
-// removed; there is deliberately nothing to replace it with.
+// than to "undefined".
 eq(
   warningText({ code: "closes_before_done", place_id: "b",
                 detail: { start: "16:00", need_min: 90, closes: "17:00" } }, "Polar Museum"),

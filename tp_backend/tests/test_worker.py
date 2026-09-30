@@ -121,7 +121,7 @@ def test_a_transient_failure_is_deferred_for_a_retry(worker, db, run):
 
 
 def test_a_throttle_wait_does_not_spend_an_attempt(worker, db, run):
-    """Live-run bug: eight RedNote fetches behind a 45s gap failed on max_attempts, nothing wrong."""
+    """A throttle wait goes back to the queue via run_after without spending an attempt."""
     task = add_task(db, run, max_attempts=1)
 
     def not_yet(s, t):

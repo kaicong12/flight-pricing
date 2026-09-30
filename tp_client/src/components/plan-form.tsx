@@ -8,6 +8,7 @@ import { X } from "lucide-react";
 
 import { CityCombobox } from "@/components/city-combobox";
 import { Button } from "@/components/ui/button";
+import { UploadTrip } from "@/components/upload-trip";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -202,6 +203,9 @@ export function PlanForm() {
             We read real travel videos, so this takes a couple of minutes.
           </p>
         </form>
+        <p className="mt-4 text-center text-xs text-faint">
+          Have a trip exported from here? <UploadTrip look="link" />
+        </p>
       </div>
 
       <aside className="border-border pl-0 lg:sticky lg:top-23 lg:border-l lg:pl-6">

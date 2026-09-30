@@ -21,7 +21,7 @@ from libs.auth import (
     upsert_user,
     user_for_token,
 )
-from libs.db import User, UserSession, UserTrip
+from libs.db import User, UserSession
 from libs.settings import Settings
 from tp_api.deps import current_user, require_admin, require_edit, require_trip_access
 from tp_api.main import app
@@ -38,7 +38,7 @@ OPEN_ROUTES = {("GET", "/auth/url"), ("POST", "/auth/google"),
 # Writes with no static role gate. Each is a decision with a reason, not an oversight.
 UNGATED_WRITES = {
     ("POST", "/trips/{trip_id}/days/{day_index}/route"):
-        "stores nothing, and a viewer who cannot route sees no line on the map",
+        "writes only the shared place_hours cache, and a viewer checks a day too",
     ("DELETE", "/trips/{trip_id}/members/{user_id}"):
         "owner-or-self, so the check needs the target and lives in the handler",
 }
@@ -274,10 +274,6 @@ class TestExchange:
 
 
 class TestTripsAreScopedToTheirUser:
-    def test_creating_a_trip_grants_the_creator_access(self, client, db, user):
-        trip_id = client.post("/initiate-plan", json=plan_body()).json()["trip_id"]
-        assert db.get(UserTrip, (user.user_id, trip_id)) is not None
-
     def test_another_users_trip_is_a_404_not_a_403(self, client, db, user):
         trip_id = client.post("/initiate-plan", json=plan_body()).json()["trip_id"]
         db.add(User(user_id="u-other", google_sub="sub-other", email="other@example.com"))

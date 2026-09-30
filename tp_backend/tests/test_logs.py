@@ -39,7 +39,7 @@ def test_json_format_carries_a_traceback():
     assert "\n" not in line
 
 
-def test_install_picks_json_off_a_tty_and_text_on_one():
+def test_install_uses_the_formatter_it_is_asked_for():
     logs.install(json_logs=True)
     assert isinstance(logging.getLogger().handlers[0].formatter, logs.JsonFormatter)
 

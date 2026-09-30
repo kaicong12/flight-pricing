@@ -75,7 +75,6 @@ def test_place_count_agrees_with_the_shortlist(client, db):
 
 
 def test_an_unclaimed_place_in_the_city_is_not_counted(client, db):
-    """The city no longer implies the shortlist, so a place no trip claimed is invisible."""
     created = client.post("/initiate-plan", json=plan_body()).json()
     db.add(Place(place_id="orphan", city_id=created["city"]["city_id"], name="Orphan",
                  confidence=Confidence.HIGH))

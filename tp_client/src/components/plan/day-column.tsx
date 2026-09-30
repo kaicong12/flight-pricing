@@ -1,9 +1,10 @@
 "use client";
 
-// The middle column: one day as a half-hour grid you pin places onto.
+// The middle column: one day, midnight to midnight, as a half-hour grid you pin places onto.
 //
 // Each half hour is its own droppable, so a drop reports a time rather than a pixel offset. Blocks
 // are absolutely positioned from their own start_min, and overlapping ones share the width in lanes.
+// A block that started on an earlier day draws its tail here too.
 
 import { useState } from "react";
 
@@ -21,6 +22,7 @@ import {
   hhmm,
   keyOf,
   layout,
+  piecesOn,
   warningText,
 } from "@/lib/plan-types";
 import { cn } from "@/lib/utils";
@@ -33,6 +35,8 @@ const SLOTS = Math.round((DAY_END_MIN - DAY_START_MIN) / SLOT_MIN);
 
 export function DayColumn({
   day,
+  days,
+  windowOf,
   route,
   stale,
   readOnly,
@@ -47,6 +51,8 @@ export function DayColumn({
   onEditCustom,
 }: {
   day: ItineraryDay;
+  days: ItineraryDay[];
+  windowOf: (day: number) => { from: number; to: number };
   route: DayRoute | undefined;
   stale: boolean;
   readOnly: boolean;
@@ -62,7 +68,7 @@ export function DayColumn({
   onAddCustom: (startMin: number, draft: CustomDraft, durationMin: number) => void;
   onEditCustom: (key: string, draft: CustomDraft) => void;
 }) {
-  // Which half hour the "+" was clicked on, or the block being renamed. One dialog serves both.
+  // Which half hour the "+" was clicked on, or the block being edited. One dialog serves both.
   const [adding, setAdding] = useState<number | null>(null);
   const [editing, setEditing] = useState<ItineraryItem | null>(null);
 
@@ -75,7 +81,13 @@ export function DayColumn({
   }
 
   const warningCount = stale ? 0 : (route?.warnings.length ?? 0);
-  const placed = layout(day.items);
+  const pieces = piecesOn(days, day.day_index);
+  const pieceOf = new Map(pieces.map((p) => [keyOf(p.item), p]));
+  const placed = layout(
+    pieces.map((p) => ({ ...p.item, start_min: p.from, duration_min: p.to - p.from })),
+  );
+  const editingOffset = editing ? (pieceOf.get(keyOf(editing))?.offset ?? 0) : 0;
+  const editingDay = day.day_index - editingOffset / DAY_END_MIN;
 
   return (
     <div className="px-5 pt-4 pb-5">
@@ -146,6 +158,7 @@ export function DayColumn({
             <ActivityBlock
               key={keyOf(p.item)}
               placed={p}
+              piece={pieceOf.get(keyOf(p.item))!}
               block={byPlace.get(keyOf(p.item))}
               warnings={perPlace.get(keyOf(p.item)) ?? []}
               slotPx={SLOT_PX}
@@ -155,7 +168,7 @@ export function DayColumn({
               onRemove={() => onRemove(keyOf(p.item))}
               onReference={(url) => onReference(keyOf(p.item), url)}
               onCost={(amountCents, cur) => onCost(p.item, amountCents, cur)}
-              onEdit={p.item.kind === "custom" ? () => setEditing(p.item) : undefined}
+              onEdit={() => setEditing(pieceOf.get(keyOf(p.item))!.item)}
               onResize={(startMin, durationMin) =>
                 onResize(keyOf(p.item), startMin, durationMin)
               }
@@ -182,24 +195,22 @@ export function DayColumn({
       {(adding !== null || editing) && (
         <CustomBlockDialog
           key={editing ? keyOf(editing) : adding}
-          startMin={adding ?? editing?.start_min ?? DAY_START_MIN}
-          room={Math.max(0, available.to - (adding ?? DAY_START_MIN))}
-          editing={
-            editing
-              ? {
-                  title: editing.name,
-                  description: editing.description,
-                  durationMin: editing.duration_min,
-                }
-              : null
-          }
+          dayIndex={editingDay}
+          startMin={adding ?? DAY_START_MIN}
+          days={days}
+          windowOf={windowOf}
+          editing={editing}
           onClose={() => {
             setAdding(null);
             setEditing(null);
           }}
-          onSubmit={(draft, durationMin) => {
-            if (editing) onEditCustom(keyOf(editing), draft);
-            else if (adding !== null) onAddCustom(adding, draft, durationMin);
+          onSubmit={(draft, startMin, durationMin) => {
+            if (!editing) {
+              if (draft) onAddCustom(startMin, draft, durationMin);
+              return;
+            }
+            if (draft) onEditCustom(keyOf(editing), draft);
+            onResize(keyOf(editing), startMin, durationMin);
           }}
         />
       )}

@@ -11,5 +11,6 @@ export async function GET(
   const query = new URLSearchParams({ limit: from.get("limit") ?? "40" });
   if (from.get("offset")) query.set("offset", from.get("offset")!);
   if (from.get("category")) query.set("category", from.get("category")!);
+  if (from.get("source")) query.set("source", from.get("source")!);
   return proxy(`/trips/${encodeURIComponent(tripId)}/shortlist?${query}`);
 }

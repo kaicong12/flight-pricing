@@ -130,7 +130,6 @@ def test_the_second_city_gets_its_own_ocr_for_a_note_whose_desc_named_nothing(db
 
 def test_fetch_stores_the_note_body(db, run, post, monkeypatch):
     monkeypatch.setattr(fetch.client, "fetch_note", lambda n, t: CARD)
-    monkeypatch.setattr(extract.gemini, "generate", lambda *a, **k: result([place()]))
 
     fetch.rednote_fetch(db, task(run))
     db.commit()
@@ -147,7 +146,6 @@ def test_fetch_strips_zero_width_characters_from_the_body(db, run, post, monkeyp
     """Some notes separate every letter of a venue name, which would wreck name extraction."""
     monkeypatch.setattr(fetch.client, "fetch_note",
                         lambda n, t: CARD | {"desc": "T\u200bang's\nR\u200be"})
-    monkeypatch.setattr(extract.gemini, "generate", lambda *a, **k: result())
 
     fetch.rednote_fetch(db, task(run))
     db.commit()
@@ -166,8 +164,8 @@ def test_fetch_of_a_bodyless_note_is_permanent(db, run, post, monkeypatch):
 
 def test_a_gemini_failure_keeps_the_body_it_paid_a_rednote_call_for(db, run, post, worker,
                                                                    monkeypatch):
-    """The fetch and the extraction are separate tasks precisely so this holds: the body survives and
-    only the free half retries. Fused, every Gemini failure re-spent a 50/h RedNote call."""
+    """rednote.extract is its own task, so a Gemini failure keeps the stored body and the retry
+    spends no RedNote call."""
     queued_task(db, run)
     monkeypatch.setattr(fetch.client, "fetch_note", lambda n, t: CARD)
 
@@ -349,13 +347,4 @@ def test_a_search_task_that_never_ran_leaves_fetch_permanent(db, run, monkeypatc
     assert e.value.code == ErrorCode.PERMANENT
 
 
-def test_a_blocked_kind_no_longer_happens_for_rednote(db, run, post, worker, monkeypatch):
-    """The four new handlers exist, so nothing in the RedNote chain lands in queue.block."""
-    queued_task(db, run)
-    monkeypatch.setattr(fetch.client, "fetch_note", lambda n, t: CARD)
-    monkeypatch.setattr(extract.gemini, "generate", lambda *a, **k: result([place()]))
 
-    worker.run_once()
-
-    db.expire_all()
-    assert TaskStatus.BLOCKED not in db.scalars(select(IngestTask.status)).all()

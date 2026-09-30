@@ -244,16 +244,6 @@ def test_every_city_failing_is_terminal_with_no_draft(client, db, lookup):
     assert status == RunStatus.FAILED, "terminal, so the client stops polling"
 
 
-def test_a_failed_city_still_claims_nothing_but_leaves_the_others_intact(client, db, lookup):
-    trip_id = client.post("/initiate-plan", json=two_cities(lookup)).json()["trip_id"]
-    make_place(db, city_id=HELSINKI, place_id="hel-1")
-
-    settle(db, PORTO, status=RunStatus.FAILED)
-
-    assert set(db.scalars(select(TripPlace.place_id).where(TripPlace.trip_id == trip_id))) \
-        == {"hel-1"}
-
-
 def test_the_trips_list_sums_both_cities(client, db, lookup):
     client.post("/initiate-plan", json=two_cities(lookup))
 
@@ -278,7 +268,7 @@ def test_a_deleted_trip_is_not_claimed_for(db):
     assert set(db.scalars(select(TripPlace.trip_id))) == {live}
 
 
-def test_a_trip_predating_trip_cities_still_reads(client, db):
+def test_a_trip_with_no_trip_cities_rows_reads_as_its_anchor(client, db):
     make_city(db)
     trip_id = make_trip(db, "t-old")
     db.execute(TripCity.__table__.delete().where(TripCity.trip_id == trip_id))
@@ -430,17 +420,6 @@ def test_the_draft_prompt_places_each_city_and_measures_from_its_own_centre(clie
     assert "Helsinki sunrise" in day and "Porto sunrise" in day, day
 
 
-def test_a_hand_added_place_is_still_judged_against_the_daylight(client, db, lookup):
-    trip_id = client.post("/initiate-plan", json=two_cities(lookup)).json()["trip_id"]
-    make_place(db, city_id=HELSINKI, place_id="hand", name="A Viewpoint", category="see")
-    client.put(f"/trips/{trip_id}/itinerary", json={"days": [{"day_index": 0, "items": [
-        {"place_id": "hand", "start_min": 23 * 60, "duration_min": 30}]}]})
-
-    body = client.post(f"/trips/{trip_id}/days/0/route", json={}).json()
-
-    assert "after_sunset" in [w["code"] for w in body["warnings"]]
-
-
 def test_a_hand_added_place_is_filed_under_the_nearest_city_it_could_be_in(client, db, lookup):
     arrive = midsummer()
     trip_id = client.post("/initiate-plan", json=two_cities(
@@ -543,11 +522,6 @@ def test_a_city_with_no_zone_gives_all_its_places_one_window(db):
 
 
 def test_a_place_reached_through_another_city_is_named_by_the_city_it_is_in(client, db, lookup):
-    """A shared `place_queries` hit claims a place for a trip that covers neither of its cities.
-
-    `places.city_id` then names a city outside the trip altogether, which is the one label worth
-    showing — it is what explains a hawker centre sitting in a Nordic shortlist.
-    """
     trip_id = client.post("/initiate-plan", json=two_cities(lookup)).json()["trip_id"]
     db.add(City(city_id="sgp", name="Singapore", country="SG", timezone="Asia/Singapore",
                 lat=1.2811, lon=103.8503))

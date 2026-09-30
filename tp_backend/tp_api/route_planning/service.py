@@ -54,6 +54,7 @@ from tp_api.route_planning.utils import (
     available_window,
     day_count,
     google_weekday,
+    pieces,
     source_title,
     source_url,
     tz_minutes,
@@ -154,8 +155,11 @@ def in_shortlist(trip: Trip | type[Trip]):
 
 
 def shortlist(db: Session, trip_id: str, limit: int, offset: int,
-              category: str | None) -> ShortlistOut:
-    """The trip's places, ranked by how many independent sources mentioned each one."""
+              category: str | None, source: Source | None = None) -> ShortlistOut:
+    """The trip's places, ranked by how many independent sources mentioned each one.
+
+    `source` keeps a place any one of whose mentions came from it, so a hand-added place drops out.
+    """
     trip = get_trip(db, trip_id)
 
     mentions = (
@@ -183,6 +187,11 @@ def shortlist(db: Session, trip_id: str, limit: int, offset: int,
         .limit(limit)
         .offset(offset)
     )
+    if source:
+        stmt = stmt.where(select(PlaceMention.place_id)
+                          .where(PlaceMention.place_id == Place.place_id,
+                                 PlaceMention.source == source)
+                          .exists())
     rows = db.execute(stmt).all()
 
     place_ids = [r.Place.place_id for r in rows]
@@ -278,14 +287,19 @@ def replace_days(db: Session, trip_id: str, body: ItineraryIn) -> ItineraryOut:
         raise HTTPException(422, "a day is listed twice")
     for d in body.days:
         check_day(trip, d.day_index)
-        first, last = available_window(trip, d.day_index)
         for item in d.items:
-            if item.start_min < first or item.start_min + item.duration_min > last:
-                raise HTTPException(
-                    422,
-                    f"day {d.day_index} is only usable {hhmm(first)}-{hhmm(last)}: "
-                    f"{hhmm(item.start_min)} for {item.duration_min} min does not fit",
-                )
+            covered = pieces(d.day_index, item.start_min, item.duration_min)
+            if covered[-1][0] >= day_count(trip):
+                raise HTTPException(422, f"{hhmm(item.start_min)} for {item.duration_min} min "
+                                         f"on day {d.day_index} runs past the end of the trip")
+            for day, at, until in covered:
+                first, last = available_window(trip, day)
+                if at < first or until > last:
+                    raise HTTPException(
+                        422,
+                        f"day {day} is only usable {hhmm(first)}-{hhmm(last)}: "
+                        f"{hhmm(item.start_min)} for {item.duration_min} min does not fit",
+                    )
 
     items = [i for d in body.days for i in d.items]
     place_ids = [i.place_id for i in items if i.place_id]

@@ -37,6 +37,7 @@ import type {
   ItineraryItem,
   Shortlist,
   ShortlistPlace,
+  ShortlistSource,
 } from "@/lib/plan-types";
 import {
   DEFAULT_DURATION,
@@ -44,6 +45,7 @@ import {
   SLOT_MIN,
   availableWindow,
   keyOf,
+  piecesOn,
 } from "@/lib/plan-types";
 
 import { DayColumn } from "./day-column";
@@ -79,10 +81,14 @@ export function PlanBoard({
     () => initialState(initialItinerary, initialShortlist) satisfies PlanState,
   );
   const [category, setCategory] = useState<string | null>(null);
+  const [source, setSource] = useState<ShortlistSource | null>(null);
   const [dragging, setDragging] = useState<string | null>(null);
   const [routingDay, setRoutingDay] = useState<number | null>(null);
   // Stamped with the request that produced it, so "loading" is derived instead of set in an effect.
-  const [loaded, setLoaded] = useState({ category: null as string | null });
+  const [loaded, setLoaded] = useState({
+    category: null as string | null,
+    source: null as ShortlistSource | null,
+  });
   // The costs tab, so a block can show what it cost and the "$" can add one.
   const [expenses, setExpenses] = useState(initialExpenses);
 
@@ -143,6 +149,8 @@ export function PlanBoard({
   const day = state.days.find((d) => d.day_index === state.activeDay) ?? state.days[0];
   const route = state.routes[state.activeDay];
   const isStale = state.stale.includes(state.activeDay);
+  // A block drawn on this day may live on an earlier one, if it runs past midnight.
+  const homeOf = (key: string) => dayOf(state, key) ?? state.activeDay;
   const placed = useMemo(() => placedDays(state), [state]);
   const provisional = useMemo(
     () => Object.values(state.routes).find((r) => r.provisional.length > 0)?.provisional ?? [],
@@ -224,36 +232,38 @@ export function PlanBoard({
     };
   }, [needsRoute, activeDay, trip.trip_id]);
 
-  // Shortlist paging and category filtering.
-  const settled = loaded.category === category;
+  // Shortlist paging, category and source filtering.
+  const settled = loaded.category === category && loaded.source === source;
   useEffect(() => {
     if (settled) return;
     const controller = new AbortController();
     (async () => {
       const query = new URLSearchParams({ limit: String(PAGE) });
       if (category) query.set("category", category);
+      if (source) query.set("source", source);
       try {
         const r = await fetch(`/api/trips/${trip.trip_id}/shortlist?${query}`, {
           signal: controller.signal,
         });
         if (r.ok) {
           dispatch({ type: "shortlistLoaded", shortlist: await r.json(), append: false });
-          setLoaded({ category });
+          setLoaded({ category, source });
         }
       } catch {
         // Superseded by another filter.
       }
     })();
     return () => controller.abort();
-  }, [settled, category, trip.trip_id]);
+  }, [settled, category, source, trip.trip_id]);
 
   const loadMore = useCallback(async () => {
     const offset = state.shortlist.length;
     const query = new URLSearchParams({ limit: String(PAGE), offset: String(offset) });
     if (category) query.set("category", category);
+    if (source) query.set("source", source);
     const r = await fetch(`/api/trips/${trip.trip_id}/shortlist?${query}`);
     if (r.ok) dispatch({ type: "shortlistLoaded", shortlist: await r.json(), append: true });
-  }, [category, state.shortlist.length, trip.trip_id]);
+  }, [category, source, state.shortlist.length, trip.trip_id]);
 
   const dismiss = useCallback(
     async (place: ShortlistPlace) => {
@@ -372,6 +382,8 @@ export function PlanBoard({
           loading={!settled}
           tripId={trip.trip_id}
           onCategory={setCategory}
+          source={source}
+          onSource={setSource}
           readOnly={!canEdit}
           onDismiss={dismiss}
           onAdd={addPlace}
@@ -386,6 +398,8 @@ export function PlanBoard({
           />
           <DayColumn
             day={day}
+            days={state.days}
+            windowOf={(d) => availableWindow(trip, d, state.days.length)}
             route={route}
             stale={isStale}
             readOnly={!canEdit}
@@ -393,28 +407,25 @@ export function PlanBoard({
             costs={costs}
             currency={expenses?.currency ?? "EUR"}
             onCost={saveCost}
-            onRemove={(key) => dispatch({ type: "remove", day: state.activeDay, key })}
-            onReference={(key, url) =>
-              dispatch({ type: "reference", day: state.activeDay, key, url })
-            }
+            onRemove={(key) => dispatch({ type: "remove", day: homeOf(key), key })}
+            onReference={(key, url) => dispatch({ type: "reference", day: homeOf(key), key, url })}
             onAddCustom={(startMin, draft, durationMin) =>
               dispatch({ type: "addCustom", day: state.activeDay, startMin, durationMin, draft })
             }
             onEditCustom={(key, draft) =>
-              dispatch({ type: "editCustom", day: state.activeDay, key, draft })
+              dispatch({ type: "editCustom", day: homeOf(key), key, draft })
             }
             onResize={(key, startMin, durationMin) => {
               // A top-edge drag changes both, so both go through, each guarded against a no-op.
-              dispatch({ type: "pin", key, fromDay: state.activeDay,
-                         toDay: state.activeDay, startMin });
-              dispatch({ type: "duration", day: state.activeDay, key,
-                         minutes: durationMin });
+              const home = homeOf(key);
+              dispatch({ type: "pin", key, fromDay: home, toDay: home, startMin });
+              dispatch({ type: "duration", day: home, key, minutes: durationMin });
             }}
           />
         </section>
 
         <DayMap
-          day={day}
+          day={{ ...day, items: piecesOn(state.days, day.day_index).map((p) => p.item) }}
           route={route}
           centerLat={center?.lat ?? null}
           centerLon={center?.lon ?? null}

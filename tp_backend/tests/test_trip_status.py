@@ -74,7 +74,8 @@ def test_progress_reflects_a_finished_run(client, db):
     assert db.scalars(select(IngestTask.status)).all() == [TaskStatus.DONE] * 3
 
     body = client.get(f"/trips/{created['trip_id']}").json()
-    assert all(p["status"] == TaskStatus.DONE for p in body["progress"])
+    assert {(p["kind"], p["status"]) for p in body["progress"]} == {
+        (TaskKind.YOUTUBE_SEARCH, TaskStatus.DONE), (TaskKind.REDNOTE_SEARCH, TaskStatus.DONE)}
 
 
 def test_a_trip_with_no_draft_reports_none(client):

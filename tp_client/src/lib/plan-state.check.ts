@@ -86,7 +86,15 @@ eq(withBlock.unsaved, [0], "placing a block marks its day unsaved");
 eq(withBlock.revision, 1, "placing a block bumps the revision");
 
 // A reference is a link, not an ordering: it must save but never spend a route on the day.
-const linked = planReducer(withBlock, {
+const checked = (state: typeof base) =>
+  planReducer(state, {
+    type: "checked",
+    route: { day_index: 0, date: itinerary.days[0].date, start_time: null, blocks: [],
+             daylight: null, warnings: [], provisional: [] },
+  });
+const withBlockChecked = checked(withBlock);
+eq(withBlockChecked.stale, [], "a checked day is no longer stale");
+const linked = planReducer(withBlockChecked, {
   type: "reference",
   day: 0,
   key: "p1",
@@ -94,7 +102,7 @@ const linked = planReducer(withBlock, {
 });
 eq(linked.days[0].items[0].reference_url, "https://airbnb.com/rooms/1", "the link is stored");
 eq(linked.unsaved, [0], "a link marks the day unsaved");
-eq(linked.stale, withBlock.stale, "a link does not re-route the day");
+eq(linked.stale, [], "a link does not re-route the day");
 eq(
   planReducer(linked, { type: "reference", day: 0, key: "p1", url: "https://airbnb.com/rooms/1" })
     .revision,
@@ -122,7 +130,7 @@ eq(early.start_min < late.start_min, true, "and are in time order");
 eq(keyOf(early) !== keyOf(late), true, "each gets its own id");
 eq([early.place_id, early.kind], [null, "custom"], "a custom block claims no place");
 
-const renamed = planReducer(twice, {
+const renamed = planReducer(checked(twice), {
   type: "editCustom",
   day: 0,
   key: keyOf(late),
@@ -130,7 +138,7 @@ const renamed = planReducer(twice, {
 });
 eq(renamed.days[0].items.map((i) => i.name), ["Hotel Bristol", "Hotel Bristol · night 2"],
    "editing one leaves its twin alone");
-eq(renamed.stale, twice.stale, "a rename does not re-route the day");
+eq(renamed.stale, [], "a rename does not re-route the day");
 
 const removed = planReducer(twice, { type: "remove", day: 0, key: keyOf(early) });
 eq(removed.days[0].items.map((i) => keyOf(i)), [keyOf(late)], "removing one leaves its twin");

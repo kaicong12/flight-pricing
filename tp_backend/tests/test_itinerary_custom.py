@@ -4,6 +4,7 @@ from conftest import make_place, plan_body
 from sqlalchemy import select
 
 from libs.db import ItineraryItem
+from tp_ingestions.plan.draft import busy_by_day
 
 
 def make_trip(client, **kw):
@@ -106,6 +107,37 @@ class TestCustomBlocks:
         """plan_body lands 14:30: the window is the trip's, not the shortlist's."""
         trip = make_trip(client)
         r = put(client, trip, [{"day_index": 0, "items": [custom("b1", start_min=840)]}])
+        assert r.status_code == 422
+
+
+class TestToTheMinute:
+    def test_a_block_keeps_its_exact_minutes(self, client):
+        trip = make_trip(client)
+        body = put(client, trip, [{"day_index": 1, "items": [
+            custom("b1", start_min=7 * 60 + 13, duration_min=7)]}]).json()
+        item = body["days"][1]["items"][0]
+        assert (item["start_min"], item["duration_min"]) == (433, 7)
+
+    def test_an_overnight_flight_is_one_row_on_the_day_it_leaves(self, client, db):
+        trip = make_trip(client)
+        r = put(client, trip, [{"day_index": 1, "items": [
+            custom("b1", start_min=22 * 60 + 30, duration_min=460, title="Flight to Oslo")]}])
+        assert r.status_code == 200
+        rows = db.scalars(select(ItineraryItem).where(ItineraryItem.trip_id == trip)).all()
+        assert [(i.day_index, i.start_min, i.duration_min) for i in rows] == [(1, 1350, 460)]
+        assert busy_by_day(db, trip)[2] == [(0, 370, "Flight to Oslo")]
+
+    def test_a_block_running_past_the_last_day_is_rejected(self, client):
+        trip = make_trip(client)
+        r = put(client, trip, [{"day_index": 3, "items": [
+            custom("b1", start_min=12 * 60, duration_min=24 * 60)]}])
+        assert r.status_code == 422
+
+    def test_a_block_landing_after_the_departure_is_rejected(self, client):
+        """plan_body leaves 18:05 on day 3, so a night from day 2 that ends at 19:00 cannot fit."""
+        trip = make_trip(client)
+        r = put(client, trip, [{"day_index": 2, "items": [
+            custom("b1", start_min=21 * 60, duration_min=22 * 60)]}])
         assert r.status_code == 422
 
 

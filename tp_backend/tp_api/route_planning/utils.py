@@ -32,6 +32,16 @@ def available_window(trip: Trip, day_index: int) -> tuple[int, int]:
     return first, last
 
 
+def pieces(day_index: int, start_min: int, duration_min: int) -> list[tuple[int, int, int]]:
+    """(day, from, to) for each day a block covers, in that day's own minutes."""
+    out, day, at, end = [], day_index, start_min, start_min + duration_min
+    while True:
+        out.append((day, at, min(end, 24 * 60)))
+        if end <= 24 * 60:
+            return out
+        day, at, end = day + 1, 0, end - 24 * 60
+
+
 def google_weekday(d: date) -> int:
     """Places numbers weekdays from Sunday; Python numbers them from Monday."""
     return (d.weekday() + 1) % 7

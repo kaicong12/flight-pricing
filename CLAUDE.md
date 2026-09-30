@@ -111,7 +111,9 @@ is the one thing `places.category` exists for: every other category is a majorit
 `place_mentions`, which a hand-added place has none of, so without it the place is invisible under
 every filter chip. A person's answer beats the videos'. The user drags
 them into days; `PUT /trips/{id}/itinerary` replaces whole days, because a drag is a statement about
-a sequence and positions are dense and derived. `POST /trips/{id}/days/{n}/route` then checks that
+a sequence and positions are dense and derived. A drag snaps to the half hour; the block dialog types
+any minute, and may end a block on a later day. That block stays **one row on the day it starts** —
+one `block_id`, so one cost — and the grid draws its tail on each day it reaches (`piecesOn`). `POST /trips/{id}/days/{n}/route` then checks that
 exact order against Place Details hours and daylight and returns structured warning codes — the
 client owns the English. **Daylight is per place, not per trip**: the sun is computed from each
 block's own lat/lon in its own city's zone, so one day spanning two cities has two sunsets, and
@@ -143,6 +145,14 @@ warning in the app's own amber and clay, with a `Ref` column **only when some bl
 or note that named the place. Day and Date are **merged down each day's rows**, so the number is
 written once rather than repeated beside every block. It re-reads hours, and the warning English lives
 in `export.py` because a spreadsheet has no client to own it.
+
+**Upload new trip** (`tp_api/uploads.py`) reads that workbook back as a *new* trip the uploader owns —
+never into an existing one. The export carries a very hidden `_trip_planner` sheet — a marker, a format
+version, the trip and each row's identity — and a hidden `_row` column; a file without that marker is
+refused. It is not signed, so the sheet is untrusted input: every id in it is re-checked, and damaged
+data refuses the file or skips the row. The visible cells are what is read, so Excel edits come through: a renamed
+place or a typed-in row becomes a custom block, and an unreadable row is skipped and named in the
+preview. Costs, members and dismissals stay behind.
 
 **7. Draft.** `route.plan` fills a trip's *empty* days so the plan screen opens filled — **one Gemini
 call in a loop, not an agent**: the shortlist is already a closed ranked set and `plan_day` already
@@ -179,6 +189,7 @@ with `docker-compose.local.yml` adding the `db` service RDS provides in producti
 container DNS and its logs reach Loki. `DATABASE_URL` is the only difference between the two stacks.
 `make test` is pytest plus `tp_client`'s `src/lib/*.check.ts` — the client has no test framework, so
 those standalone asserts are its only coverage and that target is the only thing that runs them.
+`docs/regression.md` is the flow to walk after a change: that gate, migrations, then the live screens.
 `make help` lists the rest. `docker-compose.yml` runs the three backend
 services on a t4g.micro against RDS; `tp_client` is on Vercel, so there is no `web` service. See
 `docs/deploy.md`.

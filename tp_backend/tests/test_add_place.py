@@ -1,4 +1,4 @@
-"""Adding a place by hand: the venue typeahead, and the insert that makes it shortlistable."""
+"""Adding a place by hand: the venue typeahead, and the claim that makes it shortlistable."""
 
 import pytest
 from conftest import HELSINKI, make_city, make_mention, make_place, plan_body
@@ -54,8 +54,7 @@ class TestSearch:
         assert r.json() == [{"place_id": "ChIJ_oodi", "name": "Oodi Library",
                              "context": "Helsinki, Finland"}]
 
-    def test_searches_near_the_trips_city(self, client, venues):
-        """The city box is what stops a namesake in another country coming back."""
+    def test_search_is_biased_toward_the_anchor(self, client, venues):
         seen = {}
 
         def spy(q, lat, lon, radius):
@@ -99,7 +98,7 @@ class TestAdd:
         assert stored.city_id == HELSINKI
 
     def test_it_then_appears_in_the_shortlist(self, client, db):
-        """The whole point: `places` scoped to the city is what the shortlist reads."""
+        """The claim is what the shortlist reads."""
         trip = make_trip(client)
         make_place(db, place_id="p1", name="Mentioned")
         make_mention(db, "p1")
@@ -111,7 +110,7 @@ class TestAdd:
         assert [p["name"] for p in places] == ["Mentioned", "Oodi Library"]
 
     def test_it_can_be_dragged_onto_a_day(self, client):
-        """A manual place must clear replace_days' "is it a place in this city" gate."""
+        """A manual place must clear replace_days' in_shortlist gate."""
         trip = make_trip(client)
         add(client, trip, "ChIJ_oodi")
 
@@ -135,8 +134,7 @@ class TestAdd:
         assert "Sydney Opera House" in names
 
     def test_a_place_in_another_city_reaches_only_the_trip_that_claimed_it(self, client, db, venues):
-        """What `trip_places` is for: the city query cannot see this row, so the claim is the only
-        thing that does — and it belongs to one trip, not to everyone planning Helsinki."""
+        """The claim belongs to one trip, not to everyone planning Helsinki."""
         make_city(db, city_id="ChIJ_sydney_city", name="Sydney")
         make_place(db, city_id="ChIJ_sydney_city", place_id="ChIJ_sydney", name="Opera House")
         mine, theirs = make_trip(client), make_trip(client)
@@ -169,7 +167,7 @@ class TestAdd:
         r = add(client, make_trip(client), "nope")
         assert r.status_code == 422
 
-    def test_adding_one_already_in_the_city_spends_nothing(self, client, db, venues):
+    def test_adding_an_already_stored_place_spends_nothing(self, client, db, venues):
         """A place the ingestion already found needs no Places call to re-add."""
         trip = make_trip(client)
         make_place(db, place_id="p1", name="Already Here")
@@ -193,7 +191,8 @@ class TestAdd:
         assert db.scalar(select(TripDismissal).where(TripDismissal.trip_id == trip)) is None
 
     def test_a_hand_added_place_stays_on_the_trip_that_added_it(self, client, db, venues):
-        """It is filed under the adding trip's city, so only the claim can be what shortlists it."""
+        """Filed under the nearest of the trip's cities, which the other trip covers too; only the
+        claim shortlists it."""
         mine, theirs = make_trip(client), make_trip(client)
         venues["lookup"] = lambda pid: FAR_AWAY
 

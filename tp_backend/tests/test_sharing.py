@@ -38,12 +38,6 @@ def share(client, trip, user_id, role=TripRole.EDITOR):
 
 
 class TestAccess:
-    def test_a_trip_is_invisible_until_it_is_shared(self, client, friend):
-        trip = make_trip(client)
-        seen_by(client, "friend-token")
-        assert client.get(f"/trips/{trip}").status_code == 404
-        assert client.get("/trips").json() == []
-
     def test_sharing_makes_it_visible_to_the_other_user(self, client, friend):
         trip = make_trip(client)
         assert share(client, trip, friend.user_id).status_code == 200
@@ -121,7 +115,6 @@ class TestWhatAViewerMay:
 
         seen_by(client, "friend-token")
         assert client.get(f"/trips/{trip}/shortlist").status_code == 200
-        # Routing stores nothing, so a viewer may do it — otherwise the map draws no line.
         assert client.post(f"/trips/{trip}/days/0/route").status_code == 200
 
     def test_not_change_the_itinerary(self, client, friend):

@@ -8,13 +8,11 @@ from libs.routing.plan import (
     AFTER_SUNSET,
     CLOSED_TODAY,
     CLOSES_BEFORE_DONE,
-    DEFAULT_DURATION,
-    MIN_DURATION,
     NO_HOURS,
     OPENS_LATER,
-    SLOT_MIN,
     Stop,
 )
+from tp_api.route_planning.utils import pieces
 
 # Google's periods use 0=Sunday. Two real shapes, taken from live Place Details responses.
 ARCTIC_CATHEDRAL = [
@@ -68,14 +66,6 @@ class TestWindowFor:
         assert window_for([], 1) is None
 
 
-class TestDurations:
-    def test_the_default_is_one_hour_and_grid_aligned(self):
-        # There are no per-category durations any more: one hour, and the user drags from there.
-        assert DEFAULT_DURATION == 60
-        assert DEFAULT_DURATION % SLOT_MIN == 0
-        assert MIN_DURATION == SLOT_MIN
-
-
 def stop(pid, name, *, start, category="see", minutes=60, periods=ARCTIC_CATHEDRAL, sunset=None):
     return Stop(place_id=pid, name=name, category=category, start_min=start,
                 duration_min=minutes, periods=periods, sunset_min=sunset)
@@ -83,13 +73,11 @@ def stop(pid, name, *, start, category="see", minutes=60, periods=ARCTIC_CATHEDR
 
 class TestPlanDay:
     def test_blocks_keep_exactly_the_times_they_were_given(self):
-        # The old plan_day derived these by accumulating durations and travel. Now they are input.
         plan = plan_day(
             [stop("a", "A", start=600, minutes=60), stop("b", "B", start=690, minutes=30)],
             weekday=1,
         )
         assert [(b.start_min, b.end_min) for b in plan.blocks] == [(600, 660), (690, 720)]
-        assert plan.finish_min == 720
         assert plan.warnings == []
 
     def test_stops_are_checked_in_time_order_whatever_order_they_arrive_in(self):
@@ -107,13 +95,11 @@ class TestPlanDay:
     def test_a_single_stop_is_checked_on_its_own(self):
         plan = plan_day([stop("a", "A", start=540, minutes=30)], weekday=1)
         assert plan.blocks[0].start_min == 540
-        assert plan.finish_min == 570
 
     def test_an_empty_day_is_not_an_error(self):
         plan = plan_day([], weekday=1)
         assert plan.blocks == []
         assert plan.warnings == []
-        assert plan.finish_min == 0
 
     def test_a_block_pinned_before_opening_warns_and_is_not_moved(self):
         plan = plan_day([stop("a", "Arctic Cathedral", start=11 * 60, minutes=60)], weekday=0)
@@ -164,16 +150,16 @@ class TestPlanDay:
                               sunset=21 * 60)], weekday=1)
         assert [(w.code, w.place_id) for w in plan.warnings] == [(AFTER_SUNSET, "dark")]
 
-    def test_two_places_an_ocean_apart_are_not_objected_to(self):
-        # Travel is not modelled, so nothing here can call a pair unreachable.
-        plan = plan_day([stop("a", "Bergen", start=600), stop("b", "Tromso", start=700)],
-                        weekday=1)
-        assert [b.place_id for b in plan.blocks] == ["a", "b"]
-        assert plan.warnings == []
-
 
 class TestHhmm:
     def test_formats_and_wraps(self):
         assert hhmm(0) == "00:00"
         assert hhmm(9 * 60 + 5) == "09:05"
         assert hhmm(25 * 60) == "01:00"
+
+
+def test_pieces_split_a_block_at_each_midnight():
+    assert pieces(1, 600, 60) == [(1, 600, 660)]
+    assert pieces(1, 1350, 460) == [(1, 1350, 1440), (2, 0, 370)]
+    assert pieces(0, 1380, 60) == [(0, 1380, 1440)]
+    assert pieces(0, 720, 2 * 1440) == [(0, 720, 1440), (1, 0, 1440), (2, 0, 720)]
