@@ -178,6 +178,9 @@ class Place(Base):
     rating: Mapped[float | None] = mapped_column(Float)
     rating_count: Mapped[int | None] = mapped_column(Integer)
     primary_type: Mapped[str | None] = mapped_column(String(120))
+    # The town Places says the venue is in. Only the hand-add path fetches it, and it is a label
+    # only: `city_id` is still where the place was filed.
+    locality: Mapped[str | None] = mapped_column(String(120))
     # Set only by hand. Every other category is derived from mentions, which a manual place has none.
     category: Mapped[str | None] = mapped_column(String(16))
     resolved_from_name: Mapped[str | None] = mapped_column(Text)

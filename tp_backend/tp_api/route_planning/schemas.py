@@ -35,8 +35,12 @@ class SourceRefOut(BaseModel):
 
 class ShortlistPlaceOut(BaseModel):
     place_id: str
-    # None when the place is in none of the trip's cities, which a hand-added one may not be.
+    # Where the place was first found. Provenance, not a location: the draft prompt joins the city
+    # row through it, and nothing renders it.
     city_id: str | None = None
+    # The city the place is genuinely in — not necessarily one this trip covers, and None on a
+    # single-city trip or when it is inside no city we hold. This is the one that is shown.
+    city_name: str | None = None
     name: str
     address: str | None = None
     lat: float | None = None

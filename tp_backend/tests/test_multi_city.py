@@ -411,7 +411,7 @@ def test_the_shortlist_says_which_city_each_place_is_in(client, db, lookup):
 
     places = client.get(f"/trips/{trip_id}/shortlist").json()["places"]
 
-    assert {p["place_id"]: p["city_id"] for p in places} == {"hel": HELSINKI, "por": PORTO}
+    assert {p["place_id"]: p["city_name"] for p in places} == {"hel": "Helsinki", "por": "Porto"}
 
 
 def test_the_draft_prompt_places_each_city_and_measures_from_its_own_centre(client, db, lookup):
@@ -475,11 +475,11 @@ def test_a_place_in_none_of_the_trip_s_cities_is_labelled_with_none_of_them(clie
                               json={"place_id": pid, "category": "do"}).json() for pid in hits}
 
     assert db.get(Place, "kl").city_id == HELSINKI
-    assert added["kl"]["city_id"] is None
-    assert added["loyly"]["city_id"] == HELSINKI
+    assert added["kl"]["city_name"] is None
+    assert added["loyly"]["city_name"] == "Helsinki"
     by_id = {p.place_id: p for p in shortlist(db, trip_id, 40, 0, None).places}
-    assert by_id["kl"].city_id is None
-    assert by_id["loyly"].city_id == HELSINKI
+    assert by_id["kl"].city_name is None
+    assert by_id["loyly"].city_name == "Helsinki"
 
 
 def test_the_day_s_window_is_the_first_block_that_has_one():
@@ -540,3 +540,44 @@ def test_a_city_with_no_zone_gives_all_its_places_one_window(db):
                        {"a": PlaceHours(place_id="a", utc_offset_minutes=180)})
 
     assert sun["a"] == sun["b"] != (None, None)
+
+
+def test_a_place_reached_through_another_city_is_named_by_the_city_it_is_in(client, db, lookup):
+    """A shared `place_queries` hit claims a place for a trip that covers neither of its cities.
+
+    `places.city_id` then names a city outside the trip altogether, which is the one label worth
+    showing — it is what explains a hawker centre sitting in a Nordic shortlist.
+    """
+    trip_id = client.post("/initiate-plan", json=two_cities(lookup)).json()["trip_id"]
+    db.add(City(city_id="sgp", name="Singapore", country="SG", timezone="Asia/Singapore",
+                lat=1.2811, lon=103.8503))
+    db.add(Place(place_id="maxwell", city_id="sgp", name="Maxwell Food Centre",
+                 lat=1.2803, lon=103.8451, rating_count=9000, confidence=Confidence.HIGH))
+    db.flush()
+    db.add(TripPlace(trip_id=trip_id, place_id="maxwell"))
+    db.commit()
+
+    places = {p["place_id"]: p["city_name"]
+              for p in client.get(f"/trips/{trip_id}/shortlist").json()["places"]}
+
+    assert places == {"maxwell": "Singapore"}
+
+
+def test_a_hand_added_place_far_from_every_city_is_named_by_places(client, db, lookup):
+    """No city we hold contains a venue in South Dakota, so the only honest name is Google's own.
+
+    The label is the locality Place Details returned, which is why the venue mask asks for
+    `addressComponents` at all.
+    """
+    trip_id = client.post("/initiate-plan", json=two_cities(lookup)).json()["trip_id"]
+    db.add(Place(place_id="sioux", city_id=HELSINKI, name="Maxwell Food Equipment",
+                 lat=43.5205, lon=-96.7226, locality="Sioux Falls",
+                 confidence=Confidence.HIGH))
+    db.flush()
+    db.add(TripPlace(trip_id=trip_id, place_id="sioux"))
+    db.commit()
+
+    places = {p["place_id"]: p["city_name"]
+              for p in client.get(f"/trips/{trip_id}/shortlist").json()["places"]}
+
+    assert places == {"sioux": "Sioux Falls"}
