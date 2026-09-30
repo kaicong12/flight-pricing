@@ -35,12 +35,9 @@ export default async function ExpensesPage({ params }: PageProps<"/trip/[tripId]
   return (
     <div className="min-h-dvh bg-page pb-24">
       <AppHeader user={user} />
-      <main className="mx-auto w-full max-w-[980px] px-7 pt-9">
-        <TripTabs tripId={trip.trip_id} />
-
-        <div className="mt-6">
-          <h1 className="text-2xl font-semibold tracking-[-0.015em]">Expenses</h1>
-        </div>
+      <TripTabs tripId={trip.trip_id} />
+      <main className="mx-auto w-full max-w-[980px] px-7 pt-8">
+        <h1 className="text-2xl font-semibold tracking-[-0.015em]">Expenses</h1>
 
         <div className="mt-5">
           <ExpensesView
