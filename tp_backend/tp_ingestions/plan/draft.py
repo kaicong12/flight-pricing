@@ -8,10 +8,10 @@ The loop only judges hours, so it spends no Places quota beyond the ones it read
 import logging
 from datetime import timedelta
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from libs.db import City, ItineraryItem, Trip, trip_cities
+from libs.db import City, ItineraryItem, Place, Trip, trip_cities
 from libs.db.enums import BlockKind, TaskKind
 from libs.gemini import generate
 from libs.places import distance_km
@@ -20,7 +20,13 @@ from libs.routing import SLOT_MIN, Stop, fetch_hours, hhmm, plan_day, sun_times
 from libs.routing.plan import CLOSED_TODAY, CLOSES_BEFORE_DONE, OPENS_LATER
 from tp_api.route_planning.schemas import DayIn, ItemIn, ItineraryIn
 from tp_api.route_planning.service import load_hours, replace_days, shortlist
-from tp_api.route_planning.utils import available_window, day_count, google_weekday, tz_minutes
+from tp_api.route_planning.utils import (
+    available_window,
+    day_count,
+    google_weekday,
+    pieces,
+    tz_minutes,
+)
 from tp_ingestions import limits
 from tp_ingestions.queue import ClaimedTask
 from tp_ingestions.registry import handles
@@ -30,12 +36,12 @@ log = logging.getLogger("route.plan")
 LIMIT = 40
 CAP = 5
 ROUNDS = 3
-GRID = (8 * 60, 23 * 60)  # DAY_START_MIN/DAY_END_MIN in plan-types.ts; outside it a block cannot draw
+GRID = (8 * 60, 23 * 60)  # the waking day a draft schedules in; the client grid draws all 24h
 MUST_FIX = {CLOSED_TODAY, OPENS_LATER, CLOSES_BEFORE_DONE}
 
 
 def window(trip: Trip, day_index: int) -> tuple[int, int]:
-    """The flight window, narrowed to the hours the client's grid can actually draw."""
+    """The flight window, narrowed to the waking day."""
     first, last = available_window(trip, day_index)
     return max(first, GRID[0]), min(last, GRID[1])
 
@@ -70,8 +76,23 @@ def own_blocks(session: Session, trip_id: str) -> dict[int, list[ItemIn]]:
     return out
 
 
+def busy_by_day(session: Session, trip_id: str) -> dict[int, list[tuple[int, int, str]]]:
+    """Minutes already spoken for, a block past midnight counted on every day it reaches."""
+    rows = session.execute(
+        select(ItineraryItem.day_index, ItineraryItem.start_min, ItineraryItem.duration_min,
+               func.coalesce(ItineraryItem.title, Place.name).label("name"))
+        .outerjoin(Place, Place.place_id == ItineraryItem.place_id)
+        .where(ItineraryItem.trip_id == trip_id)).all()
+
+    out: dict[int, list[tuple[int, int, str]]] = {}
+    for r in rows:
+        for day, at, until in pieces(r.day_index, r.start_min, r.duration_min):
+            out.setdefault(day, []).append((at, until, r.name))
+    return out
+
+
 def render(session: Session, trip: Trip, places, open_days, feedback: str = "",
-           own=None) -> str:
+           busy=None) -> str:
     """The whole prompt: the candidates, and the clock facts the model needs to time them."""
     cities = trip_cities(session, trip)
     by_id = {c.city_id: c for c in cities}
@@ -101,9 +122,8 @@ def render(session: Session, trip: Trip, places, open_days, feedback: str = "",
             rise, set_ = sun_times(d, c.lat, c.lon, tz_minutes(c, d, None))
             if rise is not None:
                 line += f", {c.name} sunrise {hhmm(rise)} sunset {hhmm(set_)}"
-        for b in (own or {}).get(i, ()):
-            line += (f", BUSY {clock(b.start_min)}-{clock(b.start_min + b.duration_min)} "
-                     f"({b.title}) — leave this time free")
+        for at, until, name in (busy or {}).get(i, ()):
+            line += f", BUSY {clock(at)}-{clock(until)} ({name}) — leave this time free"
         days.append(line)
 
     return ITINERARY_DRAFT.render(
@@ -117,10 +137,10 @@ def render(session: Session, trip: Trip, places, open_days, feedback: str = "",
     )
 
 
-def keep(trip: Trip, reply: dict, n: int, open_days, shut=(), own=None) -> dict:
+def keep(trip: Trip, reply: dict, n: int, open_days, shut=(), busy=None) -> dict:
     """Refuse what replace_days would 422 — bad index, bad day, repeat, off-grid, no fit — and
     anything already proven closed all day, which no amount of asking stops the model reusing.
-    A pick overlapping one of the user's own blocks goes too: that time is already spoken for."""
+    A pick overlapping a block already there goes too: that time is already spoken for."""
     out, seen = {}, set()
     for d in reply.get("days") or []:
         day = d.get("day")
@@ -128,7 +148,7 @@ def keep(trip: Trip, reply: dict, n: int, open_days, shut=(), own=None) -> dict:
             continue
         first, last = window(trip, day)
         floor = -(-first // SLOT_MIN) * SLOT_MIN  # ceiling-divide: first grid minute after landing
-        busy = [(b.start_min, b.start_min + b.duration_min) for b in (own or {}).get(day, ())]
+        taken = [(s, e) for s, e, _ in (busy or {}).get(day, ())]
 
         chosen = []
         for it in d.get("picks") or []:
@@ -137,7 +157,7 @@ def keep(trip: Trip, reply: dict, n: int, open_days, shut=(), own=None) -> dict:
                 continue
             start = max(floor, snap(it.get("start_min", floor)))
             dur = max(SLOT_MIN, snap(it.get("duration_min", 60)))
-            if start + dur > last or any(start < e and s < start + dur for s, e in busy):
+            if start + dur > last or any(start < e and s < start + dur for s, e in taken):
                 continue
             seen.add(i)
             chosen.append((i, start, dur))
@@ -175,7 +195,7 @@ def problems(session: Session, trip: Trip, chosen: dict, places) -> dict:
     return out
 
 
-def propose(session: Session, trip: Trip, places, open_days, own=None) -> tuple[dict, int, dict]:
+def propose(session: Session, trip: Trip, places, open_days, busy=None) -> tuple[dict, int, dict]:
     """Propose, let plan_day judge, hand back the named violations.
 
     Stops clean, or the first round that fails to beat the best so far, and always returns that best.
@@ -183,8 +203,8 @@ def propose(session: Session, trip: Trip, places, open_days, own=None) -> tuple[
     best, fewest, feedback, shut = ({}, {}), None, "", set()
     for r in range(1, ROUNDS + 1):
         limits.gemini().take()
-        reply = generate(ITINERARY_DRAFT, render(session, trip, places, open_days, feedback, own))
-        chosen = keep(trip, reply, len(places), open_days, shut, own)
+        reply = generate(ITINERARY_DRAFT, render(session, trip, places, open_days, feedback, busy))
+        chosen = keep(trip, reply, len(places), open_days, shut, busy)
         bad = problems(session, trip, chosen, places)
 
         n = sum(map(len, bad.values()))
@@ -225,7 +245,7 @@ def run(session: Session, task: ClaimedTask) -> dict:
     if not places:
         return {"skipped": "nothing resolved for this trip's cities yet"}
 
-    chosen, rounds, bad = propose(session, trip, places, open_days, own)
+    chosen, rounds, bad = propose(session, trip, places, open_days, busy_by_day(session, trip_id))
     days = [DayIn(day_index=day,
                   items=own.get(day, [])
                   + [ItemIn(place_id=places[i].place_id, start_min=st, duration_min=du)

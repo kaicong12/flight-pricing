@@ -15,6 +15,7 @@ from libs.routing.plan import (
     SLOT_MIN,
     Stop,
 )
+from tp_api.route_planning.utils import pieces
 
 # Google's periods use 0=Sunday. Two real shapes, taken from live Place Details responses.
 ARCTIC_CATHEDRAL = [
@@ -177,3 +178,10 @@ class TestHhmm:
         assert hhmm(0) == "00:00"
         assert hhmm(9 * 60 + 5) == "09:05"
         assert hhmm(25 * 60) == "01:00"
+
+
+def test_pieces_split_a_block_at_each_midnight():
+    assert pieces(1, 600, 60) == [(1, 600, 660)]
+    assert pieces(1, 1350, 460) == [(1, 1350, 1440), (2, 0, 370)]
+    assert pieces(0, 1380, 60) == [(0, 1380, 1440)]
+    assert pieces(0, 720, 2 * 1440) == [(0, 720, 1440), (1, 0, 1440), (2, 0, 720)]

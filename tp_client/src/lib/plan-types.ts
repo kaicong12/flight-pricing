@@ -1,15 +1,16 @@
 // Mirrors tp_api/plan_schemas.py by hand — there is no codegen step. Warnings arrive as codes; the
 // English for them lives here.
 
-// The grid a block is dragged against. Must match SLOT_MIN in tp_api/plan_schemas.py and the
-// ck_itinerary_duration CHECK, or the server rejects what the user just dragged.
+// The grid a block is dragged against. A typed time may be any minute; a drag snaps to this.
 export const SLOT_MIN = 30;
 export const MIN_DURATION = SLOT_MIN;
 export const DEFAULT_DURATION = 60;
 
-// The visible day. Wide enough for an early start and a late dinner without scrolling all night.
-export const DAY_START_MIN = 8 * 60;
-export const DAY_END_MIN = 23 * 60;
+export const DAY_START_MIN = 0;
+export const DAY_END_MIN = 24 * 60;
+
+/** tp_backend's Source enum: where a mention came from. */
+export type ShortlistSource = "youtube" | "rednote";
 
 export type SourceRef = {
   source: string;
@@ -193,20 +194,49 @@ export function slotAt(offsetPx: number, slotPx: number): number {
 
 /**
  * Resize by dragging an edge. The moving edge snaps; the opposite edge never moves, which is what
- * stops a top-drag from walking the whole block down the grid.
+ * stops a top-drag from walking the whole block down the grid. `offset` is how many minutes after
+ * the block's own day the grid being dragged on starts, for the last day of a multi-day block.
  */
 export function resize(
   item: ItineraryItem,
   edge: "top" | "bottom",
   toMin: number,
+  offset = 0,
 ): { start_min: number; duration_min: number } {
   if (edge === "bottom") {
-    const end = Math.max(item.start_min + MIN_DURATION, Math.min(snap(toMin), DAY_END_MIN));
+    const end = Math.max(
+      item.start_min + MIN_DURATION,
+      offset + Math.min(snap(toMin), DAY_END_MIN),
+    );
     return { start_min: item.start_min, duration_min: end - item.start_min };
   }
   const end = endOf(item);
   const start = Math.min(end - MIN_DURATION, Math.max(snap(toMin), DAY_START_MIN));
   return { start_min: start, duration_min: end - start };
+}
+
+/** One day's share of a block: `from`/`to` in that day's minutes, `offset` past the block's day. */
+export type Piece = { item: ItineraryItem; offset: number; from: number; to: number };
+
+/** Every block that reaches this day, including the tail of one that started on an earlier day. */
+export function piecesOn(days: ItineraryDay[], dayIndex: number): Piece[] {
+  const out: Piece[] = [];
+  for (const d of days) {
+    const offset = (dayIndex - d.day_index) * DAY_END_MIN;
+    if (offset < 0) continue;
+    for (const item of d.items) {
+      const from = Math.max(0, item.start_min - offset);
+      const to = Math.min(DAY_END_MIN, endOf(item) - offset);
+      if (to > from) out.push({ item, offset, from, to });
+    }
+  }
+  return out;
+}
+
+/** The day a block ends on, and the minute it ends there. Midnight belongs to the day before. */
+export function endsOn(item: ItineraryItem, dayIndex: number): { day: number; min: number } {
+  const extra = Math.max(0, Math.ceil(endOf(item) / DAY_END_MIN) - 1);
+  return { day: dayIndex + extra, min: endOf(item) - extra * DAY_END_MIN };
 }
 
 export type PlacedItem = { item: ItineraryItem; lane: number; lanes: number };

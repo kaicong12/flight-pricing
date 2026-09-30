@@ -250,10 +250,9 @@ class ItineraryItem(Base):
             "(kind = 'custom' AND title IS NOT NULL AND place_id IS NULL AND block_id IS NOT NULL)",
             name="ck_itinerary_identity"),
         CheckConstraint("day_index >= 0", name="ck_itinerary_day"),
-        # End may run past midnight; a start may not, or it belongs to the next day.
+        # End may run past midnight, into later days; a start may not, or it belongs to the next day.
         CheckConstraint("start_min >= 0 AND start_min < 1440", name="ck_itinerary_start"),
-        CheckConstraint("duration_min >= 30 AND duration_min % 30 = 0",
-                        name="ck_itinerary_duration"),
+        CheckConstraint("duration_min > 0", name="ck_itinerary_duration"),
         Index("ix_itinerary_trip_day", "trip_id", "day_index", "start_min"),
     )
 

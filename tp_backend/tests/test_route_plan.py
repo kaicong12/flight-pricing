@@ -3,8 +3,6 @@
 from datetime import date, time
 
 from libs.db import Trip
-from libs.db.enums import BlockKind
-from tp_api.route_planning.schemas import ItemIn
 from tp_ingestions.plan.draft import CAP, keep, window
 
 
@@ -71,18 +69,13 @@ def test_a_reply_with_no_days_is_not_an_error():
     assert keep(trip(), {"days": None}, 4, [0]) == {}
 
 
-def flight(start_min, duration_min):
-    return ItemIn(kind=BlockKind.CUSTOM, block_id="b1", title="Flight",
-                  start_min=start_min, duration_min=duration_min)
-
-
-def test_a_pick_overlapping_the_users_own_block_is_dropped():
-    own = {0: [flight(20 * 60, 120)]}
+def test_a_pick_overlapping_a_block_already_there_is_dropped():
+    busy = {0: [(20 * 60, 22 * 60, "Flight")]}
     assert keep(trip(), picks({"index": 0, "start_min": 1230, "duration_min": 60}), 4, [0],
-                own=own) == {0: []}
+                busy=busy) == {0: []}
 
 
-def test_a_pick_that_clears_the_users_own_block_is_kept():
-    own = {0: [flight(20 * 60, 120)]}
+def test_a_pick_that_clears_a_block_already_there_is_kept():
+    busy = {0: [(20 * 60, 22 * 60, "Flight")]}
     assert keep(trip(), picks({"index": 0, "start_min": 1080, "duration_min": 60}), 4, [0],
-                own=own) == {0: [(0, 1080, 60)]}
+                busy=busy) == {0: [(0, 1080, 60)]}

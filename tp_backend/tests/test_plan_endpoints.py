@@ -54,6 +54,22 @@ class TestShortlist:
         assert [p["name"] for p in places] == ["Mentioned", "Unmentioned"]
         assert places[1]["mention_count"] == 0
 
+    def test_a_source_filter_keeps_any_place_that_source_named(self, client, db):
+        trip = make_trip(client)
+        make_place(db, place_id="p1", name="Both")
+        make_mention(db, "p1", source=Source.YOUTUBE, source_ref="vid1")
+        make_mention(db, "p1", source=Source.REDNOTE, source_ref="note1")
+        make_place(db, place_id="p2", name="Video only")
+        make_mention(db, "p2", source=Source.YOUTUBE, source_ref="vid2")
+        make_place(db, place_id="p3", name="Added by hand")
+
+        body = client.get(f"/trips/{trip}/shortlist?source=rednote").json()
+        assert [p["name"] for p in body["places"]] == ["Both"]
+        assert body["total"] == 1
+        youtube = client.get(f"/trips/{trip}/shortlist?source=youtube").json()["places"]
+        assert [p["name"] for p in youtube] == ["Both", "Video only"]
+        assert client.get(f"/trips/{trip}/shortlist?source=reddit").status_code == 422
+
     def test_ties_break_on_rating_count(self, client, db):
         trip = make_trip(client)
         make_place(db, place_id="p1", name="Quiet", rating_count=10)

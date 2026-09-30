@@ -129,6 +129,14 @@ def _warning_cell(found: list[PlanWarning]) -> tuple[str, str, str]:
     return (text, WARN_BG, WARN) if found else (text, OK_BG, OK)
 
 
+def until(day: int, end: int) -> str:
+    """A block's end as the sheet writes it: "24:00" at midnight, "Day N HH:MM" on a later day."""
+    extra = (end - 1) // (24 * 60)
+    local = end - extra * 24 * 60
+    text = "24:00" if local == 24 * 60 else hhmm(local)
+    return text if extra == 0 else f"Day {day + 1 + extra} {text}"
+
+
 def itinerary_sheet(ws: Worksheet, db: Session, trip: Trip, fetch: HoursLookup) -> None:
     city = trip.city
     rows = service.day_rows(db, trip.trip_id)
@@ -189,7 +197,7 @@ def itinerary_sheet(ws: Worksheet, db: Session, trip: Trip, fetch: HoursLookup) 
                           else (item.start_min, item.start_min + item.duration_min))
             text, fill, ink = _warning_cell(found.get(item.place_id or "", []))
             _body_row(ws, at, columns,
-                      [day + 1, f"{day_date:%d %b}", n, hhmm(start), hhmm(end),
+                      [day + 1, f"{day_date:%d %b}", n, hhmm(start), until(day, end),
                        r.Place.name if r.Place else item.title,
                        service.category_of(r.Place, facts) or "" if r.Place else "",
                        text if block else None]

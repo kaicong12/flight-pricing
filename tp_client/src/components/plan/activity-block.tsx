@@ -2,7 +2,8 @@
 
 // One activity block, positioned on the grid at the time the user pinned it to. Drag the body to
 // move it earlier or later within its own day, drag either edge to change how long you spend there.
-// Use the X to take it off the day; there is no drag that moves it to another one.
+// Use the X to take it off the day; there is no drag that moves it to another one. A block that
+// runs into later days moves from its first day and resizes from its last; the pencil does the rest.
 //
 // Warnings sit under the grid rather than inside the block: a block's height is its duration, so
 // there is no room to grow into, and the alert border already says which block is the problem.
@@ -14,8 +15,9 @@ import { DollarSign, Link2, Pencil, X } from "lucide-react";
 
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { CURRENCIES, parseAmount } from "@/lib/expense-types";
-import type { PlacedItem, PlanBlock, PlanWarning } from "@/lib/plan-types";
+import type { Piece, PlacedItem, PlanBlock, PlanWarning } from "@/lib/plan-types";
 import {
+  DAY_END_MIN,
   DAY_START_MIN,
   MIN_DURATION,
   SLOT_MIN,
@@ -27,8 +29,12 @@ import {
 } from "@/lib/plan-types";
 import { cn } from "@/lib/utils";
 
+// A block of a few minutes still needs room to be seen and grabbed.
+const MIN_HEIGHT_PX = 12;
+
 export function ActivityBlock({
   placed,
+  piece,
   block,
   warnings,
   slotPx,
@@ -41,7 +47,9 @@ export function ActivityBlock({
   onResize,
   onEdit,
 }: {
+  /** Positioned by this day's share of the block, which `piece` describes. */
   placed: PlacedItem;
+  piece: Piece;
   block: PlanBlock | undefined;
   warnings: PlanWarning[];
   slotPx: number;
@@ -53,20 +61,24 @@ export function ActivityBlock({
   onReference: (url: string | null) => void;
   onCost: (amountCents: number | null, currency: string) => void;
   onResize: (startMin: number, durationMin: number) => void;
-  /** Given for a custom block only: a place's name and type are Google's, not the user's. */
-  onEdit?: () => void;
+  onEdit: () => void;
 }) {
-  const { item, lane, lanes } = placed;
+  const { lane, lanes } = placed;
+  const { item, offset } = piece;
+  const continued = offset > 0;
+  const endsHere = endOf(item) - offset <= DAY_END_MIN;
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: `item:${keyOf(item)}`,
     data: { kind: "item", item },
-    disabled: readOnly,
+    disabled: readOnly || continued,
   });
   const own = item.kind === "custom";
 
   const broken = warnings.length > 0;
-  // At the 30-minute minimum there is only room for one line, so the times move to the title.
-  const short = item.duration_min <= MIN_DURATION;
+  // At 30 minutes or less there is only room for one line, so the times move to the title.
+  const short = placed.item.duration_min <= MIN_DURATION;
+  const extraDays = Math.ceil(endOf(item) / DAY_END_MIN) - 1;
+  const until = `${hhmm(endOf(item))}${extraDays > 0 ? ` +${extraDays}d` : ""}`;
 
   /**
    * Raw pointer events rather than dnd-kit, committed once on pointerup: the board re-routes on
@@ -80,7 +92,7 @@ export function ActivityBlock({
 
     let next = { start_min: item.start_min, duration_min: item.duration_min };
     const move = (ev: PointerEvent) => {
-      next = resize(item, edge, slotAt(ev.clientY - grid.top, slotPx));
+      next = resize(item, edge, slotAt(ev.clientY - grid.top, slotPx), offset);
     };
     const up = () => {
       window.removeEventListener("pointermove", move);
@@ -97,8 +109,8 @@ export function ActivityBlock({
     <div
       className="absolute"
       style={{
-        top: ((item.start_min - DAY_START_MIN) / SLOT_MIN) * slotPx,
-        height: (item.duration_min / SLOT_MIN) * slotPx - 2,
+        top: ((placed.item.start_min - DAY_START_MIN) / SLOT_MIN) * slotPx,
+        height: Math.max(MIN_HEIGHT_PX, (placed.item.duration_min / SLOT_MIN) * slotPx - 2),
         left: `calc(${(lane * 100) / lanes}% + 2px)`,
         width: `calc(${100 / lanes}% - 4px)`,
       }}
@@ -114,7 +126,7 @@ export function ActivityBlock({
           isDragging && "z-10 opacity-90 shadow-lift",
         )}
       >
-        {readOnly ? null : (
+        {readOnly || continued ? null : (
           <ResizeHandle
             edge="top"
             label={`Start ${item.name} earlier or later`}
@@ -126,18 +138,22 @@ export function ActivityBlock({
           ref={setNodeRef}
           {...attributes}
           {...listeners}
-          className="min-h-0 flex-1 cursor-grab touch-none outline-none focus-visible:ring-3 focus-visible:ring-ring/50 active:cursor-grabbing"
+          onClick={continued && !readOnly ? onEdit : undefined}
+          className={cn(
+            "min-h-0 flex-1 touch-none outline-none focus-visible:ring-3 focus-visible:ring-ring/50",
+            continued ? "cursor-pointer" : "cursor-grab active:cursor-grabbing",
+          )}
         >
           <p className="truncate text-[13px] leading-tight font-semibold tracking-[-0.01em]">
             <span className="mr-1.5 font-mono text-[10.5px] font-normal text-faint tabular-nums">
-              {hhmm(item.start_min)}
+              {continued ? "↳" : hhmm(item.start_min)}
             </span>
             {item.name}
           </p>
           {!short && (
             <p className="truncate font-mono text-[10.5px] text-faint">
               {[
-                `${hhmm(item.start_min)}–${hhmm(endOf(item))}`,
+                `${hhmm(item.start_min)}–${until}`,
                 cost,
                 item.primary_type || item.category,
                 block?.open_from && block?.open_to
@@ -169,17 +185,15 @@ export function ActivityBlock({
           ) : null
         ) : (
           <>
-            {onEdit && (
-              <button
-                type="button"
-                onPointerDown={(e) => e.stopPropagation()}
-                onClick={onEdit}
-                aria-label={`Edit ${item.name}`}
-                className="absolute top-0.5 right-15.5 grid size-5 place-items-center rounded text-faint opacity-0 transition-opacity group-hover/block:opacity-100 hover:text-ink focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring/50"
-              >
-                <Pencil className="size-3" />
-              </button>
-            )}
+            <button
+              type="button"
+              onPointerDown={(e) => e.stopPropagation()}
+              onClick={onEdit}
+              aria-label={own ? `Edit ${item.name}` : `Change when you are at ${item.name}`}
+              className="absolute top-0.5 right-15.5 grid size-5 place-items-center rounded text-faint opacity-0 transition-opacity group-hover/block:opacity-100 hover:text-ink focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring/50"
+            >
+              <Pencil className="size-3" />
+            </button>
 
             <Cost name={item.name} cost={cost} currency={currency} onSave={onCost} />
 
@@ -194,11 +208,13 @@ export function ActivityBlock({
               <X className="size-3" />
             </button>
 
-            <ResizeHandle
-              edge="bottom"
-              label={`Change how long you spend at ${item.name}`}
-              onPointerDown={startResize("bottom")}
-            />
+            {endsHere && (
+              <ResizeHandle
+                edge="bottom"
+                label={`Change how long you spend at ${item.name}`}
+                onPointerDown={startResize("bottom")}
+              />
+            )}
           </>
         )}
       </div>

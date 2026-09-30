@@ -111,7 +111,9 @@ is the one thing `places.category` exists for: every other category is a majorit
 `place_mentions`, which a hand-added place has none of, so without it the place is invisible under
 every filter chip. A person's answer beats the videos'. The user drags
 them into days; `PUT /trips/{id}/itinerary` replaces whole days, because a drag is a statement about
-a sequence and positions are dense and derived. `POST /trips/{id}/days/{n}/route` then checks that
+a sequence and positions are dense and derived. A drag snaps to the half hour; the block dialog types
+any minute, and may end a block on a later day. That block stays **one row on the day it starts** —
+one `block_id`, so one cost — and the grid draws its tail on each day it reaches (`piecesOn`). `POST /trips/{id}/days/{n}/route` then checks that
 exact order against Place Details hours and daylight and returns structured warning codes — the
 client owns the English. **Daylight is per place, not per trip**: the sun is computed from each
 block's own lat/lon in its own city's zone, so one day spanning two cities has two sunsets, and
@@ -179,6 +181,7 @@ with `docker-compose.local.yml` adding the `db` service RDS provides in producti
 container DNS and its logs reach Loki. `DATABASE_URL` is the only difference between the two stacks.
 `make test` is pytest plus `tp_client`'s `src/lib/*.check.ts` — the client has no test framework, so
 those standalone asserts are its only coverage and that target is the only thing that runs them.
+`docs/regression.md` is the flow to walk after a change: that gate, migrations, then the live screens.
 `make help` lists the rest. `docker-compose.yml` runs the three backend
 services on a t4g.micro against RDS; `tp_client` is on Vercel, so there is no `web` service. See
 `docs/deploy.md`.

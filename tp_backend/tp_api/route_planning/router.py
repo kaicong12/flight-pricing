@@ -8,6 +8,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Query, Response
 from sqlalchemy.orm import Session
 
+from libs.db.enums import Source
 from tp_api.deps import (
     HoursLookup,
     VenueLookup,
@@ -48,8 +49,9 @@ def get_shortlist(
     limit: Annotated[int, Query(ge=1, le=200)] = 40,
     offset: Annotated[int, Query(ge=0)] = 0,
     category: Annotated[str | None, Query(max_length=16)] = None,
+    source: Source | None = None,
 ) -> ShortlistOut:
-    return service.shortlist(db, trip_id, limit, offset, category)
+    return service.shortlist(db, trip_id, limit, offset, category, source)
 
 
 @router.get("/trips/{trip_id}/itinerary", response_model=ItineraryOut)
