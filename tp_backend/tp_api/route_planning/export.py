@@ -4,6 +4,7 @@ Colours are tp_client/docs/design-system.md, and the warning English lives here 
 spreadsheet has no client to own it.
 """
 
+import json
 import textwrap
 from datetime import UTC, date, datetime, timedelta
 from io import BytesIO
@@ -15,7 +16,7 @@ from openpyxl.worksheet.hyperlink import Hyperlink
 from openpyxl.worksheet.worksheet import Worksheet
 from sqlalchemy.orm import Session
 
-from libs.db import Trip
+from libs.db import Trip, trip_cities
 from libs.routing import PlanWarning, Stop, hhmm, plan_day
 from tp_api.deps import HoursLookup
 from tp_api.expenses import service as expense_service
@@ -51,6 +52,13 @@ EXPENSE_COLUMNS = [("Day", 6), ("Date", 10), ("Expense", 34), ("Paid by", 18), (
 CENTRED = {"#", "Start", "End", "Ref", "Source", "Mentions", "Used on", "Cur"}
 WRAPPED = {"Block", "Warning", "Details", "Why go", "Expense"}
 MONEY_FORMAT = "#,##0.00"
+
+# What an upload recognises: a very hidden sheet holding the trip and each row's identity.
+META_SHEET = "_trip_planner"
+MARKER = "trip-planner-export"
+VERSION = 1
+ROW_KEY = "_row"
+CHUNK = 30000  # a cell holds at most 32767 characters
 
 HAIRLINE_BOTTOM = Border(bottom=Side(style="thin", color=HAIRLINE))
 LINE_HEIGHT = 15
@@ -137,7 +145,25 @@ def until(day: int, end: int) -> str:
     return text if extra == 0 else f"Day {day + 1 + extra} {text}"
 
 
-def itinerary_sheet(ws: Worksheet, db: Session, trip: Trip, fetch: HoursLookup) -> None:
+def meta_sheet(ws: Worksheet, db: Session, trip: Trip, rows: dict[str, dict]) -> None:
+    ws.sheet_state = "veryHidden"
+    payload = json.dumps({
+        "trip": {"name": trip.name, "extra_details": trip.extra_details,
+                 "cities": [{"city_id": c.city_id, "name": c.name} for c in trip_cities(db, trip)],
+                 "arrive_date": trip.arrive_date.isoformat(),
+                 "depart_date": trip.depart_date.isoformat(),
+                 "arrive_time": trip.arrive_time.isoformat() if trip.arrive_time else None,
+                 "depart_time": trip.depart_time.isoformat() if trip.depart_time else None},
+        "rows": rows,
+    }, sort_keys=True, separators=(",", ":"))
+    ws.cell(row=1, column=1, value=MARKER)
+    ws.cell(row=1, column=2, value=VERSION)
+    for i in range(0, len(payload), CHUNK):
+        ws.cell(row=2 + i // CHUNK, column=1, value=payload[i:i + CHUNK])
+
+
+def itinerary_sheet(ws: Worksheet, db: Session, trip: Trip, fetch: HoursLookup) -> dict[str, dict]:
+    """Returns each written row's identity, keyed by the hidden `_row` cell an upload reads back."""
     city = trip.city
     rows = service.day_rows(db, trip.trip_id)
     details = any(r.ItineraryItem.description for r in rows)
@@ -151,6 +177,10 @@ def itinerary_sheet(ws: Worksheet, db: Session, trip: Trip, fetch: HoursLookup) 
     ws.cell(row=2, column=1, value=f"exported {datetime.now(UTC):%d %b %Y} · opening hours were "
             "checked then, re-check nearer the date").font = Font(color=FAINT, size=10)
     _header(ws, 3, columns)
+    key_column = len(columns) + 1
+    ws.cell(row=3, column=key_column, value=ROW_KEY)
+    ws.column_dimensions[get_column_letter(key_column)].hidden = True
+    identities: dict[str, dict] = {}
 
     place_ids = [r.Place.place_id for r in rows if r.Place]
     facts = service.mention_facts(db, place_ids)
@@ -208,8 +238,15 @@ def itinerary_sheet(ws: Worksheet, db: Session, trip: Trip, fetch: HoursLookup) 
                 _tint(ws, at, 8, fill, ink)
             if refs:
                 _link(ws, at, len(columns), item.reference_url, "Your link for this block")
+            key = f"r{len(identities) + 1}"
+            ws.cell(row=at, column=key_column, value=key)
+            identities[key] = {"kind": item.kind, "place_id": item.place_id,
+                               "block_id": item.block_id,
+                               "name": r.Place.name if r.Place else item.title,
+                               "reference_url": item.reference_url}
             at += 1
         _merge_down(ws, top, at - 1, (1, 2))
+    return identities
 
 
 def shortlist_sheet(ws: Worksheet, db: Session, trip: Trip) -> None:
@@ -329,10 +366,11 @@ def expenses_sheet(ws: Worksheet, db: Session, trip: Trip) -> None:
 
 def workbook_bytes(db: Session, trip: Trip, fetch: HoursLookup) -> bytes:
     wb = Workbook()
-    itinerary_sheet(wb.active, db, trip, fetch)
+    identities = itinerary_sheet(wb.active, db, trip, fetch)
     wb.active.title = "Itinerary"
     expenses_sheet(wb.create_sheet("Expenses"), db, trip)
     shortlist_sheet(wb.create_sheet("Shortlist"), db, trip)
+    meta_sheet(wb.create_sheet(META_SHEET), db, trip, identities)
     buf = BytesIO()
     wb.save(buf)
     return buf.getvalue()

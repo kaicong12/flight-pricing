@@ -146,6 +146,14 @@ or note that named the place. Day and Date are **merged down each day's rows**, 
 written once rather than repeated beside every block. It re-reads hours, and the warning English lives
 in `export.py` because a spreadsheet has no client to own it.
 
+**Upload new trip** (`tp_api/uploads.py`) reads that workbook back as a *new* trip the uploader owns —
+never into an existing one. The export carries a very hidden `_trip_planner` sheet — a marker, a format
+version, the trip and each row's identity — and a hidden `_row` column; a file without that marker is
+refused. It is not signed, so the sheet is untrusted input: every id in it is re-checked, and damaged
+data refuses the file or skips the row. The visible cells are what is read, so Excel edits come through: a renamed
+place or a typed-in row becomes a custom block, and an unreadable row is skipped and named in the
+preview. Costs, members and dismissals stay behind.
+
 **7. Draft.** `route.plan` fills a trip's *empty* days so the plan screen opens filled — **one Gemini
 call in a loop, not an agent**: the shortlist is already a closed ranked set and `plan_day` already
 judges hours, so the model only proposes an arrangement and never goes looking. A day the user has

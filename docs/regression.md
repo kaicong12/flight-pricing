@@ -38,4 +38,7 @@ signs in once in the Playwright browser; the session cookie then lasts the run.
 6. **Costs.** "$" on the overnight block, then the Expenses tab: the cost appears once and the currency
    total moves by exactly that amount.
 7. **Export.** `export.xlsx` opens; the overnight block's End reads "Day N HH:MM".
-8. **Share.** Add a viewer; as the viewer, nothing that would 403 is offered.
+8. **Upload.** Upload that export from `/trips`: the preview lists the days, a new start date shifts
+   them, and the new trip opens with the same blocks. A file edited in Excel keeps the edits; any other
+   .xlsx is refused.
+9. **Share.** Add a viewer; as the viewer, nothing that would 403 is offered.
