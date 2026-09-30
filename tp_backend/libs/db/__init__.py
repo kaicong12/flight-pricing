@@ -3,6 +3,8 @@
 from libs.db.models import (
     Base,
     City,
+    Expense,
+    ExpenseShare,
     Extraction,
     IngestRun,
     IngestTask,
@@ -12,6 +14,7 @@ from libs.db.models import (
     PlaceMention,
     PlaceQuery,
     RedNotePost,
+    Settlement,
     ThrottleCall,
     Trip,
     TripCity,
@@ -35,6 +38,8 @@ from libs.db.session import SessionLocal, engine, session
 __all__ = [
     "Base",
     "City",
+    "Expense",
+    "ExpenseShare",
     "Extraction",
     "IngestRun",
     "IngestTask",
@@ -45,6 +50,7 @@ __all__ = [
     "PlaceQuery",
     "RedNotePost",
     "SessionLocal",
+    "Settlement",
     "ThrottleCall",
     "Trip",
     "TripCity",

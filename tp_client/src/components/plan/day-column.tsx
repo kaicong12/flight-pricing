@@ -37,8 +37,11 @@ export function DayColumn({
   stale,
   readOnly,
   available,
+  costs,
+  currency,
   onRemove,
   onReference,
+  onCost,
   onResize,
   onAddCustom,
   onEditCustom,
@@ -49,8 +52,12 @@ export function DayColumn({
   readOnly: boolean;
   /** Minutes the flight leaves usable. Outside it, a slot is shown but takes no drop. */
   available: { from: number; to: number };
+  /** Each block's cost so far, already formatted, keyed the way `keyOf` keys a block. */
+  costs: Map<string, string>;
+  currency: string;
   onRemove: (key: string) => void;
   onReference: (key: string, url: string | null) => void;
+  onCost: (item: ItineraryItem, amountCents: number | null, currency: string) => void;
   onResize: (key: string, startMin: number, durationMin: number) => void;
   onAddCustom: (startMin: number, draft: CustomDraft, durationMin: number) => void;
   onEditCustom: (key: string, draft: CustomDraft) => void;
@@ -143,8 +150,11 @@ export function DayColumn({
               warnings={perPlace.get(keyOf(p.item)) ?? []}
               slotPx={SLOT_PX}
               readOnly={readOnly}
+              cost={costs.get(keyOf(p.item)) ?? null}
+              currency={currency}
               onRemove={() => onRemove(keyOf(p.item))}
               onReference={(url) => onReference(keyOf(p.item), url)}
+              onCost={(amountCents, cur) => onCost(p.item, amountCents, cur)}
               onEdit={p.item.kind === "custom" ? () => setEditing(p.item) : undefined}
               onResize={(startMin, durationMin) =>
                 onResize(keyOf(p.item), startMin, durationMin)

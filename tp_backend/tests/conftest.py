@@ -32,9 +32,10 @@ from tp_api.main import app
 from tp_api.schemas import today_utc
 from tp_ingestions.throttle import Throttler
 
-TABLES = ["itinerary_items", "trip_dismissals", "place_hours", "place_mentions", "places",
-          "place_queries", "ingest_tasks", "ingest_runs", "extractions", "rednote_posts",
-          "youtube_videos", "throttle_calls", "sessions", "user_trips", "users", "trips", "cities"]
+TABLES = ["expense_shares", "settlements", "expenses", "itinerary_items", "trip_dismissals",
+          "place_hours", "place_mentions", "places", "place_queries", "ingest_tasks",
+          "ingest_runs", "extractions", "rednote_posts", "youtube_videos", "throttle_calls",
+          "sessions", "user_trips", "users", "trips", "cities"]
 
 HELSINKI = "ChIJkQYhlscLkkYRY_fiO4S9Ts0"
 

@@ -4,7 +4,6 @@
 // to another day changes two days, re-sorts both, marks both unsaved and both unchecked. Doing that
 // in one place is what stops a half-applied drag.
 
-import type { City } from "@/lib/api-types";
 import { DEFAULT_DURATION, keyOf } from "@/lib/plan-types";
 import type {
   DayRoute,
@@ -316,10 +315,6 @@ export function placedDays(state: PlanState): Map<string, number> {
     }
   }
   return out;
-}
-
-export function cityLabels(cities: City[]): Map<string, string> {
-  return new Map(cities.length > 1 ? cities.map((c) => [c.city_id, c.name]) : []);
 }
 
 export function initialState(

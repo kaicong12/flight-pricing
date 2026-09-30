@@ -21,7 +21,8 @@ def upsert_place(session: Session, city: City, hit: VenueHit, query: str,
         pg_insert(Place)
         .values(place_id=hit.place_id, city_id=city.city_id, name=hit.name, address=hit.address,
                 lat=hit.lat, lon=hit.lon, rating=hit.rating, rating_count=hit.rating_count,
-                primary_type=hit.primary_type, resolved_from_name=query, category=category,
+                primary_type=hit.primary_type, locality=hit.locality,
+                resolved_from_name=query, category=category,
                 confidence=confidence, confidence_reason=reason)
         .on_conflict_do_update(index_elements=["place_id"], set_=updates)
     )

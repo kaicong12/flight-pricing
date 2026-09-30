@@ -7,6 +7,7 @@ import { notFound, redirect } from "next/navigation";
 import { AppHeader } from "@/components/app-header";
 import { DeleteTrip } from "@/components/delete-trip";
 import { TripProgress } from "@/components/trip-progress";
+import { TripTabs } from "@/components/trip-tabs";
 import { type TripStatus } from "@/lib/api-types";
 import { currentUser } from "@/lib/session";
 import { getJson } from "@/lib/tp-api";
@@ -50,7 +51,11 @@ export default async function TripPage({ params }: PageProps<"/trip/[tripId]">) 
           ← All trips
         </Link>
 
-        <div className="mt-4 flex flex-wrap items-end justify-between gap-x-6 gap-y-2">
+        <div className="mt-4">
+          <TripTabs tripId={trip.trip_id} />
+        </div>
+
+        <div className="mt-6 flex flex-wrap items-end justify-between gap-x-6 gap-y-2">
           <div>
             <h1 className="text-3xl font-semibold tracking-[-0.015em]">{cityNames(trip)}</h1>
             <p className="mt-2 text-sm text-muted-foreground">

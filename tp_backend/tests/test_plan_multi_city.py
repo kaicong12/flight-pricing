@@ -67,8 +67,8 @@ def test_the_ranking_ignores_which_city_a_place_is_in(client, db, lookup):
 
     places = client.get(f"/trips/{trip}/shortlist").json()["places"]
 
-    assert [(p["name"], p["city_id"]) for p in places] == [("Thrice named", PORTO),
-                                                           ("Once named", HELSINKI)]
+    assert [(p["name"], p["city_name"]) for p in places] == [("Thrice named", "Porto"),
+                                                             ("Once named", "Helsinki")]
 
 
 def test_a_day_mixing_two_cities_draws_no_complaint(client, db, lookup, hours):

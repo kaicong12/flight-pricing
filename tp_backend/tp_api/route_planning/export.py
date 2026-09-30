@@ -5,7 +5,7 @@ spreadsheet has no client to own it.
 """
 
 import textwrap
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from io import BytesIO
 
 from openpyxl import Workbook
@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session
 from libs.db import Trip
 from libs.routing import PlanWarning, Stop, hhmm, plan_day
 from tp_api.deps import HoursLookup
+from tp_api.expenses import service as expense_service
 from tp_api.route_planning import service
 from tp_api.route_planning.utils import day_count, google_weekday
 
@@ -45,8 +46,11 @@ DETAILS_COLUMN = ("Details", 44)
 REFERENCE_COLUMN = ("Ref", 5)
 SHORTLIST_COLUMNS = [("Place", 32), ("Category", 10), ("Mentions", 10), ("Used on", 10),
                      ("Why go", 60), ("Source", 7)]
-CENTRED = {"#", "Start", "End", "Ref", "Source", "Mentions", "Used on"}
-WRAPPED = {"Block", "Warning", "Details", "Why go"}
+EXPENSE_COLUMNS = [("Day", 6), ("Date", 10), ("Expense", 34), ("Paid by", 18), ("Amount", 12),
+                   ("Cur", 5)]
+CENTRED = {"#", "Start", "End", "Ref", "Source", "Mentions", "Used on", "Cur"}
+WRAPPED = {"Block", "Warning", "Details", "Why go", "Expense"}
+MONEY_FORMAT = "#,##0.00"
 
 HAIRLINE_BOTTOM = Border(bottom=Side(style="thin", color=HAIRLINE))
 LINE_HEIGHT = 15
@@ -221,10 +225,105 @@ def shortlist_sheet(ws: Worksheet, db: Session, trip: Trip) -> None:
         _link(ws, at, 6, src.url if src else None, src.title if src else None)
 
 
+def _money(ws: Worksheet, row: int, column: int, cents: int | None, *, bold: bool = False,
+           ink: str = INK) -> None:
+    if cents is None:
+        return
+    cell = ws.cell(row=row, column=column, value=cents / 100)
+    cell.number_format = MONEY_FORMAT
+    cell.alignment = Alignment(horizontal="right", vertical="top")
+    cell.font = Font(color=ink, bold=bold)
+
+
+def _who(member) -> str:
+    return (member.name or member.email).split()[0].split("@")[0]
+
+
+def expenses_sheet(ws: Worksheet, db: Session, trip: Trip) -> None:
+    """Who paid what, then the balances. One column per person, so a row reads across as a split.
+
+    Each currency gets its own balance block: nothing here is converted, so nothing is ever summed
+    across two of them.
+    """
+    tab = expense_service.overview(db, trip.trip_id)
+    spenders = {s.user_id for e in tab.expenses for s in e.shares} | {e.payer_id
+                                                                     for e in tab.expenses}
+    people = [m for m in tab.members if m.user_id in spenders] or tab.members
+    columns = EXPENSE_COLUMNS + [(_who(m), 13) for m in people]
+    names = {m.user_id: _who(m) for m in tab.members}
+    last = len(columns)
+
+    ws.cell(row=1, column=1, value="Expenses · who paid, and what each person owes of it").font = (
+        Font(bold=True, size=14, color=INK))
+    ws.cell(row=2, column=1, value="every amount is in the expense's own currency — nothing here "
+            "is converted").font = Font(color=FAINT, size=10)
+    _header(ws, 3, columns)
+
+    by_date: dict[date, list] = {}
+    for e in tab.expenses:
+        by_date.setdefault(e.spent_on, []).append(e)
+
+    at = 4
+    for when in sorted(by_date):
+        items = by_date[when]
+        day = (when - trip.arrive_date).days
+        label = f"Day {day + 1} · " if 0 <= day < day_count(trip) else ""
+        _band(ws, at, last, f"{label}{when:%a %d %b} · "
+              f"{len(items)} expense{'' if len(items) == 1 else 's'}")
+        at += 1
+
+        top = at
+        for n, e in enumerate(items, start=1):
+            share = {s.user_id: s.amount_cents for s in e.shares}
+            # The "$" on a block names the cost after the block, so the two are often one string.
+            what = (f"{e.description} · {e.block_title}"
+                    if e.block_title and e.block_title != e.description else e.description)
+            _body_row(ws, at, columns,
+                      [day + 1 if label else "", f"{when:%d %b}", what,
+                       names.get(e.payer_id, "?"), None, e.currency]
+                      + [None] * len(people),
+                      stripe=SAND if n % 2 else PAPER)
+            _money(ws, at, 5, e.amount_cents, bold=True)
+            for i, m in enumerate(people):
+                _money(ws, at, len(EXPENSE_COLUMNS) + 1 + i, share.get(m.user_id),
+                       ink=FAINT if m.user_id != e.payer_id else INK)
+            at += 1
+        _merge_down(ws, top, at - 1, (1, 2))
+
+    for balance in tab.balances:
+        net = {b.user_id: b for b in balance.members}
+        at += 1
+        _band(ws, at, last, f"Balance · {balance.currency} · "
+              f"{balance.total_cents / 100:,.2f} spent · a positive net is owed back")
+        at += 1
+        rows = [("Paid", "paid_cents"), ("Share", "share_cents"), ("Net", "net_cents")]
+        if any(b.settled_cents for b in balance.members):
+            rows.insert(2, ("Settled", "settled_cents"))
+        for n, (row_label, field) in enumerate(rows):
+            _body_row(ws, at, columns, ["", "", row_label, "", None, balance.currency]
+                      + [None] * len(people), stripe=PAPER if n % 2 else SAND)
+            for i, m in enumerate(people):
+                figure = getattr(net[m.user_id], field) if m.user_id in net else None
+                _money(ws, at, len(EXPENSE_COLUMNS) + 1 + i, figure, bold=row_label == "Net",
+                       ink=ALERT if row_label == "Net" and (figure or 0) < 0 else INK)
+            at += 1
+        for transfer in balance.transfers:
+            pays = (f"{names.get(transfer.from_user_id, '?')} pays "
+                    f"{names.get(transfer.to_user_id, '?')}")
+            _body_row(ws, at, columns, ["", "", pays, "", None, balance.currency]
+                      + [None] * len(people), stripe=BRAND_BG)
+            _money(ws, at, 5, transfer.amount_cents, bold=True, ink=BRAND)
+            at += 1
+
+    if not tab.expenses:
+        ws.cell(row=5, column=1, value="Nothing spent yet.").font = Font(color=FAINT)
+
+
 def workbook_bytes(db: Session, trip: Trip, fetch: HoursLookup) -> bytes:
     wb = Workbook()
     itinerary_sheet(wb.active, db, trip, fetch)
     wb.active.title = "Itinerary"
+    expenses_sheet(wb.create_sheet("Expenses"), db, trip)
     shortlist_sheet(wb.create_sheet("Shortlist"), db, trip)
     buf = BytesIO()
     wb.save(buf)

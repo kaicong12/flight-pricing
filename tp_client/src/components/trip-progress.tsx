@@ -9,7 +9,6 @@ import { useEffect, useState } from "react";
 import { DRAFT_PENDING, FAILURE_TEXT, TERMINAL_STATUSES, type TripStatus } from "@/lib/api-types";
 
 const POLL_MS = 3000;
-const MAX_POLL_MS = 5 * 60 * 1000;
 
 const STATUS_TEXT: Record<string, string> = {
   pending: "Queued",
@@ -32,23 +31,32 @@ export function TripProgress({ initial }: { initial: TripStatus }) {
   useEffect(() => {
     if (stopped) return;
     let live = true;
-    const startedAt = Date.now();
+    let timer: ReturnType<typeof setInterval> | undefined;
 
-    const timer = setInterval(async () => {
-      if (Date.now() - startedAt > MAX_POLL_MS) {
-        if (live) setStopped(true);
-        return;
-      }
+    const poll = async () => {
       const r = await fetch(`/api/trips/${initial.trip_id}`);
       if (!r.ok || !live) return;
       const body = (await r.json()) as TripStatus;
       setStatus(body);
       if (settled(body)) setStopped(true);
-    }, POLL_MS);
+    };
+
+    // A hidden tab has its timers throttled to roughly once a minute, so poll only while visible
+    // and catch up on return. An ingest runs longer than any wall-clock cap worth guessing at.
+    const sync = () => {
+      clearInterval(timer);
+      if (document.hidden) return;
+      void poll();
+      timer = setInterval(poll, POLL_MS);
+    };
+
+    sync();
+    document.addEventListener("visibilitychange", sync);
 
     return () => {
       live = false;
       clearInterval(timer);
+      document.removeEventListener("visibilitychange", sync);
     };
   }, [initial.trip_id, stopped]);
 

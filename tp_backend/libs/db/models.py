@@ -178,6 +178,9 @@ class Place(Base):
     rating: Mapped[float | None] = mapped_column(Float)
     rating_count: Mapped[int | None] = mapped_column(Integer)
     primary_type: Mapped[str | None] = mapped_column(String(120))
+    # The town Places says the venue is in. Only the hand-add path fetches it, and it is a label
+    # only: `city_id` is still where the place was filed.
+    locality: Mapped[str | None] = mapped_column(String(120))
     # Set only by hand. Every other category is derived from mentions, which a manual place has none.
     category: Mapped[str | None] = mapped_column(String(16))
     resolved_from_name: Mapped[str | None] = mapped_column(Text)
@@ -272,6 +275,88 @@ class ItineraryItem(Base):
                                        onupdate=func.now())
 
     place: Mapped[Place | None] = relationship()
+
+
+class Expense(Base):
+    """One cost someone paid on a trip, and what it was for.
+
+    Money is integer minor units in its own `currency` and is never summed across currencies — each
+    currency is its own pile, so no rate is ever needed. A cost may name the block it was for, and
+    it names it by `place_id` or `block_id`, the itinerary's stable identities: `itinerary_items.id`
+    is autoincrement and `replace_days` deletes then re-inserts, so a drag would break the link.
+    """
+
+    __tablename__ = "expenses"
+    __table_args__ = (
+        CheckConstraint("amount_cents > 0", name="ck_expense_amount"),
+        CheckConstraint("currency ~ '^[A-Z]{3}$'", name="ck_expense_currency"),
+        CheckConstraint("place_id IS NULL OR block_id IS NULL", name="ck_expense_block"),
+        Index("ix_expenses_trip", "trip_id", "spent_on"),
+    )
+
+    expense_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    trip_id: Mapped[str] = mapped_column(ForeignKey("trips.trip_id", ondelete="CASCADE"),
+                                         nullable=False)
+    payer_id: Mapped[str] = mapped_column(ForeignKey("users.user_id"), nullable=False)
+    description: Mapped[str] = mapped_column(String(200), nullable=False)
+    amount_cents: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    currency: Mapped[str] = mapped_column(String(3), nullable=False)
+    spent_on: Mapped[date] = mapped_column(Date, nullable=False)
+    place_id: Mapped[str | None] = mapped_column(ForeignKey("places.place_id"))
+    block_id: Mapped[str | None] = mapped_column(String(36))
+    deleted: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
+    created_at: Mapped[datetime] = _ts(nullable=False, server_default=func.now())
+    updated_at: Mapped[datetime] = _ts(nullable=False, server_default=func.now(),
+                                       onupdate=func.now())
+
+    shares: Mapped[list["ExpenseShare"]] = relationship(back_populates="expense",
+                                                        cascade="all, delete-orphan")
+    place: Mapped[Place | None] = relationship()
+
+
+class ExpenseShare(Base):
+    """What one person owes of one expense. The shares of an expense always sum to its amount.
+
+    An even split's odd cent goes to the first participants by largest remainder, so the shares
+    reconcile exactly rather than leaving a cent unclaimed.
+    """
+
+    __tablename__ = "expense_shares"
+    __table_args__ = (CheckConstraint("amount_cents >= 0", name="ck_share_amount"),)
+
+    expense_id: Mapped[str] = mapped_column(ForeignKey("expenses.expense_id", ondelete="CASCADE"),
+                                            primary_key=True)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.user_id", ondelete="CASCADE"),
+                                         primary_key=True)
+    amount_cents: Mapped[int] = mapped_column(BigInteger, nullable=False)
+
+    expense: Mapped[Expense] = relationship(back_populates="shares")
+
+
+class Settlement(Base):
+    """A payment one member made another, recorded not moved.
+
+    It is folded into the same derivation the balances come from, which is what makes a partial
+    payment work without any notion of settling a particular expense.
+    """
+
+    __tablename__ = "settlements"
+    __table_args__ = (
+        CheckConstraint("amount_cents > 0", name="ck_settlement_amount"),
+        CheckConstraint("currency ~ '^[A-Z]{3}$'", name="ck_settlement_currency"),
+        CheckConstraint("from_user_id <> to_user_id", name="ck_settlement_parties"),
+        Index("ix_settlements_trip", "trip_id"),
+    )
+
+    settlement_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    trip_id: Mapped[str] = mapped_column(ForeignKey("trips.trip_id", ondelete="CASCADE"),
+                                         nullable=False)
+    from_user_id: Mapped[str] = mapped_column(ForeignKey("users.user_id"), nullable=False)
+    to_user_id: Mapped[str] = mapped_column(ForeignKey("users.user_id"), nullable=False)
+    amount_cents: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    currency: Mapped[str] = mapped_column(String(3), nullable=False)
+    paid_on: Mapped[date] = mapped_column(Date, nullable=False)
+    created_at: Mapped[datetime] = _ts(nullable=False, server_default=func.now())
 
 
 class TripDismissal(Base):

@@ -20,7 +20,7 @@ VENUE_FIELDS = ("places.id,places.displayName,places.formattedAddress,places.loc
 
 # Details takes the mask unprefixed; a `places.`-prefixed one is a 400.
 VENUE_DETAIL_FIELDS = ("id,displayName,formattedAddress,location,types,primaryTypeDisplayName,"
-                       "rating,userRatingCount")
+                       "rating,userRatingCount,addressComponents")
 
 # 1 degree of latitude is ~111 km everywhere; longitude shrinks with the cosine of the latitude,
 # which matters at Tromsø's 69°N.
@@ -64,6 +64,8 @@ class VenueHit:
     rating_count: int | None
     primary_type: str | None
     types: list[str]
+    # Only the detail path asks for this; searchText's mask omits it to keep that tier cheap.
+    locality: str | None = None
 
 
 @dataclass(frozen=True)
@@ -88,6 +90,19 @@ def _country(components: list[dict]) -> str | None:
     for c in components:
         if "country" in c.get("types", []):
             return c.get("shortText")
+    return None
+
+
+def _locality(components: list[dict]) -> str | None:
+    """The town a venue sits in.
+
+    A `locality` is missing wherever the city *is* the top-level division — Seoul is only ever an
+    `administrative_area_level_1` — and UK addresses put the town in `postal_town`.
+    """
+    for wanted in ("locality", "postal_town", "administrative_area_level_1"):
+        for c in components:
+            if wanted in c.get("types", []):
+                return c.get("longText")
     return None
 
 
@@ -234,6 +249,7 @@ def venue_details(place_id: str, *, timeout: float = 10.0) -> VenueHit | None:
         rating_count=body.get("userRatingCount"),
         primary_type=(body.get("primaryTypeDisplayName") or {}).get("text"),
         types=body.get("types") or [],
+        locality=_locality(body.get("addressComponents") or []),
     )
 
 

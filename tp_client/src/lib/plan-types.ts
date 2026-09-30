@@ -19,7 +19,8 @@ export type SourceRef = {
 
 export type ShortlistPlace = {
   place_id: string;
-  city_id: string | null;
+  /** The city this place is genuinely in. Null on a one-city trip, or when tp_api cannot say. */
+  city_name: string | null;
   name: string;
   address: string | null;
   lat: number | null;

@@ -23,9 +23,9 @@ import { sortableKeyboardCoordinates } from "@dnd-kit/sortable";
 import { useCallback, useEffect, useMemo, useReducer, useState } from "react";
 
 import type { Trip } from "@/lib/api-types";
+import { type ExpenseTab, blockCost, costsByBlock } from "@/lib/expense-types";
 import {
   type PlanState,
-  cityLabels,
   dayOf,
   initialState,
   placedDays,
@@ -34,6 +34,7 @@ import {
 import type {
   DayRoute,
   Itinerary,
+  ItineraryItem,
   Shortlist,
   ShortlistPlace,
 } from "@/lib/plan-types";
@@ -60,6 +61,7 @@ export function PlanBoard({
   center,
   initialItinerary,
   initialShortlist,
+  initialExpenses,
   meId,
   canEdit,
 }: {
@@ -67,6 +69,7 @@ export function PlanBoard({
   center: { lat: number; lon: number } | null;
   initialItinerary: Itinerary;
   initialShortlist: Shortlist;
+  initialExpenses: ExpenseTab | null;
   meId: string;
   canEdit: boolean;
 }) {
@@ -80,6 +83,57 @@ export function PlanBoard({
   const [routingDay, setRoutingDay] = useState<number | null>(null);
   // Stamped with the request that produced it, so "loading" is derived instead of set in an effect.
   const [loaded, setLoaded] = useState({ category: null as string | null });
+  // The costs tab, so a block can show what it cost and the "$" can add one.
+  const [expenses, setExpenses] = useState(initialExpenses);
+
+  const reloadExpenses = useCallback(async () => {
+    const r = await fetch(`/api/trips/${trip.trip_id}/expenses`);
+    if (r.ok) setExpenses((await r.json()) as ExpenseTab);
+  }, [trip.trip_id]);
+
+  const costs = useMemo(() => {
+    const out = new Map<string, string>();
+    for (const [key, list] of costsByBlock(expenses?.expenses ?? [])) {
+      out.set(key, blockCost(list));
+    }
+    return out;
+  }, [expenses]);
+
+  // One figure typed on a block: split evenly between everyone, paid by whoever typed it. Clearing
+  // drops every cost on that block, which is what the "$" showing a total means.
+  const saveCost = useCallback(
+    async (item: ItineraryItem, amountCents: number | null, currency: string) => {
+      const tab = expenses;
+      if (!tab) return;
+      const base = `/api/trips/${trip.trip_id}/expenses`;
+      const existing = tab.expenses.filter(
+        (e) => (e.place_id ?? e.block_id) === (item.place_id ?? item.block_id),
+      );
+      if (amountCents === null) {
+        await Promise.all(
+          existing.map((e) => fetch(`${base}/${e.expense_id}`, { method: "DELETE" })),
+        );
+      } else {
+        const ids = tab.members.map((m) => m.user_id);
+        await fetch(base, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            description: item.name,
+            amount_cents: amountCents,
+            currency,
+            spent_on: dayDate(state, item),
+            payer_id: meId,
+            place_id: item.place_id,
+            block_id: item.block_id,
+            participants: ids,
+          }),
+        });
+      }
+      await reloadExpenses();
+    },
+    [expenses, meId, reloadExpenses, state, trip.trip_id],
+  );
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
@@ -90,7 +144,6 @@ export function PlanBoard({
   const route = state.routes[state.activeDay];
   const isStale = state.stale.includes(state.activeDay);
   const placed = useMemo(() => placedDays(state), [state]);
-  const cityNames = useMemo(() => cityLabels(trip.cities), [trip.cities]);
   const provisional = useMemo(
     () => Object.values(state.routes).find((r) => r.provisional.length > 0)?.provisional ?? [],
     [state.routes],
@@ -315,7 +368,6 @@ export function PlanBoard({
           places={state.shortlist}
           total={state.total}
           placedDays={placed}
-          cityNames={cityNames}
           category={category}
           loading={!settled}
           tripId={trip.trip_id}
@@ -338,6 +390,9 @@ export function PlanBoard({
             stale={isStale}
             readOnly={!canEdit}
             available={availableWindow(trip, state.activeDay, state.days.length)}
+            costs={costs}
+            currency={expenses?.currency ?? "EUR"}
+            onCost={saveCost}
             onRemove={(key) => dispatch({ type: "remove", day: state.activeDay, key })}
             onReference={(key, url) =>
               dispatch({ type: "reference", day: state.activeDay, key, url })
@@ -402,6 +457,15 @@ const collisionDetection: typeof pointerWithin = (args) => {
     pointer.y <= grid.bottom;
   return onGrid ? closestCenter(args) : [];
 };
+
+/** The date of the day a block sits on, which is when its cost was spent. */
+function dayDate(state: PlanState, item: ItineraryItem): string {
+  const key = keyOf(item);
+  for (const d of state.days) {
+    if (d.items.some((i) => keyOf(i) === key)) return d.date;
+  }
+  return state.days[0].date;
+}
 
 function labelFor(state: PlanState, dragId: string): string {
   if (dragId.startsWith("shortlist:")) {
