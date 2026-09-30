@@ -10,9 +10,10 @@
 import { useState } from "react";
 
 import { useDraggable } from "@dnd-kit/core";
-import { Link2, Pencil, X } from "lucide-react";
+import { DollarSign, Link2, Pencil, X } from "lucide-react";
 
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { CURRENCIES, parseAmount } from "@/lib/expense-types";
 import type { PlacedItem, PlanBlock, PlanWarning } from "@/lib/plan-types";
 import {
   DAY_START_MIN,
@@ -32,8 +33,11 @@ export function ActivityBlock({
   warnings,
   slotPx,
   readOnly,
+  cost,
+  currency,
   onRemove,
   onReference,
+  onCost,
   onResize,
   onEdit,
 }: {
@@ -42,8 +46,12 @@ export function ActivityBlock({
   warnings: PlanWarning[];
   slotPx: number;
   readOnly: boolean;
+  /** What this block has cost so far, already formatted — a block can carry more than one cost. */
+  cost: string | null;
+  currency: string;
   onRemove: () => void;
   onReference: (url: string | null) => void;
+  onCost: (amountCents: number | null, currency: string) => void;
   onResize: (startMin: number, durationMin: number) => void;
   /** Given for a custom block only: a place's name and type are Google's, not the user's. */
   onEdit?: () => void;
@@ -130,6 +138,7 @@ export function ActivityBlock({
             <p className="truncate font-mono text-[10.5px] text-faint">
               {[
                 `${hhmm(item.start_min)}–${hhmm(endOf(item))}`,
+                cost,
                 item.primary_type || item.category,
                 block?.open_from && block?.open_to
                   ? `open ${block.open_from}–${block.open_to}`
@@ -166,11 +175,13 @@ export function ActivityBlock({
                 onPointerDown={(e) => e.stopPropagation()}
                 onClick={onEdit}
                 aria-label={`Edit ${item.name}`}
-                className="absolute top-0.5 right-10.5 grid size-5 place-items-center rounded text-faint opacity-0 transition-opacity group-hover/block:opacity-100 hover:text-ink focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring/50"
+                className="absolute top-0.5 right-15.5 grid size-5 place-items-center rounded text-faint opacity-0 transition-opacity group-hover/block:opacity-100 hover:text-ink focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring/50"
               >
                 <Pencil className="size-3" />
               </button>
             )}
+
+            <Cost name={item.name} cost={cost} currency={currency} onSave={onCost} />
 
             <Reference name={item.name} url={item.reference_url} onSave={onReference} />
 
@@ -192,6 +203,106 @@ export function ActivityBlock({
         )}
       </div>
     </div>
+  );
+}
+
+/**
+ * What this block cost, entered where the block is. One figure and Enter: the payer is whoever is
+ * typing and it splits evenly between everyone on the trip, which is the common case. The Expenses
+ * tab is where an uneven split or a different payer is corrected.
+ */
+function Cost({
+  name,
+  cost,
+  currency,
+  onSave,
+}: {
+  name: string;
+  cost: string | null;
+  currency: string;
+  onSave: (amountCents: number | null, currency: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [amount, setAmount] = useState("");
+  const [picked, setPicked] = useState(currency);
+
+  const trimmed = amount.trim();
+  const cents = parseAmount(trimmed);
+  const valid = trimmed === "" || (cents !== null && cents > 0);
+
+  const save = () => {
+    if (!valid) return;
+    onSave(trimmed === "" ? null : cents, picked);
+    setOpen(false);
+  };
+
+  return (
+    <Popover
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next);
+        if (next) {
+          setAmount("");
+          setPicked(currency);
+        }
+      }}
+    >
+      <PopoverTrigger
+        aria-label={cost ? `${name} cost ${cost}` : `Add what ${name} cost`}
+        onPointerDown={(e) => e.stopPropagation()}
+        className={cn(
+          "absolute top-0.5 right-10.5 grid size-5 place-items-center rounded transition-opacity focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring/50",
+          cost
+            ? "text-brand hover:bg-brand-bg"
+            : "text-faint opacity-0 group-hover/block:opacity-100 hover:text-ink",
+        )}
+      >
+        <DollarSign className="size-3" />
+      </PopoverTrigger>
+
+      <PopoverContent align="end" className="gap-2">
+        <label className="text-[12px] font-medium text-ink-soft" htmlFor={`cost-${name}`}>
+          What did {name} cost?
+        </label>
+        <div className="flex gap-1.5">
+          <input
+            id={`cost-${name}`}
+            value={amount}
+            autoFocus
+            inputMode="decimal"
+            placeholder="0.00"
+            onChange={(e) => setAmount(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && save()}
+            className="h-9 min-w-0 flex-1 rounded-lg border border-input bg-transparent px-2.5 font-mono text-[13px] tabular-nums outline-none placeholder:text-faint focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+          />
+          <select
+            value={picked}
+            aria-label="Currency"
+            onChange={(e) => setPicked(e.target.value)}
+            className="h-9 rounded-lg border border-input bg-transparent px-1.5 font-mono text-[12.5px] outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+          >
+            {[...new Set([currency, ...CURRENCIES])].map((c) => (
+              <option key={c} value={c}>
+                {c}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-[12px] text-faint">
+            {cost ? `So far ${cost}` : "Split evenly, you paid"}
+          </span>
+          <button
+            type="button"
+            onClick={save}
+            disabled={!valid}
+            className="h-8 rounded-full bg-ink px-3 text-[12.5px] font-medium text-primary-foreground hover:bg-ink-hover disabled:opacity-50"
+          >
+            {trimmed ? "Add" : "Clear"}
+          </button>
+        </div>
+      </PopoverContent>
+    </Popover>
   );
 }
 

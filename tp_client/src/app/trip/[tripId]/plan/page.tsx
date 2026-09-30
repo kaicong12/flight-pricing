@@ -1,12 +1,13 @@
 // The planning screen: shortlist beside the ordered day beside the map. The user owns the order; we
 // route it and say what does not work.
 
-import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 
 import { AppHeader } from "@/components/app-header";
 import { PlanBoard } from "@/components/plan/plan-board";
+import { TripTabs } from "@/components/trip-tabs";
 import type { TripStatus } from "@/lib/api-types";
+import type { ExpenseTab } from "@/lib/expense-types";
 import type { Itinerary, Shortlist } from "@/lib/plan-types";
 import { currentUser } from "@/lib/session";
 import { getJson } from "@/lib/tp-api";
@@ -29,10 +30,11 @@ export default async function PlanPage({ params }: PageProps<"/trip/[tripId]/pla
   const user = await currentUser();
   if (!user) redirect("/login");
 
-  const [trip, itinerary, shortlist] = await Promise.all([
+  const [trip, itinerary, shortlist, expenses] = await Promise.all([
     getJson<TripStatus>(`/trips/${id}`),
     getJson<Itinerary>(`/trips/${id}/itinerary`),
     getJson<Shortlist>(`/trips/${id}/shortlist?limit=40`),
+    getJson<ExpenseTab>(`/trips/${id}/expenses`),
   ]);
   if (!trip || !itinerary) notFound();
 
@@ -44,19 +46,15 @@ export default async function PlanPage({ params }: PageProps<"/trip/[tripId]/pla
     <div className="min-h-dvh bg-page pb-16">
       <AppHeader user={user} />
       <main className="mx-auto w-full max-w-[1560px] px-7 pt-9">
-        <Link
-          href={`/trip/${id}`}
-          className="font-mono text-[11px] tracking-[0.04em] text-faint uppercase transition-colors hover:text-ink outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
-        >
-          ← Trip status
-        </Link>
+        <TripTabs tripId={trip.trip_id} />
 
-        <div className="mt-4">
+        <div className="mt-6">
           <PlanBoard
             trip={trip}
             center={center}
             initialItinerary={itinerary}
             initialShortlist={shortlist ?? EMPTY_SHORTLIST}
+            initialExpenses={expenses}
             meId={user.user_id}
             canEdit={trip.your_role !== "viewer"}
           />

@@ -6,6 +6,8 @@ from io import BytesIO
 from conftest import make_mention, make_place, make_video, plan_body
 from openpyxl import load_workbook
 
+from libs.db import User, UserTrip
+from libs.db.enums import TripRole
 from libs.routing import HoursHit
 from tp_api.route_planning.export import ALERT_BG, WARN_BG
 from tp_api.route_planning.utils import google_weekday
@@ -174,3 +176,34 @@ def test_a_viewer_can_export_but_a_stranger_cannot(anon_client, client, db):
     trip = a_trip_with_one_block(client, db)
     assert anon_client.get(f"/trips/{trip}/export.xlsx", headers={"Authorization": ""}
                            ).status_code == 401
+
+
+def test_the_expenses_sheet_carries_a_column_per_person(client, db):
+    trip = a_trip_with_one_block(client, db)
+    bob = User(user_id="u-bob", google_sub="sub-bob", email="bob@example.com", name="Bob Two")
+    db.add(bob)
+    db.add(UserTrip(user_id=bob.user_id, trip_id=trip, role=TripRole.EDITOR))
+    db.commit()
+    client.post(f"/trips/{trip}/expenses",
+                json={"description": "Sauna", "amount_cents": 4000, "currency": "EUR",
+                      "spent_on": today_utc().isoformat(), "payer_id": "u-test",
+                      "place_id": "p1", "participants": ["u-test", "u-bob"]})
+
+    ws = export(client, trip)["Expenses"]
+
+    assert [c.value for c in ws[3]] == ["Day", "Date", "Expense", "Paid by", "Amount", "Cur",
+                                        "A", "Bob"]
+    assert ws.cell(row=5, column=3).value == "Sauna · Löyly"
+    assert ws.cell(row=5, column=5).value == 40.0
+    assert [ws.cell(row=5, column=c).value for c in (7, 8)] == [20.0, 20.0]
+
+    # The balance block follows the costs: Paid, Share, then Net.
+    net = next(r for r in range(6, 20) if ws.cell(row=r, column=3).value == "Net")
+    assert [ws.cell(row=net, column=c).value for c in (7, 8)] == [20.0, -20.0]
+    assert ws.cell(row=net + 1, column=3).value == "Bob pays A"
+    assert ws.cell(row=net + 1, column=5).value == 20.0
+
+
+def test_the_expenses_sheet_is_there_when_nothing_was_spent(client, db):
+    ws = export(client, a_trip_with_one_block(client, db))["Expenses"]
+    assert ws.cell(row=5, column=1).value == "Nothing spent yet."

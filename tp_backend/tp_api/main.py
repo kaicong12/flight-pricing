@@ -48,6 +48,7 @@ from tp_api.deps import (
     require_edit,
     require_trip_access,
 )
+from tp_api.expenses import router as expenses_router
 from tp_api.route_planning import router as planning_router
 from tp_api.route_planning.service import in_shortlist
 from tp_api.schemas import (
@@ -77,6 +78,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 app = FastAPI(title="Trip planner API", lifespan=lifespan)
 app.include_router(auth_router)
 app.include_router(planning_router)
+app.include_router(expenses_router)
 app.include_router(sharing_router)
 app.include_router(users_router)
 metrics.install(app)
