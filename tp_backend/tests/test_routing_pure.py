@@ -78,7 +78,6 @@ class TestPlanDay:
             weekday=1,
         )
         assert [(b.start_min, b.end_min) for b in plan.blocks] == [(600, 660), (690, 720)]
-        assert plan.finish_min == 720
         assert plan.warnings == []
 
     def test_stops_are_checked_in_time_order_whatever_order_they_arrive_in(self):
@@ -96,13 +95,11 @@ class TestPlanDay:
     def test_a_single_stop_is_checked_on_its_own(self):
         plan = plan_day([stop("a", "A", start=540, minutes=30)], weekday=1)
         assert plan.blocks[0].start_min == 540
-        assert plan.finish_min == 570
 
     def test_an_empty_day_is_not_an_error(self):
         plan = plan_day([], weekday=1)
         assert plan.blocks == []
         assert plan.warnings == []
-        assert plan.finish_min == 0
 
     def test_a_block_pinned_before_opening_warns_and_is_not_moved(self):
         plan = plan_day([stop("a", "Arctic Cathedral", start=11 * 60, minutes=60)], weekday=0)

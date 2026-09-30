@@ -64,7 +64,6 @@ class PlanWarning:
 class DayPlan:
     blocks: list[Block]
     warnings: list[PlanWarning]
-    finish_min: int
 
 
 def hhmm(minutes: float) -> str:
@@ -114,5 +113,4 @@ def plan_day(stops: list[Stop], *, weekday: int) -> DayPlan:
                             end_min=end_min, duration_min=stop.duration_min,
                             open_from=open_from, open_to=open_to))
 
-    finish = max((b.end_min for b in blocks), default=0)
-    return DayPlan(blocks=blocks, warnings=warnings, finish_min=finish)
+    return DayPlan(blocks=blocks, warnings=warnings)
