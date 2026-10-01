@@ -7,7 +7,6 @@ from sqlalchemy import select
 
 from libs.db import Extraction, IngestRun, Place, PlaceMention, PlaceQuery, TripPlace
 from libs.db.enums import (
-    Confidence,
     ErrorCode,
     ExtractedFrom,
     RunKind,
@@ -25,10 +24,9 @@ VIDEO = "vid0000001a"
 NOTE = "68f0aa1c000000000e0139c4"
 
 
-def hit(place_id="pid-1", name="Old Market Hall", lat=60.166, lon=24.951, count=8000, **kw):
+def hit(place_id="pid-1", name="Old Market Hall", lat=60.166, lon=24.951, **kw):
     return VenueHit(**{"place_id": place_id, "name": name, "address": "Etelaranta 1",
-                       "lat": lat, "lon": lon, "rating": 4.5, "rating_count": count,
-                       "primary_type": "Market", "types": ["tourist_attraction"]} | kw)
+                       "lat": lat, "lon": lon, "primary_type": "Market", "types": ["tourist_attraction"]} | kw)
 
 
 def yt_place(name="Vanha Kauppahalli", **kw):
@@ -102,8 +100,7 @@ def test_a_candidate_becomes_a_place_and_a_mention(db, run, monkeypatch):
     place = db.get(Place, "pid-1")
     mention = db.scalars(select(PlaceMention)).one()
     assert out["resolved"] == 1
-    assert (place.name, place.city_id, place.rating_count) == ("Old Market Hall", HELSINKI, 8000)
-    assert place.confidence == Confidence.HIGH
+    assert (place.name, place.city_id) == ("Old Market Hall", HELSINKI)
     assert (mention.source, mention.source_ref, mention.category) == (Source.YOUTUBE, VIDEO, "eat")
     assert mention.name_as_written == "Vanha Kauppahalli"
     assert mention.source_timestamp == "03:00"
@@ -245,17 +242,6 @@ def test_a_result_outside_the_city_is_rejected(db, run, monkeypatch):
     assert db.scalars(select(PlaceQuery)).all() == []
 
 
-def test_a_place_with_no_ratings_is_rejected(db, run, monkeypatch):
-    extraction(db, [yt_place()])
-    counting(monkeypatch, result=hit(count=0))
-
-    out = resolve.places_resolve(db, task(run))
-    db.commit()
-
-    assert out["rejected"] == 1
-    assert db.scalars(select(Place)).all() == []
-
-
 def test_a_generic_noun_is_never_sent_to_google(db, run, monkeypatch):
     """Places answers "bakery" with a real 4.7-star bakery, so this must be gated before the call."""
     extraction(db, [yt_place("bakery"), yt_place("library")])
@@ -275,7 +261,6 @@ def test_a_chain_is_never_sent_to_google(db, run, monkeypatch):
 
 
 def test_a_place_the_source_disliked_is_skipped(db, run, monkeypatch):
-    """Gate on what the source said, never on the Google rating."""
     extraction(db, [yt_place(sentiment="not_recommended")])
     calls = counting(monkeypatch)
 

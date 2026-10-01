@@ -97,13 +97,9 @@ def _is_cjk(s: str) -> bool:
 def judge(query: str, hit: VenueHit) -> tuple[Confidence | None, str]:
     """Confidence in the resolution, or None to reject it.
 
-    Rating count is the signal. Type is not: Fjellheisen, Tromsø's top attraction, comes back with
-    an empty primaryTypeDisplayName and only point_of_interest, so a type rule would reject it.
+    Type is not a signal: Fjellheisen, Tromsø's top attraction, comes back with an empty
+    primaryTypeDisplayName and only point_of_interest, so a type rule would reject it.
     """
-    count = hit.rating_count or 0
-    if count == 0:
-        return None, "no ratings — not a destination"
-
     # The pre-call gate only sees what the source wrote, and "Storgata" is a street that resolves to
     # the supermarket on it. The official name is free to check and catches what the query missed.
     if _is_chain(query_norm(hit.name)):
@@ -113,10 +109,6 @@ def judge(query: str, hit: VenueHit) -> tuple[Confidence | None, str]:
     if _is_cjk(query) and not _has_latin(query) and not _is_cjk(hit.name):
         return Confidence.MEDIUM, f"unconfirmed identity: {query!r} resolved to a Latin name"
 
-    if count >= 100:
-        return Confidence.HIGH, f"{count} ratings"
-    if count < 20:
-        return Confidence.LOW, f"only {count} ratings"
     if not (tokens(query) & tokens(hit.name)):
         return Confidence.MEDIUM, "name shares no token with the query"
-    return Confidence.MEDIUM, f"{count} ratings"
+    return Confidence.HIGH, "name matches the query"

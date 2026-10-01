@@ -35,12 +35,10 @@ KAUPPAHALLI, BOLHAO = "Vanha Kauppahalli", "Bolhão"
 VENUES = {
     f"{KAUPPAHALLI}, Helsinki": VenueHit(
         place_id="pid-kauppahalli", name="Old Market Hall", address="Etelaranta",
-        lat=60.166, lon=24.951, rating=4.5, rating_count=8000,
-        primary_type="Market", types=["tourist_attraction"]),
+        lat=60.166, lon=24.951, primary_type="Market", types=["tourist_attraction"]),
     f"{BOLHAO}, Porto": VenueHit(
         place_id="pid-bolhao", name="Mercado do Bolhão", address="Rua Formosa",
-        lat=41.149, lon=-8.606, rating=4.3, rating_count=9000,
-        primary_type="Market", types=["tourist_attraction"]),
+        lat=41.149, lon=-8.606, primary_type="Market", types=["tourist_attraction"]),
 }
 
 HEL_VIDEO, POR_VIDEO, BOTH_VIDEO = "helvid00001", "porvid00001", "bothvid0001"

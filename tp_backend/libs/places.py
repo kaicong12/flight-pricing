@@ -13,14 +13,13 @@ AUTOCOMPLETE_URL = "https://places.googleapis.com/v1/places:autocomplete"
 SEARCH_URL = "https://places.googleapis.com/v1/places:searchText"
 FIELDS = "id,displayName,location,addressComponents,types,timeZone"
 
-# A venue needs userRatingCount, which the city mask omits — it is the only trustworthy confidence
-# signal. Keep the mask minimal otherwise; it sets the billing tier.
+# The mask sets the billing tier: rating or userRatingCount would make every call Enterprise.
 VENUE_FIELDS = ("places.id,places.displayName,places.formattedAddress,places.location,"
-                "places.types,places.primaryTypeDisplayName,places.rating,places.userRatingCount")
+                "places.types,places.primaryTypeDisplayName")
 
 # Details takes the mask unprefixed; a `places.`-prefixed one is a 400.
 VENUE_DETAIL_FIELDS = ("id,displayName,formattedAddress,location,types,primaryTypeDisplayName,"
-                       "rating,userRatingCount,addressComponents")
+                       "addressComponents")
 
 # 1 degree of latitude is ~111 km everywhere; longitude shrinks with the cosine of the latitude,
 # which matters at Tromsø's 69°N.
@@ -60,8 +59,6 @@ class VenueHit:
     address: str | None
     lat: float | None
     lon: float | None
-    rating: float | None
-    rating_count: int | None
     primary_type: str | None
     types: list[str]
     # Only the detail path asks for this; searchText's mask omits it to keep that tier cheap.
@@ -210,8 +207,6 @@ def search_venue(query: str, lat: float, lon: float, radius_m: int,
         address=hit.get("formattedAddress"),
         lat=loc.get("latitude"),
         lon=loc.get("longitude"),
-        rating=hit.get("rating"),
-        rating_count=hit.get("userRatingCount"),
         primary_type=(hit.get("primaryTypeDisplayName") or {}).get("text"),
         types=hit.get("types") or [],
     )
@@ -245,8 +240,6 @@ def venue_details(place_id: str, *, timeout: float = 10.0) -> VenueHit | None:
         address=body.get("formattedAddress"),
         lat=loc.get("latitude"),
         lon=loc.get("longitude"),
-        rating=body.get("rating"),
-        rating_count=body.get("userRatingCount"),
         primary_type=(body.get("primaryTypeDisplayName") or {}).get("text"),
         types=body.get("types") or [],
         locality=_locality(body.get("addressComponents") or []),
