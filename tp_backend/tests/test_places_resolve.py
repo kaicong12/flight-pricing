@@ -7,7 +7,6 @@ from sqlalchemy import select
 
 from libs.db import Extraction, IngestRun, Place, PlaceMention, PlaceQuery, TripPlace
 from libs.db.enums import (
-    Confidence,
     ErrorCode,
     ExtractedFrom,
     RunKind,
