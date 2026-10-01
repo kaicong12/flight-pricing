@@ -65,7 +65,6 @@ export function DayColumn({
   /** Each block's cost so far, already formatted, keyed the way `keyOf` keys a block. */
   costs: Map<string, string>;
   currency: string;
-  /** The tags a cost entered here is offered. */
   tags: string[];
   onRemove: (key: string) => void;
   onReference: (key: string, url: string | null) => void;

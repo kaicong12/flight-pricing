@@ -63,7 +63,6 @@ export function CustomBlockDialog({
   days: ItineraryDay[];
   windowOf: (day: number) => { from: number; to: number };
   editing: ItineraryItem | null;
-  /** What the block has cost so far, formatted. */
   cost: string | null;
   currency: string;
   tags: string[];
@@ -227,7 +226,10 @@ export function CustomBlockDialog({
                   {cost && (
                     <button
                       type="button"
-                      onClick={() => setClearCost(!clearCost)}
+                      onClick={() => {
+                        setClearCost(!clearCost);
+                        setAmount("");
+                      }}
                       className="text-[12.5px] text-muted-foreground underline decoration-dotted underline-offset-2 hover:text-ink outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
                     >
                       {clearCost ? `keep ${cost}` : `so far ${cost} · clear`}
@@ -237,6 +239,7 @@ export function CustomBlockDialog({
                 <div className="flex gap-1.5">
                   <Input
                     value={amount}
+                    disabled={clearCost}
                     inputMode="decimal"
                     placeholder={cost ? "Add another 0.00" : "0.00"}
                     onChange={(e) => setAmount(e.target.value)}

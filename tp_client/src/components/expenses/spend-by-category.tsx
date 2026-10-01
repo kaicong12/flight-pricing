@@ -9,8 +9,10 @@ import { useState } from "react";
 import { FilterChip } from "@/components/ui/filter-chip";
 import {
   type Expense,
+  OTHER,
   type Slice,
-  knownCategories,
+  UNTAGGED,
+  colorSlots,
   money,
   spendByCategory,
 } from "@/lib/expense-types";
@@ -18,7 +20,8 @@ import { cn } from "@/lib/utils";
 
 // Validated with the dataviz palette checker against the light surface.
 const COLORS = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300"];
-const NEUTRAL = "#a8a59b";
+const UNTAGGED_COLOR = "#8a877e";
+const OTHER_COLOR = "#c9c6bc";
 const SIZE = 168;
 const OUTER = SIZE / 2;
 const INNER = OUTER * 0.62;
@@ -30,11 +33,6 @@ const path = arc<PieArcDatum<Slice>>().innerRadius(INNER).outerRadius(OUTER).cor
 
 export function SpendByCategory({ expenses, meId }: { expenses: Expense[]; meId: string }) {
   const [mine, setMine] = useState(false);
-  const order = knownCategories(expenses).map((c) => c.toLowerCase());
-  const colorOf = (category: string) => {
-    const i = order.indexOf(category.toLowerCase());
-    return i >= 0 && i < COLORS.length ? COLORS[i] : NEUTRAL;
-  };
   const currencies = [...new Set(expenses.map((e) => e.currency))];
 
   return (
@@ -59,7 +57,7 @@ export function SpendByCategory({ expenses, meId }: { expenses: Expense[]; meId:
             key={currency}
             currency={currency}
             slices={spendByCategory(expenses, currency, mine ? meId : null)}
-            colorOf={colorOf}
+            expenses={expenses}
           />
         ))}
       </div>
@@ -70,15 +68,18 @@ export function SpendByCategory({ expenses, meId }: { expenses: Expense[]; meId:
 function Donut({
   currency,
   slices,
-  colorOf,
+  expenses,
 }: {
   currency: string;
   slices: Slice[];
-  colorOf: (category: string) => string;
+  expenses: Expense[];
 }) {
   const [hover, setHover] = useState<string | null>(null);
   const total = slices.reduce((t, s) => t + s.cents, 0);
-  const shown = slices.find((s) => s.category === hover);
+  const shown = slices.find((s) => s.key === hover);
+  const slots = colorSlots(slices, expenses, COLORS.length);
+  const colorOf = (key: string) =>
+    key === UNTAGGED ? UNTAGGED_COLOR : key === OTHER ? OTHER_COLOR : COLORS[slots.get(key) ?? 0];
 
   if (total === 0) {
     return <p className="text-[13px] text-muted-foreground">Nothing of yours in {currency}.</p>;
@@ -97,19 +98,19 @@ function Donut({
       >
         {layout(slices).map((a) => (
           <path
-            key={a.data.category}
+            key={a.data.key}
             d={path(a) ?? ""}
-            fill={colorOf(a.data.category)}
+            fill={colorOf(a.data.key)}
             stroke="var(--surface)"
             strokeWidth={2}
             tabIndex={0}
-            aria-label={`${a.data.category} ${money(a.data.cents, currency)}`}
-            onPointerEnter={() => setHover(a.data.category)}
-            onFocus={() => setHover(a.data.category)}
+            aria-label={`${a.data.label} ${money(a.data.cents, currency)}`}
+            onPointerEnter={() => setHover(a.data.key)}
+            onFocus={() => setHover(a.data.key)}
             onBlur={() => setHover(null)}
             className={cn(
               "outline-none transition-opacity",
-              hover && hover !== a.data.category && "opacity-35",
+              hover && hover !== a.data.key && "opacity-35",
             )}
           />
         ))}
@@ -117,26 +118,26 @@ function Donut({
           {money(shown?.cents ?? total, currency)}
         </text>
         <text textAnchor="middle" y={16} className="fill-faint text-[11px]">
-          {shown ? shown.category : "total"}
+          {shown ? shown.label : "total"}
         </text>
       </svg>
 
       <ul className="min-w-0 flex-1 space-y-1.5">
         {slices.map((s) => (
           <li
-            key={s.category}
-            onPointerEnter={() => setHover(s.category)}
+            key={s.key}
+            onPointerEnter={() => setHover(s.key)}
             onPointerLeave={() => setHover(null)}
             className={cn(
               "flex items-center gap-2 text-[12.5px] transition-opacity",
-              hover && hover !== s.category && "opacity-50",
+              hover && hover !== s.key && "opacity-50",
             )}
           >
             <span
               className="size-2.5 shrink-0 rounded-[3px]"
-              style={{ background: colorOf(s.category) }}
+              style={{ background: colorOf(s.key) }}
             />
-            <span className="min-w-0 flex-1 truncate">{s.category}</span>
+            <span className="min-w-0 flex-1 truncate">{s.label}</span>
             <span className="font-mono text-ink-soft tabular-nums">
               {money(s.cents, currency)}
             </span>

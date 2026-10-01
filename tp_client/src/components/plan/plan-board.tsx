@@ -90,7 +90,6 @@ export function PlanBoard({
     category: null as string | null,
     source: null as ShortlistSource | null,
   });
-  // The costs tab, so a block can show what it cost and the "$" can add one.
   const [expenses, setExpenses] = useState(initialExpenses);
 
   const reloadExpenses = useCallback(async () => {
@@ -106,8 +105,7 @@ export function PlanBoard({
     return out;
   }, [expenses]);
 
-  // One figure typed on a block: split evenly between everyone, paid by whoever typed it. Clearing
-  // drops every cost on that block, which is what the "$" showing a total means.
+  // One figure typed on a block: split evenly between everyone, paid by whoever typed it.
   const saveCost = useCallback(
     async (item: ItineraryItem, { amountCents, currency, category }: CostEntry) => {
       const tab = expenses;

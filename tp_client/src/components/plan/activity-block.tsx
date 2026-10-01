@@ -8,8 +8,6 @@
 // Warnings sit under the grid rather than inside the block: a block's height is its duration, so
 // there is no room to grow into, and the alert border already says which block is the problem.
 
-import { useState } from "react";
-
 import { useDraggable } from "@dnd-kit/core";
 import { Link2, Pencil, X } from "lucide-react";
 
@@ -141,6 +139,9 @@ export function ActivityBlock({
               {continued ? "↳" : hhmm(item.start_min)}
             </span>
             {item.name}
+            {short && cost && (
+              <span className="ml-1.5 font-mono text-[10.5px] font-normal text-faint">{cost}</span>
+            )}
           </p>
           {!short && (
             <p className="truncate font-mono text-[10.5px] text-faint">

@@ -9,6 +9,7 @@ import {
   OTHER,
   UNTAGGED,
   blockCost,
+  colorSlots,
   costsByBlock,
   forReading,
   knownCategories,
@@ -16,6 +17,7 @@ import {
   parseAmount,
   spendByCategory,
   splitEvenly,
+  tagChoices,
   widest,
 } from "./expense-types";
 
@@ -124,21 +126,50 @@ const tagged = [
 eq(knownCategories(tagged), ["Food", "Stay"], "one spelling per tag, the most used first");
 eq(
   spendByCategory(tagged, "EUR"),
-  [{ category: "Stay", cents: 9000 }, { category: "Food", cents: 4000 }, { category: UNTAGGED, cents: 500 }],
+  [
+    { key: "stay", label: "Stay", cents: 9000 },
+    { key: "food", label: "Food", cents: 4000 },
+    { key: UNTAGGED, label: "Untagged", cents: 500 },
+  ],
   "a tag's case does not split its slice, and another currency stays out",
 );
 eq(
   spendByCategory(tagged, "EUR", "me"),
-  [{ category: "Stay", cents: 4500 }, { category: "Food", cents: 1000 }],
+  [
+    { key: "stay", label: "Stay", cents: 4500 },
+    { key: "food", label: "Food", cents: 1000 },
+  ],
   "mine counts only my shares",
 );
 const many = Array.from({ length: 8 }, (_, i) =>
   expense({ expense_id: `m${i}`, category: `t${i}`, amount_cents: 1000 - i * 100 }),
 );
 eq(
-  spendByCategory(many, "EUR").map((s) => [s.category, s.cents]),
+  spendByCategory(many, "EUR").map((s) => [s.key, s.cents]),
   [["t0", 1000], ["t1", 900], ["t2", 800], ["t3", 700], ["t4", 600], [OTHER, 500 + 400 + 300]],
   "past six slices the smallest fold into Other",
 );
+
+eq(
+  spendByCategory([expense({ category: "Other" }), expense({ expense_id: "x", amount_cents: 1 })], "EUR")
+    .map((s) => s.key),
+  ["other", UNTAGGED],
+  "a tag typed as Other is its own slice, not the fold",
+);
+const later = [...many, expense({ expense_id: "late", category: "late", amount_cents: 5000 })];
+const slots = colorSlots(spendByCategory(later, "EUR"), later, 6);
+eq(slots.get("t0"), 0, "the first tag keeps its colour");
+eq(slots.get("late"), 4, "a ninth tag takes the slot its folded neighbour left free");
+eq(
+  colorSlots(spendByCategory(tagged, "EUR"), tagged, 6).get("stay"),
+  colorSlots(spendByCategory(tagged, "EUR", "me"), tagged, 6).get("stay"),
+  "Trip and Mine paint a tag alike",
+);
+eq(
+  tagChoices([expense({ category: "food" }), expense({ expense_id: "y", category: "Ferry" })]),
+  ["food", "Ferry", "Transport", "Stay", "Activities", "Shopping"],
+  "a starter the trip already uses in another case is not offered twice",
+);
+eq(tagChoices(many).length, 8, "at most eight chips");
 
 console.log("expense-types.check.ts ok");
