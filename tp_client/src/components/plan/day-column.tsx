@@ -25,6 +25,8 @@ import {
   piecesOn,
   warningText,
 } from "@/lib/plan-types";
+import { Kbd } from "@/components/ui/kbd";
+import { useShortcut } from "@/lib/use-shortcut";
 import { cn } from "@/lib/utils";
 
 import { ActivityBlock } from "./activity-block";
@@ -32,6 +34,7 @@ import { CustomBlockDialog } from "./custom-block";
 
 const SLOT_PX = 26;
 const SLOTS = Math.round((DAY_END_MIN - DAY_START_MIN) / SLOT_MIN);
+const MORNING = 9 * 60;
 
 export function DayColumn({
   day,
@@ -86,6 +89,15 @@ export function DayColumn({
   const placed = layout(
     pieces.map((p) => ({ ...p.item, start_min: p.from, duration_min: p.to - p.from })),
   );
+  const firstFree = () => {
+    const from = Math.ceil(available.from / SLOT_MIN) * SLOT_MIN;
+    for (let m = Math.max(from, MORNING); m + 60 <= available.to; m += SLOT_MIN) {
+      if (!pieces.some((p) => m < p.to && p.from < m + 60)) return m;
+    }
+    return from;
+  };
+  useShortcut("b", () => setAdding(firstFree()), !readOnly);
+
   const editingOffset = editing ? (pieceOf.get(keyOf(editing))?.offset ?? 0) : 0;
   const editingDay = day.day_index - editingOffset / DAY_END_MIN;
 
@@ -95,6 +107,17 @@ export function DayColumn({
         <h3 className="text-[15px] font-semibold tracking-[-0.01em]">
           Day {day.day_index + 1} · {formatDayTab(day.date)}
         </h3>
+        {!readOnly && (
+          <button
+            type="button"
+            onClick={() => setAdding(firstFree())}
+            className="flex items-center gap-1.5 rounded-full text-[12.5px] font-medium text-ink-soft outline-none hover:text-ink focus-visible:ring-3 focus-visible:ring-ring/50"
+          >
+            <PlusIcon className="size-3.5" />
+            New block
+            <Kbd>⌘B</Kbd>
+          </button>
+        )}
       </div>
 
       <p className="mt-1 font-mono text-[11px] text-faint">
@@ -267,4 +290,3 @@ function Slot({
     </div>
   );
 }
-

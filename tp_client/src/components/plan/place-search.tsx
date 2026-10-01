@@ -17,7 +17,9 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { Kbd } from "@/components/ui/kbd";
 import type { VenueSuggestion } from "@/lib/plan-types";
+import { useShortcut } from "@/lib/use-shortcut";
 import { cn } from "@/lib/utils";
 
 const DEBOUNCE_MS = 250;
@@ -33,6 +35,7 @@ export function PlaceSearch({
   onAdd: (placeId: string, category: string) => Promise<string | null>;
 }) {
   const [open, setOpen] = useState(false);
+  useShortcut("k", () => setOpen(true));
   const [query, setQuery] = useState("");
   const [picked, setPicked] = useState<VenueSuggestion | null>(null);
   const [category, setCategory] = useState<string | null>(null);
@@ -103,6 +106,9 @@ export function PlaceSearch({
       <DialogTrigger className="mt-3 flex h-9 w-full items-center gap-2 rounded-[13px] border border-dashed border-input px-3 text-left text-[13px] text-muted-foreground transition-colors hover:border-[#c6bda4] hover:text-ink outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50">
         <PlusIcon className="size-3.5 shrink-0 opacity-50" />
         Add a place yourself
+        <span className="ml-auto">
+          <Kbd>⌘K</Kbd>
+        </span>
       </DialogTrigger>
 
       <DialogContent className="sm:max-w-[440px]">
