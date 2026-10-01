@@ -97,8 +97,8 @@ def render(session: Session, trip: Trip, places, open_days, feedback: str = "") 
 
 
 def keep(trip: Trip, reply: dict, n: int, open_days, shut=()) -> dict:
-    """Refuse what replace_days would 422 — bad index, bad day, repeat, off-grid, no fit — and
-    anything already proven closed all day, which no amount of asking stops the model reusing."""
+    """Refuse a bad index or day, a repeat, an off-grid or unfitting pick, and anything already
+    proven closed all day, which no amount of asking stops the model reusing."""
     out, seen = {}, set()
     for d in reply.get("days") or []:
         day = d.get("day")

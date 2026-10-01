@@ -8,7 +8,6 @@ from libs.routing.plan import (
     PlanWarning,
     Stop,
     hhmm,
-    in_time_order,
     plan_day,
 )
 
@@ -22,7 +21,6 @@ __all__ = [
     "Stop",
     "fetch_hours",
     "hhmm",
-    "in_time_order",
     "plan_day",
     "window_for",
 ]

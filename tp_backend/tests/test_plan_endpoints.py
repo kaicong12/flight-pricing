@@ -369,7 +369,6 @@ class TestItineraryWrite:
         assert db.scalar(select(ItineraryItem.day_index)) == 1
 
     def test_moving_a_block_from_a_day_the_client_did_not_list(self, client, db):
-        """Only day 1 is sent, but the block currently sits on day 0. It moves, not 409s."""
         trip = make_trip(client)
         seed(db, ("p1", "A", 1))
         first = client.put(f"/trips/{trip}/itinerary", json={"days": [

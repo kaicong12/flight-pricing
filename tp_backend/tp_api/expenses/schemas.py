@@ -32,10 +32,10 @@ class ExpenseIn(BaseModel):
     participants: list[str] = Field(default_factory=list)
     shares: list[ShareIn] = Field(default_factory=list)
 
-    @field_validator("category")
+    @field_validator("category", mode="before")
     @classmethod
-    def _tidy(cls, v: str | None) -> str | None:
-        return " ".join(v.split()) or None if v else None
+    def _tidy(cls, v: object) -> object:
+        return (" ".join(v.split()) or None) if isinstance(v, str) else v
 
     @model_validator(mode="after")
     def _one_split(self):

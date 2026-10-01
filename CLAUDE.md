@@ -110,34 +110,33 @@ keeps its hard box: `search_venue` is guessing at a name and needs the geography
 is the one thing `places.category` exists for: every other category is a majority vote over
 `place_mentions`, which a hand-added place has none of, so without it the place is invisible under
 every filter chip. A person's answer beats the videos'. The user drags
-them into days; `PUT /trips/{id}/itinerary` replaces whole days, because a drag is a statement about
-a sequence and positions are dense and derived. A drag snaps to the half hour; the block dialog types
-any minute, and may end a block on a later day. That block stays **one row on the day it starts** —
-one `block_id`, so one cost — and the grid draws its tail on each day it reaches (`piecesOn`). `POST /trips/{id}/days/{n}/route` then checks that
-exact order against Place Details hours and returns structured warning codes — the
-client owns the English. **Travel between blocks is not
-modelled at all** — not the time, not the
-distance, not whether a route exists. A day may name two places on opposite sides of the world and
-nothing objects; the map draws numbered pins and no line. `itinerary_items.reference_url` is the
-user's own link on a block — a booking, a listing, a receipt — stored and opened, never fetched; the
-plan screen edits it, and the block's cost, in the same dialog that retimes it, and saving one does
-not re-check the day.
+them into days; `PUT /trips/{id}/itinerary` replaces whole days, because a drag is a statement about a
+sequence and positions are dense and derived. A drag snaps to the half hour; the block dialog types any
+minute, and may end a block on a later day. That block stays **one row on the day it starts** — one
+`block_id`, so one cost — and the grid draws its tail on each day it reaches (`piecesOn`). `POST
+/trips/{id}/days/{n}/route` then checks that exact order against Place Details hours and returns
+structured warning codes — the client owns the English. **Travel between blocks is not modelled at
+all** — not the time, not the distance, not whether a route exists. A day may name two places on
+opposite sides of the world and nothing objects; the map draws numbered pins and no line.
+`itinerary_items.reference_url` is the user's own link on a block — a booking, a listing, a receipt —
+stored and opened, never fetched; the plan screen edits it, and the block's cost, in the same dialog
+that retimes it, and saving one does not re-check the day.
 
 **A block need not be a place.** A flight, a hotel night, a booked husky sled: `itinerary_items.kind`
-is `place` or `custom`, and a `ck_itinerary_identity` CHECK makes it either a `place_id` or a
-`title`, never both. **Every block's identity is its `block_id`, not its place and not its title** —
-the same hotel sits on three nights, a place may appear twice in one day, and two legs of one journey
-share a name, so neither a `place_id` nor a name could address a row. The client mints it, and the
-server mints one for a place block sent without (the draft, an upload). `keyOf()` is the client's one
-identity helper, and dropping a shortlist place always adds a fresh copy; moving one is dragging the
-block. `uq_itinerary_trip_block` is the only uniqueness, a cost links to a block by `block_id` alone,
-and `route_day`'s warnings name the `block_id` they are about. A custom block carries a `description` — the booking reference, the terminal, the address —
-which is the whole point: it is where a flight or an accommodation is found again. It builds no `Stop`,
-so `plan_day` never judges it against hours and `route_day` fetches hours only for the
-places. A day holding anything — a flight, a stay's overnight tail — is a filled day, and `route.plan`
-leaves it alone. The plan grid
-reveals a **"+" on hover** over any free slot, CSS-only via `group/slot`, and the dialog is mounted
-only while open so its `key` resets it rather than an effect.
+is `place` or `custom`, and a `ck_itinerary_identity` CHECK makes it either a `place_id` or a `title`,
+never both. **Every block's identity is its `block_id`, not its place and not its title** — the same
+hotel sits on three nights, a place may appear twice in one day, and two legs of one journey share a
+name, so neither a `place_id` nor a name could address a row. The client mints it, and the server mints
+one for a place block sent without (the draft, an upload). `keyOf()` is the client's one identity
+helper, and dropping a shortlist place always adds a fresh copy; moving one is dragging the block.
+`uq_itinerary_trip_block` is the only uniqueness, a cost links to a block by `block_id` alone, and
+`route_day`'s warnings name the `block_id` they are about. A custom block carries a `description` — the
+booking reference, the terminal, the address — which is the whole point: it is where a flight or an
+accommodation is found again. It builds no `Stop`, so `plan_day` never judges it against hours and
+`route_day` fetches hours only for the places. A day holding anything — a flight, a stay's overnight
+tail — is a filled day, and `route.plan` leaves it alone. The plan grid reveals a **"+" on hover** over
+any free slot, CSS-only via `group/slot`, and the dialog is mounted only while open so its `key` resets
+it rather than an effect.
 
 `GET /trips/{id}/export.xlsx` is those same days as a workbook: Itinerary, a band per day and the
 warning in the app's own amber and clay, with a `Ref` column **only when some block has a link** and a

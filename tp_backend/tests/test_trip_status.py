@@ -6,6 +6,7 @@ from sqlalchemy import select, update
 from libs.db import IngestTask, Trip
 from libs.db.enums import ErrorCode, TaskKind, TaskStatus
 from libs.ingest.enqueue import ensure_trip_plan
+from tp_ingestions.plan import draft
 
 
 def test_unknown_trip_is_a_404(client):
@@ -173,10 +174,11 @@ def test_the_trip_says_why_its_draft_wrote_nothing(client, db):
     trip_id = client.post("/initiate-plan", json=plan_body()).json()["trip_id"]
     client.post(f"/trips/{trip_id}/draft")
     db.execute(update(IngestTask).where(IngestTask.kind == TaskKind.ROUTE_PLAN)
-               .values(status=TaskStatus.DONE, result={"skipped": "all_days_filled"}))
+               .values(status=TaskStatus.DONE, result={"skipped": draft.ALL_DAYS_FILLED}))
     db.commit()
 
-    assert client.get(f"/trips/{trip_id}").json()["draft_result"] == {"skipped": "all_days_filled"}
+    result = client.get(f"/trips/{trip_id}").json()["draft_result"]
+    assert result == {"skipped": draft.ALL_DAYS_FILLED}
 
 
 def test_drafting_a_trip_with_every_day_filled_is_a_409(client):

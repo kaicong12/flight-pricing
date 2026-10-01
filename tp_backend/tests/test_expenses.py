@@ -115,6 +115,12 @@ class TestAddingACost:
         assert client.post(f"/trips/{trip}/expenses",
                            json=cost(category="   ")).json()["category"] is None
 
+    def test_a_tag_is_measured_once_tidied(self, client, trip):
+        padded = client.post(f"/trips/{trip}/expenses", json=cost(category=f"  {'x' * 40}   "))
+        assert padded.json()["category"] == "x" * 40
+        assert client.post(f"/trips/{trip}/expenses",
+                           json=cost(category="x" * 41)).status_code == 422
+
     def test_editing_a_cost_retags_it(self, client, trip):
         eid = client.post(f"/trips/{trip}/expenses", json=cost(category="Food")).json()["expense_id"]
         client.put(f"/trips/{trip}/expenses/{eid}", json=cost(category="Stay"))

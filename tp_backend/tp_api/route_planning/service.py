@@ -527,7 +527,7 @@ def route_day(db: Session, trip_id: str, day_index: int,
     """Check one day in the order it is stored and say what does not work.
 
     Hours only — nothing here measures the distance between two blocks or asks whether
-    a route between them exists, which is what lets a day name places in two different cities.
+    a route between them exists.
     """
     trip = get_trip(db, trip_id)
     day_date = check_day(trip, day_index)

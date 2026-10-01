@@ -138,7 +138,8 @@ def initiate_plan(body: InitiatePlanRequest, db: Db, lookup: Lookup, user: Me) -
 
 def create_trip(db: Session, lookup: CityLookup, user: User, body: InitiatePlanRequest,
                 seed: Callable[[Trip], None] | None = None) -> TripOut:
-    """`seed` writes the trip's first days before anything is queued, so a draft sees them."""
+    """`seed` writes the trip's first days before anything is queued, so the automatic draft stands
+    down."""
     resolved: dict[str, City] = {}
     for place_id in body.city_place_ids:
         try:
@@ -439,7 +440,7 @@ def rename_trip(trip_id: str, body: TripPatch, db: Db) -> TripOut:
 @app.post("/trips/{trip_id}/draft", status_code=202, dependencies=TripEdit)
 def draft_trip(trip_id: str, db: Db) -> dict[str, str | None]:
     """Queue a draft for this trip's empty days. The handler leaves a day with anything on it alone,
-    so this is safe to call again; the client warns first so new blocks are no surprise."""
+    so this is safe to call again."""
     trip = db.get(Trip, trip_id)
     if trip is None or trip.deleted:
         raise HTTPException(404, "no such trip")

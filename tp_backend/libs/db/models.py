@@ -276,9 +276,8 @@ class Expense(Base):
     """One cost someone paid on a trip, and what it was for.
 
     Money is integer minor units in its own `currency` and is never summed across currencies — each
-    currency is its own pile, so no rate is ever needed. A cost may name the block it was for, and
-    it names it by `block_id`, the itinerary's stable identity: `itinerary_items.id` is autoincrement
-    and `replace_days` deletes then re-inserts, so a drag would break the link.
+    currency is its own pile, so no rate is ever needed. A cost may name the block it was for, by
+    `block_id`.
     """
 
     __tablename__ = "expenses"

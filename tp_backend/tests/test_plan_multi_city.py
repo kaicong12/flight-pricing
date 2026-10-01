@@ -6,7 +6,7 @@ from io import BytesIO
 from conftest import HELSINKI, make_mention, make_place
 from openpyxl import load_workbook
 from sqlalchemy import select
-from test_multi_city import PORTO, midsummer, two_cities
+from test_multi_city import PORTO, a_future_date, two_cities
 
 from libs.db import City, ItineraryItem, Place, Trip, TripPlace
 from libs.db.enums import Confidence, TaskKind
@@ -20,7 +20,7 @@ SINGAPORE = "ChIJdZOLiiMR2jERnbSmdlpEFRI"
 
 
 def two_city_trip(client, lookup, days=1, **kw):
-    arrive = midsummer()
+    arrive = a_future_date()
     return client.post("/initiate-plan", json=two_cities(
         lookup, arrive_date=arrive.isoformat(), arrive_time=None, depart_time=None,
         depart_date=(arrive + timedelta(days=days)).isoformat(), **kw)).json()["trip_id"]
@@ -36,18 +36,17 @@ def block(place_id, start_min, duration_min=60, **kw):
     return {"place_id": place_id, "start_min": start_min, "duration_min": duration_min} | kw
 
 
-def open_until(hour, minute=0):
+def open_until(hour):
     return lambda ids: {i: HoursHit(place_id=i, periods=[
         {"open": {"day": d, "hour": 8, "minute": 0},
-         "close": {"day": d, "hour": hour, "minute": minute}} for d in range(7)],
+         "close": {"day": d, "hour": hour, "minute": 0}} for d in range(7)],
         weekday_descriptions=[], utc_offset_minutes=60) for i in ids}
 
 
-def one_in_each_city(db, trip, hel_start, por_start, **por):
+def one_in_each_city(db, trip, hel_start, por_start):
     make_place(db, city_id=HELSINKI, place_id="hel", name="Suomenlinna", lat=60.14, lon=24.98)
     make_mention(db, "hel", category="see")
-    make_place(db, city_id=PORTO, place_id="por", name="Jardim do Morro",
-               **{"lat": 41.15, "lon": -8.61} | por)
+    make_place(db, city_id=PORTO, place_id="por", name="Jardim do Morro", lat=41.15, lon=-8.61)
     make_mention(db, "por", category="see", source_ref="ref2")
     return [block("por", por_start), block("hel", hel_start)]
 
@@ -128,7 +127,7 @@ def test_the_export_bands_each_day(client, db, lookup, hours):
     ws = workbook(client, trip)
 
     assert ws.cell(row=4, column=1).value == \
-        f"Day 1 · {midsummer():%a %d %b} · 2 blocks"
+        f"Day 1 · {a_future_date():%a %d %b} · 2 blocks"
     assert ws.cell(row=7, column=1).value.endswith("no blocks")
 
 
@@ -235,7 +234,7 @@ def test_the_automatic_draft_stands_down_once_any_day_has_a_block(client, db, lo
     assert itinerary(db) == {(2, None, "Flight")}
 
 
-def test_a_drafted_by_hand_day_holding_only_a_flight_is_left_alone(client, db, lookup, monkeypatch):
+def test_a_manual_draft_leaves_a_flight_only_day_alone(client, db, lookup, monkeypatch):
     trip, _ = drivable(client, db, lookup, monkeypatch, TWO_DAYS,
                        hours_of(lambda i: periods(range(7))))
     pin(client, trip, [FLIGHT], day=1)

@@ -362,7 +362,7 @@ def test_a_source_naming_two_cities_is_resolved_against_each(db, monkeypatch):
     )) == {"r-hel", "r-por"}, "one resolve per city, off the one stored extraction"
 
 
-def midsummer() -> date:
+def a_future_date() -> date:
     now = today_utc()
     return date(now.year + (1 if now > date(now.year, 6, 21) else 0), 6, 21)
 
@@ -392,7 +392,7 @@ def test_the_draft_prompt_places_each_city_and_measures_from_its_own_centre(clie
 
 
 def test_a_hand_added_place_is_filed_under_the_nearest_city_it_could_be_in(client, db, lookup):
-    arrive = midsummer()
+    arrive = a_future_date()
     trip_id = client.post("/initiate-plan", json=two_cities(
         lookup, arrive_date=arrive.isoformat(), arrive_time=None,
         depart_date=(arrive + timedelta(days=1)).isoformat())).json()["trip_id"]
