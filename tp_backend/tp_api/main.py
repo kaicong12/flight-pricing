@@ -56,7 +56,7 @@ from tp_api.expenses import router as expenses_router
 from tp_api.route_planning import router as planning_router
 from tp_api.route_planning.export import until
 from tp_api.route_planning.schemas import DayIn, ItineraryIn
-from tp_api.route_planning.service import claim_place, in_shortlist, replace_days
+from tp_api.route_planning.service import claim_place, filled_days, in_shortlist, replace_days
 from tp_api.route_planning.utils import day_count
 from tp_api.schemas import (
     CityOut,
@@ -409,6 +409,7 @@ def get_trip(trip_id: str, db: Db, role: Annotated[str, Depends(require_trip_acc
         progress=progress,
         failures=failures,
         draft=draft.status if draft is not None else None,
+        draft_result=draft.result if draft is not None else None,
     )
 
 
@@ -437,11 +438,14 @@ def rename_trip(trip_id: str, body: TripPatch, db: Db) -> TripOut:
 
 @app.post("/trips/{trip_id}/draft", status_code=202, dependencies=TripEdit)
 def draft_trip(trip_id: str, db: Db) -> dict[str, str | None]:
-    """Queue a draft for this trip's empty days. The handler leaves a touched day alone, so this is
-    safe to call again; the client warns first only so the user is not surprised by new blocks."""
+    """Queue a draft for this trip's empty days. The handler leaves a day with anything on it alone,
+    so this is safe to call again; the client warns first so new blocks are no surprise."""
     trip = db.get(Trip, trip_id)
     if trip is None or trip.deleted:
         raise HTTPException(404, "no such trip")
+
+    if len(filled_days(db, trip_id)) >= day_count(trip):
+        raise HTTPException(409, "Every day already has something in it. Clear a day to draft it.")
 
     pending = draft_task(db, trip_id)
     if pending is not None and pending.status in (TaskStatus.PENDING, TaskStatus.RUNNING):

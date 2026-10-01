@@ -66,6 +66,19 @@ def get_trip(db: Session, trip_id: str) -> Trip:
     return trip
 
 
+def lock_itinerary(db: Session, trip_id: str) -> None:
+    """Serialises every write to one trip's days, so a draft and a drag cannot interleave."""
+    db.execute(select(Trip.trip_id).where(Trip.trip_id == trip_id).with_for_update())
+
+
+def filled_days(db: Session, trip_id: str) -> set[int]:
+    """Every day some block reaches, a block past midnight counted on each."""
+    rows = db.execute(select(ItineraryItem.day_index, ItineraryItem.start_min,
+                             ItineraryItem.duration_min)
+                      .where(ItineraryItem.trip_id == trip_id)).all()
+    return {day for r in rows for day, _, _ in pieces(r.day_index, r.start_min, r.duration_min)}
+
+
 def check_day(trip: Trip, day_index: int) -> date:
     if not 0 <= day_index < day_count(trip):
         raise HTTPException(422, f"day {day_index} is outside the trip")
@@ -280,6 +293,7 @@ def replace_days(db: Session, trip_id: str, body: ItineraryIn) -> ItineraryOut:
     stored as given — nothing here reflows a block to make one fit.
     """
     trip = get_trip(db, trip_id)
+    lock_itinerary(db, trip_id)
 
     if len({d.day_index for d in body.days}) != len(body.days):
         raise HTTPException(422, "a day is listed twice")

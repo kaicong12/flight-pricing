@@ -4,7 +4,7 @@ from conftest import make_place, plan_body
 from sqlalchemy import select
 
 from libs.db import ItineraryItem
-from tp_ingestions.plan.draft import busy_by_day
+from tp_api.route_planning.service import filled_days
 
 
 def make_trip(client, **kw):
@@ -125,7 +125,7 @@ class TestToTheMinute:
         assert r.status_code == 200
         rows = db.scalars(select(ItineraryItem).where(ItineraryItem.trip_id == trip)).all()
         assert [(i.day_index, i.start_min, i.duration_min) for i in rows] == [(1, 1350, 460)]
-        assert busy_by_day(db, trip)[2] == [(0, 370, "Flight to Oslo")]
+        assert filled_days(db, trip) == {1, 2}
 
     def test_a_block_running_past_the_last_day_is_rejected(self, client):
         trip = make_trip(client)

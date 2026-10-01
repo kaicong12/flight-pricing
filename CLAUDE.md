@@ -131,8 +131,8 @@ NULLs as distinct, so `uq_itinerary_trip_place` and `uq_itinerary_trip_block` co
 index. A custom block carries a `description` — the booking reference, the terminal, the address —
 which is the whole point: it is where a flight or an accommodation is found again. It builds no `Stop`,
 so `plan_day` never judges it against hours and `route_day` fetches hours only for the
-places. `route.plan` reads them as `own_blocks` and drops any pick
-that overlaps one — a day holding just a flight is still an empty day to draft around. The plan grid
+places. A day holding anything — a flight, a stay's overnight tail — is a filled day, and `route.plan`
+leaves it alone. The plan grid
 reveals a **"+" on hover** over any free slot, CSS-only via `group/slot`, and the dialog is mounted
 only while open so its `key` resets it rather than an effect.
 
@@ -153,8 +153,12 @@ preview. Costs, members and dismissals stay behind.
 
 **7. Draft.** `route.plan` fills a trip's *empty* days so the plan screen opens filled — **one Gemini
 call in a loop, not an agent**: the shortlist is already a closed ranked set and `plan_day` already
-judges hours, so the model only proposes an arrangement and never goes looking. A day the user has
-touched is theirs. The shortlist it arranges is the trip's, so one draft covers every city at once.
+judges hours, so the model only proposes an arrangement and never goes looking. A day with any block
+on it is the user's: the button drafts only the empty days, and the automatic draft stands down
+entirely once the user has started planning, since a trip is now plannable before its ingestion
+settles. The Gemini call takes seconds, so the write re-checks under `lock_itinerary`, the same trip
+row lock `replace_days` takes — a day filled meanwhile is skipped, never overwritten. Why a draft
+wrote nothing is `ingest_tasks.result`, which `GET /trips/{id}` returns as `draft_result`. The shortlist it arranges is the trip's, so one draft covers every city at once.
 It is queued automatically once — at `/initiate-plan` when every city was warm, otherwise by the
 last run to settle, and only when **every** city has settled and **at least one** reached DONE, so a
 half-ingested trip is never drafted and a trip with one failed city still is — and on demand by

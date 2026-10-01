@@ -166,3 +166,26 @@ def test_patch_rejects_an_over_long_name_and_404s_on_a_missing_trip(client):
     trip_id = client.post("/initiate-plan", json=plan_body()).json()["trip_id"]
     assert client.patch(f"/trips/{trip_id}", json={"name": "x" * 121}).status_code == 422
     assert client.patch("/trips/nope", json={"name": "x"}).status_code == 404
+
+
+def test_the_trip_says_why_its_draft_wrote_nothing(client, db):
+    trip_id = client.post("/initiate-plan", json=plan_body()).json()["trip_id"]
+    client.post(f"/trips/{trip_id}/draft")
+    db.execute(update(IngestTask).where(IngestTask.kind == TaskKind.ROUTE_PLAN)
+               .values(status=TaskStatus.DONE, result={"skipped": "all_days_filled"}))
+    db.commit()
+
+    assert client.get(f"/trips/{trip_id}").json()["draft_result"] == {"skipped": "all_days_filled"}
+
+
+def test_drafting_a_trip_with_every_day_filled_is_a_409(client):
+    trip_id = client.post("/initiate-plan", json=plan_body()).json()["trip_id"]
+    days = [{"day_index": d, "items": [{"kind": "custom", "block_id": f"b{d}", "title": "Stay",
+                                        "start_min": 16 * 60, "duration_min": 60}]}
+            for d in range(4)]
+    assert client.put(f"/trips/{trip_id}/itinerary", json={"days": days}).status_code == 200
+
+    r = client.post(f"/trips/{trip_id}/draft")
+
+    assert r.status_code == 409
+    assert "already has something in it" in r.json()["detail"]
