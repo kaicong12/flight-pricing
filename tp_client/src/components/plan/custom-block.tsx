@@ -209,73 +209,69 @@ export function CustomBlockDialog({
             </div>
           </fieldset>
 
-          {editing && (
-            <>
-              <Input
-                type="url"
-                value={url}
-                onChange={(e) => setUrl(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && save()}
-                placeholder="Your link — a booking, a listing, a receipt"
-                aria-label="Link"
-              />
+          <Input
+            type="url"
+            value={url}
+            onChange={(e) => setUrl(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && save()}
+            placeholder="Your link — a booking, a listing, a receipt"
+            aria-label="Link"
+          />
 
-              <fieldset className="space-y-2">
-                <div className="flex items-baseline justify-between gap-3">
-                  <legend className="text-[13px] font-semibold">Cost</legend>
-                  {cost && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setClearCost(!clearCost);
-                        setAmount("");
-                      }}
-                      className="text-[12.5px] text-muted-foreground underline decoration-dotted underline-offset-2 hover:text-ink outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
-                    >
-                      {clearCost ? `keep ${cost}` : `so far ${cost} · clear`}
-                    </button>
-                  )}
-                </div>
-                <div className="flex gap-1.5">
-                  <Input
-                    value={amount}
-                    disabled={clearCost}
-                    inputMode="decimal"
-                    placeholder={cost ? "Add another 0.00" : "0.00"}
-                    onChange={(e) => setAmount(e.target.value)}
-                    onKeyDown={(e) => e.key === "Enter" && save()}
-                    aria-label="What it cost"
-                    className="min-w-0 flex-1 font-mono tabular-nums"
-                  />
-                  <select
-                    value={picked}
-                    aria-label="Currency"
-                    onChange={(e) => setPicked(e.target.value)}
-                    className="h-8 rounded-lg border border-input bg-transparent px-1.5 font-mono text-[12.5px] outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
-                  >
-                    {[...new Set([currency, ...CURRENCIES])].map((c) => (
-                      <option key={c} value={c}>
-                        {c}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                {amount.trim() && (
-                  <CategoryPicker
-                    value={category}
-                    choices={tags}
-                    onChange={setCategory}
-                    onEnter={save}
-                  />
-                )}
-                <p className="text-[12px] text-faint">
-                  {clearCost
-                    ? "Every cost on this block goes when you save."
-                    : "Split evenly, you paid. The Expenses tab changes either."}
-                </p>
-              </fieldset>
-            </>
-          )}
+          <fieldset className="space-y-2">
+            <div className="flex items-baseline justify-between gap-3">
+              <legend className="text-[13px] font-semibold">Cost</legend>
+              {cost && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setClearCost(!clearCost);
+                    setAmount("");
+                  }}
+                  className="text-[12.5px] text-muted-foreground underline decoration-dotted underline-offset-2 hover:text-ink outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+                >
+                  {clearCost ? `keep ${cost}` : `so far ${cost} · clear`}
+                </button>
+              )}
+            </div>
+            <div className="flex gap-1.5">
+              <Input
+                value={amount}
+                disabled={clearCost}
+                inputMode="decimal"
+                placeholder={cost ? "Add another 0.00" : "0.00"}
+                onChange={(e) => setAmount(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && save()}
+                aria-label="What it cost"
+                className="min-w-0 flex-1 font-mono tabular-nums"
+              />
+              <select
+                value={picked}
+                aria-label="Currency"
+                onChange={(e) => setPicked(e.target.value)}
+                className="h-8 rounded-lg border border-input bg-transparent px-1.5 font-mono text-[12.5px] outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+              >
+                {[...new Set([currency, ...CURRENCIES])].map((c) => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
+                ))}
+              </select>
+            </div>
+            {amount.trim() && (
+              <CategoryPicker
+                value={category}
+                choices={tags}
+                onChange={setCategory}
+                onEnter={save}
+              />
+            )}
+            <p className="text-[12px] text-faint">
+              {clearCost
+                ? "Every cost on this block goes when you save."
+                : "Split evenly, you paid. The Expenses tab changes either."}
+            </p>
+          </fieldset>
 
           {problem && <p className="text-[12.5px] text-alert">{problem}</p>}
         </div>

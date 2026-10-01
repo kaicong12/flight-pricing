@@ -36,7 +36,7 @@ export type CustomDraft = { title: string; description: string | null };
 
 export type PlanAction =
   | { type: "add"; place: ShortlistPlace; day: number; startMin: number; durationMin: number }
-  | { type: "addCustom"; day: number; startMin: number; durationMin: number; draft: CustomDraft }
+  | { type: "addCustom"; day: number; item: ItineraryItem }
   | { type: "editCustom"; day: number; key: string; draft: CustomDraft }
   | { type: "remove"; day: number; key: string }
   | { type: "pin"; key: string; fromDay: number; toDay: number; startMin: number }
@@ -136,10 +136,7 @@ export function planReducer(state: PlanState, action: PlanAction): PlanState {
 
     // A custom block is never in the shortlist, so it is only ever added here, at the time clicked.
     case "addCustom": {
-      const items = [
-        ...itemsOf(state, action.day),
-        customItem(action.draft, action.startMin, action.durationMin),
-      ];
+      const items = [...itemsOf(state, action.day), action.item];
       return { ...state, days: setDay(state, action.day, items), ...touched(state, [action.day]) };
     }
 

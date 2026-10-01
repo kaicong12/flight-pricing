@@ -12,7 +12,7 @@ import { useDroppable } from "@dnd-kit/core";
 import { PlusIcon } from "lucide-react";
 
 import { Kbd } from "@/components/ui/kbd";
-import type { CustomDraft } from "@/lib/plan-state";
+import { type CustomDraft, customItem } from "@/lib/plan-state";
 import type { DayRoute, ItineraryDay, ItineraryItem, PlanWarning } from "@/lib/plan-types";
 import {
   DAY_END_MIN,
@@ -70,7 +70,7 @@ export function DayColumn({
   onReference: (key: string, url: string | null) => void;
   onCost: (item: ItineraryItem, cost: CostEntry) => void;
   onResize: (key: string, startMin: number, durationMin: number) => void;
-  onAddCustom: (startMin: number, draft: CustomDraft, durationMin: number) => void;
+  onAddCustom: (item: ItineraryItem, cost: CostEntry | null) => void;
   onEditCustom: (key: string, draft: CustomDraft) => void;
 }) {
   // Which half hour the "+" was clicked on, or the block being edited. One dialog serves both.
@@ -225,7 +225,9 @@ export function DayColumn({
           }}
           onSubmit={(draft, startMin, durationMin, { url, cost }) => {
             if (!editing) {
-              if (draft) onAddCustom(startMin, draft, durationMin);
+              if (draft) {
+                onAddCustom({ ...customItem(draft, startMin, durationMin), reference_url: url }, cost);
+              }
               return;
             }
             if (draft) onEditCustom(keyOf(editing), draft);

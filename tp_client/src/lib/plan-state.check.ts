@@ -7,7 +7,7 @@
 
 import type { Itinerary, Shortlist, ShortlistPlace } from "./plan-types";
 import { keyOf } from "./plan-types";
-import { initialState, placedDays, planReducer } from "./plan-state";
+import { customItem, initialState, placedDays, planReducer } from "./plan-state";
 
 function eq(got: unknown, want: unknown, label: string) {
   const a = JSON.stringify(got);
@@ -149,8 +149,8 @@ const fresh = planReducer(withBlock, { type: "saved", days: [0], itinerary, revi
 eq(fresh.unsaved, [], "a save for the current revision clears the day");
 
 const draft = { title: "Hotel Bristol", description: "Kristian IVs gate 7" };
-let twice = planReducer(base, { type: "addCustom", day: 0, startMin: 21 * 60, durationMin: 120, draft });
-twice = planReducer(twice, { type: "addCustom", day: 0, startMin: 8 * 60, durationMin: 60, draft });
+let twice = planReducer(base, { type: "addCustom", day: 0, item: customItem(draft, 21 * 60, 120) });
+twice = planReducer(twice, { type: "addCustom", day: 0, item: customItem(draft, 8 * 60, 60) });
 const [early, late] = twice.days[0].items;
 eq(twice.days[0].items.length, 2, "both blocks are kept");
 eq(early.start_min < late.start_min, true, "and are in time order");
