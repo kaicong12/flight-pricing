@@ -120,7 +120,8 @@ modelled at all** — not the time, not the
 distance, not whether a route exists. A day may name two places on opposite sides of the world and
 nothing objects; the map draws numbered pins and no line. `itinerary_items.reference_url` is the
 user's own link on a block — a booking, a listing, a receipt — stored and opened, never fetched; the
-plan screen edits it from the block itself and saving one does not re-check the day.
+plan screen edits it, and the block's cost, in the same dialog that retimes it, and saving one does
+not re-check the day.
 
 **A block need not be a place.** A flight, a hotel night, a booked husky sled: `itinerary_items.kind`
 is `place` or `custom`, and a `ck_itinerary_identity` CHECK makes it either a `place_id` or a

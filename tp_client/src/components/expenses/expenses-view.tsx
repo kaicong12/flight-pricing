@@ -101,7 +101,7 @@ export function ExpensesView({
           <p className="text-[14px] font-medium">Nothing spent yet.</p>
           <p className="mx-auto mt-1.5 max-w-[46ch] text-[13px] leading-[1.55] text-muted-foreground">
             Add what a meal, a ticket or a taxi cost and this fills with who is up and who is down.
-            The <span className="font-mono">$</span> on any block on the plan screen adds one too.
+            The pencil on any block on the plan screen adds one too.
           </p>
         </div>
       ) : (

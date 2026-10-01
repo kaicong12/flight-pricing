@@ -23,7 +23,7 @@ import { sortableKeyboardCoordinates } from "@dnd-kit/sortable";
 import { useCallback, useEffect, useMemo, useReducer, useState } from "react";
 
 import type { Trip } from "@/lib/api-types";
-import { type ExpenseTab, blockCost, costsByBlock } from "@/lib/expense-types";
+import { type ExpenseTab, blockCost, costsByBlock, tagChoices } from "@/lib/expense-types";
 import {
   type PlanState,
   dayOf,
@@ -48,6 +48,7 @@ import {
   piecesOn,
 } from "@/lib/plan-types";
 
+import type { CostEntry } from "./custom-block";
 import { DayColumn } from "./day-column";
 import { DayMap } from "./day-map";
 import { DayTabs } from "./day-tabs";
@@ -108,7 +109,7 @@ export function PlanBoard({
   // One figure typed on a block: split evenly between everyone, paid by whoever typed it. Clearing
   // drops every cost on that block, which is what the "$" showing a total means.
   const saveCost = useCallback(
-    async (item: ItineraryItem, amountCents: number | null, currency: string) => {
+    async (item: ItineraryItem, { amountCents, currency, category }: CostEntry) => {
       const tab = expenses;
       if (!tab) return;
       const base = `/api/trips/${trip.trip_id}/expenses`;
@@ -128,6 +129,7 @@ export function PlanBoard({
             description: item.name,
             amount_cents: amountCents,
             currency,
+            category,
             spent_on: dayDate(state, item),
             payer_id: meId,
             block_id: item.block_id,
@@ -404,6 +406,7 @@ export function PlanBoard({
             readOnly={!canEdit}
             available={availableWindow(trip, state.activeDay, state.days.length)}
             costs={costs}
+            tags={tagChoices(expenses?.expenses ?? [])}
             currency={expenses?.currency ?? "EUR"}
             onCost={saveCost}
             onRemove={(key) => dispatch({ type: "remove", day: homeOf(key), key })}

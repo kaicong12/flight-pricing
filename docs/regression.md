@@ -35,8 +35,8 @@ signs in once in the Playwright browser; the session cookie then lasts the run.
    Add an overnight one ending on the next day: it draws on both days, its tail opens the dialog, the last
    day's bottom edge resizes it, and a time past the departure is refused.
 5. **Check.** The day re-routes and warnings render; a place past its closing time warns.
-6. **Costs.** "$" on the overnight block, then the Expenses tab: the cost appears once and the currency
-   total moves by exactly that amount.
+6. **Costs.** The pencil on the overnight block, a cost and a tag, then the Expenses tab: the cost
+   appears once, the donut has the tag, and the currency total moves by exactly that amount.
 7. **Export.** `export.xlsx` opens; the overnight block's End reads "Day N HH:MM".
 8. **Upload.** Upload that export from `/trips`: the preview lists the days, a new start date shifts
    them, and the new trip opens with the same blocks. A file edited in Excel keeps the edits; any other

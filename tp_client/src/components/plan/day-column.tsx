@@ -31,7 +31,7 @@ import { useShortcut } from "@/lib/use-shortcut";
 import { cn } from "@/lib/utils";
 
 import { ActivityBlock } from "./activity-block";
-import { CustomBlockDialog } from "./custom-block";
+import { type CostEntry, CustomBlockDialog } from "./custom-block";
 
 const SLOT_PX = 26;
 const SLOTS = Math.round((DAY_END_MIN - DAY_START_MIN) / SLOT_MIN);
@@ -46,6 +46,7 @@ export function DayColumn({
   available,
   costs,
   currency,
+  tags,
   onRemove,
   onReference,
   onCost,
@@ -64,9 +65,11 @@ export function DayColumn({
   /** Each block's cost so far, already formatted, keyed the way `keyOf` keys a block. */
   costs: Map<string, string>;
   currency: string;
+  /** The tags a cost entered here is offered. */
+  tags: string[];
   onRemove: (key: string) => void;
   onReference: (key: string, url: string | null) => void;
-  onCost: (item: ItineraryItem, amountCents: number | null, currency: string) => void;
+  onCost: (item: ItineraryItem, cost: CostEntry) => void;
   onResize: (key: string, startMin: number, durationMin: number) => void;
   onAddCustom: (startMin: number, draft: CustomDraft, durationMin: number) => void;
   onEditCustom: (key: string, draft: CustomDraft) => void;
@@ -181,10 +184,7 @@ export function DayColumn({
               slotPx={SLOT_PX}
               readOnly={readOnly}
               cost={costs.get(keyOf(p.item)) ?? null}
-              currency={currency}
               onRemove={() => onRemove(keyOf(p.item))}
-              onReference={(url) => onReference(keyOf(p.item), url)}
-              onCost={(amountCents, cur) => onCost(p.item, amountCents, cur)}
               onEdit={() => setEditing(pieceOf.get(keyOf(p.item))!.item)}
               onResize={(startMin, durationMin) =>
                 onResize(keyOf(p.item), startMin, durationMin)
@@ -217,17 +217,22 @@ export function DayColumn({
           days={days}
           windowOf={windowOf}
           editing={editing}
+          cost={editing ? (costs.get(keyOf(editing)) ?? null) : null}
+          currency={currency}
+          tags={tags}
           onClose={() => {
             setAdding(null);
             setEditing(null);
           }}
-          onSubmit={(draft, startMin, durationMin) => {
+          onSubmit={(draft, startMin, durationMin, { url, cost }) => {
             if (!editing) {
               if (draft) onAddCustom(startMin, draft, durationMin);
               return;
             }
             if (draft) onEditCustom(keyOf(editing), draft);
             onResize(keyOf(editing), startMin, durationMin);
+            if (url !== editing.reference_url) onReference(keyOf(editing), url);
+            if (cost) onCost(editing, cost);
           }}
         />
       )}
