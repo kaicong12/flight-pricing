@@ -153,6 +153,10 @@ data refuses the file or skips the row. The visible cells are what is read, so E
 place or a typed-in row becomes a custom block, and an unreadable row is skipped and named in the
 preview. Costs, members and dismissals stay behind.
 
+**Costs** carry a free-text `expenses.category`: the dialog offers the trip's own tags as one-tap chips,
+most used first and one spelling per tag whatever its case. The Expenses tab draws a d3 donut per
+currency — never summed — by tag, Trip or Mine, with the smallest past six folded into Other.
+
 **7. Draft.** `route.plan` fills a trip's *empty* days so the plan screen opens filled — **one Gemini
 call in a loop, not an agent**: the shortlist is already a closed ranked set and `plan_day` already
 judges hours, so the model only proposes an arrangement and never goes looking. A day with any block

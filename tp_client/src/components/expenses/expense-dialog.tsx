@@ -27,6 +27,8 @@ import {
 } from "@/lib/expense-types";
 import { cn } from "@/lib/utils";
 
+import { CategoryPicker } from "./category-picker";
+
 const DESCRIPTION_MAX = 200;
 const SELECT =
   "h-9 rounded-input border border-input bg-surface px-2.5 text-[13.5px] outline-none focus-visible:ring-3 focus-visible:ring-ring/50";
@@ -37,7 +39,7 @@ export function ExpenseDialog({
   currency: defaultCurrency,
   defaultDate,
   editing,
-  block,
+  choices,
   onClose,
   onSubmit,
 }: {
@@ -46,12 +48,12 @@ export function ExpenseDialog({
   currency: string;
   defaultDate: string;
   editing: Expense | null;
-  /** Prefilled when the `$` on a block opened this, so the cost lands on that block. */
-  block?: { block_id: string; title: string };
+  choices: string[];
   onClose: () => void;
   onSubmit: (draft: ExpenseDraft) => void;
 }) {
-  const [description, setDescription] = useState(editing?.description ?? block?.title ?? "");
+  const [description, setDescription] = useState(editing?.description ?? "");
+  const [category, setCategory] = useState(editing?.category ?? "");
   const [amount, setAmount] = useState(
     editing ? (editing.amount_cents / 100).toFixed(2) : "",
   );
@@ -93,7 +95,8 @@ export function ExpenseDialog({
       currency,
       spent_on: spentOn,
       payer_id: payerId,
-      block_id: editing?.block_id ?? block?.block_id ?? null,
+      block_id: editing?.block_id ?? null,
+      category: category.trim() || null,
       participants: exact ? [] : picked,
       shares: exact
         ? participants.map((m, i) => ({ user_id: m.user_id, amount_cents: exactCents[i] }))
@@ -107,11 +110,7 @@ export function ExpenseDialog({
       <DialogContent className="sm:max-w-[480px]">
         <DialogHeader>
           <DialogTitle>{editing ? "Edit cost" : "Add a cost"}</DialogTitle>
-          <DialogDescription>
-            {block
-              ? `What ${block.title} cost, and who it splits between.`
-              : "Each currency is its own pile — nothing is converted."}
-          </DialogDescription>
+          <DialogDescription>Each currency is its own pile — nothing is converted.</DialogDescription>
         </DialogHeader>
 
         <div className="min-w-0 space-y-4">
@@ -148,6 +147,8 @@ export function ExpenseDialog({
               ))}
             </select>
           </div>
+
+          <CategoryPicker value={category} choices={choices} onChange={setCategory} onEnter={save} />
 
           <div className="flex gap-2">
             <select

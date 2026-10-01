@@ -233,8 +233,7 @@ class ItineraryItem(Base):
     falls out of it, so there is no position column — and two blocks may share a start time, because
     overlapping them is a legitimate thing to say about a day.
 
-    `block_id` is every block's identity, place blocks included: one place may sit on several days,
-    and a `custom` block — a flight, a stay, a booking — carries its own `title`, which may repeat.
+    `block_id` is every block's identity, place blocks included.
     """
 
     __tablename__ = "itinerary_items"
@@ -298,6 +297,7 @@ class Expense(Base):
     currency: Mapped[str] = mapped_column(String(3), nullable=False)
     spent_on: Mapped[date] = mapped_column(Date, nullable=False)
     block_id: Mapped[str | None] = mapped_column(String(36))
+    category: Mapped[str | None] = mapped_column(String(40))
     deleted: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
     created_at: Mapped[datetime] = _ts(nullable=False, server_default=func.now())
     updated_at: Mapped[datetime] = _ts(nullable=False, server_default=func.now(),

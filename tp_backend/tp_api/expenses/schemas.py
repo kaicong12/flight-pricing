@@ -6,7 +6,7 @@ is ever needed and no rounding is ever argued about.
 
 from datetime import date
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from tp_api.sharing.schemas import MemberOut
 
@@ -28,8 +28,14 @@ class ExpenseIn(BaseModel):
     spent_on: date
     payer_id: str = Field(min_length=1, max_length=36)
     block_id: str | None = Field(default=None, max_length=36)
+    category: str | None = Field(default=None, max_length=40)
     participants: list[str] = Field(default_factory=list)
     shares: list[ShareIn] = Field(default_factory=list)
+
+    @field_validator("category")
+    @classmethod
+    def _tidy(cls, v: str | None) -> str | None:
+        return " ".join(v.split()) or None if v else None
 
     @model_validator(mode="after")
     def _one_split(self):
@@ -57,6 +63,7 @@ class ExpenseOut(BaseModel):
     spent_on: date
     payer_id: str
     block_id: str | None
+    category: str | None
     # What the block is called, when the expense still names one that is on the itinerary.
     block_title: str | None
     day_index: int | None

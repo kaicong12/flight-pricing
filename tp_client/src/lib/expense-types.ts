@@ -15,6 +15,7 @@ export type Expense = {
   spent_on: string;
   payer_id: string;
   block_id: string | null;
+  category: string | null;
   block_title: string | null;
   day_index: number | null;
   shares: ExpenseShare[];
@@ -62,6 +63,7 @@ export type ExpenseDraft = {
   spent_on: string;
   payer_id: string;
   block_id: string | null;
+  category: string | null;
   participants: string[];
   shares: ExpenseShare[];
 };
@@ -127,3 +129,57 @@ export function blockCost(expenses: Expense[]): string {
   for (const e of expenses) totals.set(e.currency, (totals.get(e.currency) ?? 0) + e.amount_cents);
   return [...totals].map(([currency, cents]) => money(cents, currency)).join(" + ");
 }
+
+/** The trip's tags so far, most used first, one spelling per tag whatever its case. */
+export function knownCategories(expenses: Expense[]): string[] {
+  const counts = new Map<string, { label: string; n: number }>();
+  for (const e of expenses) {
+    if (!e.category) continue;
+    const key = e.category.toLowerCase();
+    const seen = counts.get(key);
+    counts.set(key, { label: seen?.label ?? e.category, n: (seen?.n ?? 0) + 1 });
+  }
+  return [...counts.values()].sort((a, b) => b.n - a.n).map((c) => c.label);
+}
+
+const STARTER_TAGS = ["Food", "Transport", "Stay", "Activities", "Shopping"];
+
+/** The chips a tag picker offers: the trip's own tags, then the starters it has not used. */
+export function tagChoices(expenses: Expense[]): string[] {
+  const known = knownCategories(expenses);
+  const seen = new Set(known.map((c) => c.toLowerCase()));
+  return [...known, ...STARTER_TAGS.filter((c) => !seen.has(c.toLowerCase()))].slice(0, 8);
+}
+
+export const UNTAGGED = "Untagged";
+export const OTHER = "Other";
+const SLICES = 6;
+
+export type Slice = { category: string; cents: number };
+
+/** One currency's spend by tag, largest first; `meId` counts only that person's shares. Past six
+ * slices the smallest fold into Other. */
+export function spendByCategory(
+  expenses: Expense[],
+  currency: string,
+  meId: string | null = null,
+): Slice[] {
+  const labels = new Map(knownCategories(expenses).map((c) => [c.toLowerCase(), c]));
+  const totals = new Map<string, number>();
+  for (const e of expenses) {
+    if (e.currency !== currency) continue;
+    const cents = meId
+      ? (e.shares.find((s) => s.user_id === meId)?.amount_cents ?? 0)
+      : e.amount_cents;
+    if (cents <= 0) continue;
+    const label = e.category ? labels.get(e.category.toLowerCase())! : UNTAGGED;
+    totals.set(label, (totals.get(label) ?? 0) + cents);
+  }
+  const slices = [...totals]
+    .map(([category, cents]) => ({ category, cents }))
+    .sort((a, b) => b.cents - a.cents);
+  if (slices.length <= SLICES) return slices;
+  const rest = slices.slice(SLICES - 1).reduce((t, s) => t + s.cents, 0);
+  return [...slices.slice(0, SLICES - 1), { category: OTHER, cents: rest }];
+}
+

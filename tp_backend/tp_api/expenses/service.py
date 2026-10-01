@@ -123,7 +123,7 @@ def _out(e: Expense, blocks: dict[str, tuple[str, int]]) -> ExpenseOut:
     return ExpenseOut(
         expense_id=e.expense_id, description=e.description, amount_cents=e.amount_cents,
         currency=e.currency, spent_on=e.spent_on, payer_id=e.payer_id,
-        block_id=e.block_id, block_title=title, day_index=day,
+        block_id=e.block_id, category=e.category, block_title=title, day_index=day,
         shares=[ShareOut(user_id=s.user_id, amount_cents=s.amount_cents)
                 for s in sorted(e.shares, key=lambda s: s.user_id)],
     )
@@ -182,7 +182,7 @@ def add_expense(db: Session, trip_id: str, body: ExpenseIn) -> ExpenseOut:
     expense = Expense(expense_id=str(uuid.uuid4()), trip_id=trip_id, payer_id=body.payer_id,
                       description=body.description.strip(), amount_cents=body.amount_cents,
                       currency=body.currency, spent_on=body.spent_on,
-                      block_id=body.block_id)
+                      block_id=body.block_id, category=body.category)
     expense.shares = [ExpenseShare(user_id=u, amount_cents=a) for u, a in amounts.items()]
     db.add(expense)
     db.commit()
@@ -240,6 +240,7 @@ def edit_expense(db: Session, trip_id: str, expense_id: str, body: ExpenseIn) ->
     expense.currency = body.currency
     expense.spent_on = body.spent_on
     expense.block_id = body.block_id
+    expense.category = body.category
     expense.shares = [ExpenseShare(user_id=u, amount_cents=a) for u, a in amounts.items()]
     db.commit()
     return _out(expense, _blocks(db, trip_id))

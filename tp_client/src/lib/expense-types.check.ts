@@ -6,11 +6,15 @@
 
 import type { CurrencyBalance, Expense } from "./expense-types";
 import {
+  OTHER,
+  UNTAGGED,
   blockCost,
   costsByBlock,
   forReading,
+  knownCategories,
   money,
   parseAmount,
+  spendByCategory,
   splitEvenly,
   widest,
 } from "./expense-types";
@@ -85,6 +89,7 @@ const expense = (over: Partial<Expense>): Expense => ({
   spent_on: "2026-10-05",
   payer_id: "me",
   block_id: null,
+  category: null,
   block_title: null,
   day_index: null,
   shares: [],
@@ -106,6 +111,34 @@ eq(
   blockCost([expense({ currency: "EUR" }), expense({ expense_id: "e5", currency: "NOK" })]),
   "40.00 EUR + 40.00 NOK",
   "two currencies on one block are shown apart, never summed",
+);
+
+const tagged = [
+  expense({ category: "Food", amount_cents: 3000, shares: [{ user_id: "me", amount_cents: 1000 }] }),
+  expense({ expense_id: "e2", category: "food", amount_cents: 1000 }),
+  expense({ expense_id: "e3", category: "Stay", amount_cents: 9000,
+            shares: [{ user_id: "me", amount_cents: 4500 }] }),
+  expense({ expense_id: "e4", amount_cents: 500 }),
+  expense({ expense_id: "e5", category: "Food", currency: "NOK", amount_cents: 99900 }),
+];
+eq(knownCategories(tagged), ["Food", "Stay"], "one spelling per tag, the most used first");
+eq(
+  spendByCategory(tagged, "EUR"),
+  [{ category: "Stay", cents: 9000 }, { category: "Food", cents: 4000 }, { category: UNTAGGED, cents: 500 }],
+  "a tag's case does not split its slice, and another currency stays out",
+);
+eq(
+  spendByCategory(tagged, "EUR", "me"),
+  [{ category: "Stay", cents: 4500 }, { category: "Food", cents: 1000 }],
+  "mine counts only my shares",
+);
+const many = Array.from({ length: 8 }, (_, i) =>
+  expense({ expense_id: `m${i}`, category: `t${i}`, amount_cents: 1000 - i * 100 }),
+);
+eq(
+  spendByCategory(many, "EUR").map((s) => [s.category, s.cents]),
+  [["t0", 1000], ["t1", 900], ["t2", 800], ["t3", 700], ["t4", 600], [OTHER, 500 + 400 + 300]],
+  "past six slices the smallest fold into Other",
 );
 
 console.log("expense-types.check.ts ok");

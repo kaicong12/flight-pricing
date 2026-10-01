@@ -107,6 +107,20 @@ class TestAddingACost:
         costs = client.get(f"/trips/{trip}/expenses").json()["expenses"]
         assert [(e["block_id"], e["day_index"]) for e in costs] == [("night-1", 1)]
 
+    def test_a_cost_keeps_its_tag_tidied(self, client, trip):
+        r = client.post(f"/trips/{trip}/expenses", json=cost(category="  Food   and drink "))
+        assert r.json()["category"] == "Food and drink"
+
+    def test_a_blank_tag_is_no_tag(self, client, trip):
+        assert client.post(f"/trips/{trip}/expenses",
+                           json=cost(category="   ")).json()["category"] is None
+
+    def test_editing_a_cost_retags_it(self, client, trip):
+        eid = client.post(f"/trips/{trip}/expenses", json=cost(category="Food")).json()["expense_id"]
+        client.put(f"/trips/{trip}/expenses/{eid}", json=cost(category="Stay"))
+        assert [e["category"] for e in client.get(f"/trips/{trip}/expenses").json()["expenses"]] \
+            == ["Stay"]
+
     def test_a_viewer_cannot_add_one(self, anon_client, db, trip):
         from datetime import UTC, datetime
 
