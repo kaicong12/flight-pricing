@@ -199,7 +199,6 @@ def itinerary_sheet(ws: Worksheet, db: Session, trip: Trip, fetch: HoursLookup) 
 
         plan = plan_day(
             [Stop(place_id=r.Place.place_id, name=r.Place.name,
-                  category=service.category_of(r.Place, facts),
                   start_min=r.ItineraryItem.start_min, duration_min=r.ItineraryItem.duration_min,
                   periods=hours[r.Place.place_id].periods if r.Place.place_id in hours else None)
              for r in items if r.Place],

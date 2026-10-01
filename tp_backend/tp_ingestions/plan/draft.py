@@ -165,7 +165,7 @@ def problems(session: Session, trip: Trip, chosen: dict, places) -> dict:
 
     out = {}
     for day, picks in chosen.items():
-        stops = [Stop(place_id=places[i].place_id, name=places[i].name, category=places[i].category,
+        stops = [Stop(place_id=places[i].place_id, name=places[i].name,
                       start_min=st, duration_min=du,
                       periods=getattr(hours.get(places[i].place_id), "periods", None))
                  for i, st, du in picks]

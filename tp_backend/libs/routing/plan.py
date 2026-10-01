@@ -30,7 +30,6 @@ class Stop:
 
     place_id: str
     name: str
-    category: str | None
     start_min: int
     duration_min: int
     periods: list[dict] | None = None  # None = never fetched; [] = Places publishes none

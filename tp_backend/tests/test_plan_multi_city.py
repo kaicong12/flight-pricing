@@ -116,8 +116,8 @@ def workbook(client, trip):
 
 def a_two_city_day(client, db, lookup, hours, **kw):
     trip = two_city_trip(client, lookup, days=1)
-    hours["fn"] = open_until(23, 30)
-    items = one_in_each_city(db, trip, hel_start=22 * 60, por_start=21 * 60 + 30)
+    hours["fn"] = open_until(23)
+    items = one_in_each_city(db, trip, hel_start=13 * 60, por_start=12 * 60)
     pin(client, trip, [items[0], items[1] | kw])
     return trip
 
@@ -134,7 +134,7 @@ def test_the_export_bands_each_day(client, db, lookup, hours):
 
 def test_the_ref_column_marks_only_the_block_that_carries_a_link(client, db, lookup, hours):
     trip = a_two_city_day(client, db, lookup, hours,
-                                             reference_url="https://www.airbnb.com/rooms/12345")
+                          reference_url="https://www.airbnb.com/rooms/12345")
 
     ws = workbook(client, trip)
 

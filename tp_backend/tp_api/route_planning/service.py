@@ -530,12 +530,10 @@ def route_day(db: Session, trip_id: str, day_index: int,
     # A custom block has no hours to judge, so it is echoed back in time order and never routed.
     place_rows = [r for r in rows if r.Place]
     place_ids = [r.Place.place_id for r in place_rows]
-    facts = mention_facts(db, place_ids)
     hours = load_hours(db, place_ids, fetch_hours)
 
     stops = [
         Stop(place_id=r.Place.place_id, name=r.Place.name,
-             category=category_of(r.Place, facts),
              start_min=r.ItineraryItem.start_min, duration_min=r.ItineraryItem.duration_min,
              periods=hours[r.Place.place_id].periods if r.Place.place_id in hours else None)
         for r in place_rows

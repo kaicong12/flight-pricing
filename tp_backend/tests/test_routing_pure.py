@@ -43,8 +43,8 @@ class TestWindowFor:
         assert window_for([], 1) is None
 
 
-def stop(pid, name, *, start, category="see", minutes=60, periods=ARCTIC_CATHEDRAL):
-    return Stop(place_id=pid, name=name, category=category, start_min=start,
+def stop(pid, name, *, start, minutes=60, periods=ARCTIC_CATHEDRAL):
+    return Stop(place_id=pid, name=name, start_min=start,
                 duration_min=minutes, periods=periods)
 
 
