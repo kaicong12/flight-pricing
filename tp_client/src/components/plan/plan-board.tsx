@@ -106,7 +106,7 @@ export function PlanBoard({
   }, [expenses]);
 
   const saveCost = useCallback(
-    async (item: ItineraryItem, { amountCents, currency, category }: CostEntry, day?: number) => {
+    async (item: ItineraryItem, { amountCents, currency, category }: CostEntry, date?: string) => {
       const tab = expenses;
       if (!tab) return;
       const base = `/api/trips/${trip.trip_id}/expenses`;
@@ -127,7 +127,7 @@ export function PlanBoard({
             amount_cents: amountCents,
             currency,
             category,
-            spent_on: day === undefined ? dayDate(state, item) : state.days[day].date,
+            spent_on: date ?? dayDate(state, item),
             payer_id: meId,
             block_id: item.block_id,
             participants: ids,
@@ -410,7 +410,8 @@ export function PlanBoard({
             onReference={(key, url) => dispatch({ type: "reference", day: homeOf(key), key, url })}
             onAddCustom={(item, cost) => {
               dispatch({ type: "addCustom", day: state.activeDay, item });
-              if (cost) saveCost(item, cost, state.activeDay);
+              const date = state.days.find((d) => d.day_index === state.activeDay)?.date;
+              if (cost) saveCost(item, cost, date);
             }}
             onEditCustom={(key, draft) =>
               dispatch({ type: "editCustom", day: homeOf(key), key, draft })
