@@ -195,7 +195,7 @@ def run(session: Session, task: ClaimedTask) -> dict:
 
 
 def by_hand(session: Session, task: ClaimedTask) -> bool:
-    """Read afresh: the button may promote a queued automatic draft while it runs."""
+    """The button may promote a queued automatic draft while it runs."""
     return bool(task.payload.get("manual") or session.scalar(
         select(IngestTask.payload["manual"].astext).where(IngestTask.task_id == task.task_id)))
 

@@ -11,6 +11,7 @@ import { useState } from "react";
 import { useDroppable } from "@dnd-kit/core";
 import { PlusIcon } from "lucide-react";
 
+import { Kbd } from "@/components/ui/kbd";
 import type { CustomDraft } from "@/lib/plan-state";
 import type { DayRoute, ItineraryDay, ItineraryItem, PlanWarning } from "@/lib/plan-types";
 import {
@@ -18,6 +19,7 @@ import {
   DAY_START_MIN,
   MIN_DURATION,
   SLOT_MIN,
+  firstFree,
   formatDayTab,
   hhmm,
   keyOf,
@@ -25,7 +27,6 @@ import {
   piecesOn,
   warningText,
 } from "@/lib/plan-types";
-import { Kbd } from "@/components/ui/kbd";
 import { useShortcut } from "@/lib/use-shortcut";
 import { cn } from "@/lib/utils";
 
@@ -34,7 +35,6 @@ import { CustomBlockDialog } from "./custom-block";
 
 const SLOT_PX = 26;
 const SLOTS = Math.round((DAY_END_MIN - DAY_START_MIN) / SLOT_MIN);
-const MORNING = 9 * 60;
 
 export function DayColumn({
   day,
@@ -89,14 +89,8 @@ export function DayColumn({
   const placed = layout(
     pieces.map((p) => ({ ...p.item, start_min: p.from, duration_min: p.to - p.from })),
   );
-  const firstFree = () => {
-    const from = Math.ceil(available.from / SLOT_MIN) * SLOT_MIN;
-    for (let m = Math.max(from, MORNING); m + 60 <= available.to; m += SLOT_MIN) {
-      if (!pieces.some((p) => m < p.to && p.from < m + 60)) return m;
-    }
-    return from;
-  };
-  useShortcut("b", () => setAdding(firstFree()), !readOnly);
+  const addNext = () => setAdding(firstFree(pieces, available));
+  useShortcut("b", addNext, !readOnly);
 
   const editingOffset = editing ? (pieceOf.get(keyOf(editing))?.offset ?? 0) : 0;
   const editingDay = day.day_index - editingOffset / DAY_END_MIN;
@@ -110,12 +104,12 @@ export function DayColumn({
         {!readOnly && (
           <button
             type="button"
-            onClick={() => setAdding(firstFree())}
+            onClick={addNext}
             className="flex items-center gap-1.5 rounded-full text-[12.5px] font-medium text-ink-soft outline-none hover:text-ink focus-visible:ring-3 focus-visible:ring-ring/50"
           >
             <PlusIcon className="size-3.5" />
             New block
-            <Kbd>⌘B</Kbd>
+            <Kbd letter="B" />
           </button>
         )}
       </div>

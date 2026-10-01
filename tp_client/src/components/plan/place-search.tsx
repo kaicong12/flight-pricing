@@ -107,7 +107,7 @@ export function PlaceSearch({
         <PlusIcon className="size-3.5 shrink-0 opacity-50" />
         Add a place yourself
         <span className="ml-auto">
-          <Kbd>⌘K</Kbd>
+          <Kbd letter="K" />
         </span>
       </DialogTrigger>
 

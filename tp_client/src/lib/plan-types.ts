@@ -230,6 +230,24 @@ export function piecesOn(days: ItineraryDay[], dayIndex: number): Piece[] {
   return out;
 }
 
+const MORNING_MIN = 9 * 60;
+
+/** Where a new block on this day should start: the first free half hour from 09:00, then earlier. */
+export function firstFree(pieces: Piece[], window: { from: number; to: number }): number | null {
+  const from = Math.ceil(window.from / SLOT_MIN) * SLOT_MIN;
+  const morning = Math.max(from, MORNING_MIN);
+  const starts: number[] = [];
+  for (let m = morning; m < window.to; m += SLOT_MIN) starts.push(m);
+  for (let m = from; m < morning; m += SLOT_MIN) starts.push(m);
+  for (const length of [60, MIN_DURATION]) {
+    const fit = starts.find(
+      (m) => m + length <= window.to && !pieces.some((p) => m < p.to && p.from < m + length),
+    );
+    if (fit !== undefined) return fit;
+  }
+  return null;
+}
+
 /** The day a block ends on, and the minute it ends there. Midnight belongs to the day before. */
 export function endsOn(item: ItineraryItem, dayIndex: number): { day: number; min: number } {
   const extra = Math.max(0, Math.ceil(endOf(item) / DAY_END_MIN) - 1);

@@ -1,7 +1,12 @@
-export function Kbd({ children }: { children: React.ReactNode }) {
+"use client";
+
+import { useModifierLabel } from "@/lib/use-shortcut";
+
+export function Kbd({ letter }: { letter: string }) {
   return (
     <kbd className="rounded border border-border px-1 font-mono text-[10.5px] text-faint">
-      {children}
+      {useModifierLabel()}
+      {letter}
     </kbd>
   );
 }

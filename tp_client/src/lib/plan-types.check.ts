@@ -11,6 +11,7 @@ import {
   availableWindow,
   endOf,
   endsOn,
+  firstFree,
   hhmm,
   keyOf,
   layout,
@@ -125,5 +126,15 @@ eq(
   { from: 0, to: 1440 },
   "no flight times bounds nothing",
 );
+
+const open = { from: 0, to: 1440 };
+eq(firstFree([], open), 540, "an empty day starts at 09:00");
+eq(firstFree(piecesOn(days, 2), open), 540, "a block at 10:00 leaves 09:00 free");
+eq(firstFree(piecesOn(days, 2), { from: 570, to: 1440 }), 660, "09:30 arrival skips the 10:00 block");
+eq(firstFree([], { from: 435, to: 1440 }), 540, "a 07:15 arrival still waits for 09:00");
+eq(firstFree([], { from: 0, to: 480 }), 0, "a day ending at 08:00 falls back to before 09:00");
+eq(firstFree(piecesOn(days, 2), { from: 600, to: 660 }), null, "a booked window has no room");
+eq(firstFree(piecesOn(days, 2), { from: 0, to: 540 }), 390, "an overnight tail to 06:10 holds the early hours");
+eq(firstFree(piecesOn(days, 2), { from: 570, to: 660 }), 570, "half an hour fits when an hour does not");
 
 console.log("plan-types: all checks passed");
