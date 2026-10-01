@@ -220,8 +220,9 @@ TWO_DAYS = {"days": [{"day": 0, "picks": [{"index": 0, "start_min": 900, "durati
 
 
 def itinerary(db):
-    return set(db.execute(select(ItineraryItem.day_index, ItineraryItem.place_id,
-                                 ItineraryItem.block_id)).all())
+    return {(r.day_index, r.place_id, r.title)
+            for r in db.execute(select(ItineraryItem.day_index, ItineraryItem.place_id,
+                                       ItineraryItem.title))}
 
 
 def test_the_automatic_draft_stands_down_once_any_day_has_a_block(client, db, lookup, monkeypatch):
@@ -231,7 +232,7 @@ def test_the_automatic_draft_stands_down_once_any_day_has_a_block(client, db, lo
 
     assert draft.run(db, task(trip)) == {"skipped": draft.ALREADY_PLANNING}
     assert calls == []
-    assert itinerary(db) == {(2, None, "b-flight")}
+    assert itinerary(db) == {(2, None, "Flight")}
 
 
 def test_a_drafted_by_hand_day_holding_only_a_flight_is_left_alone(client, db, lookup, monkeypatch):
@@ -240,7 +241,7 @@ def test_a_drafted_by_hand_day_holding_only_a_flight_is_left_alone(client, db, l
     pin(client, trip, [FLIGHT], day=1)
 
     assert draft.run(db, manual_task(trip))["days"] == 1
-    assert itinerary(db) == {(0, "hel", None), (1, None, "b-flight")}
+    assert itinerary(db) == {(0, "hel", None), (1, None, "Flight")}
 
 
 def test_a_day_filled_while_the_model_thinks_is_left_alone(client, db, lookup, monkeypatch):
@@ -252,7 +253,7 @@ def test_a_day_filled_while_the_model_thinks_is_left_alone(client, db, lookup, m
     out = draft.run(db, manual_task(trip))
 
     assert out["filled_meanwhile"] == [1]
-    assert itinerary(db) == {(0, "hel", None), (1, None, "b-flight")}
+    assert itinerary(db) == {(0, "hel", None), (1, None, "Flight")}
 
 
 def test_the_automatic_draft_stands_down_if_planning_starts_mid_draft(client, db, lookup,
@@ -263,4 +264,4 @@ def test_the_automatic_draft_stands_down_if_planning_starts_mid_draft(client, db
                         lambda prompt, text: pin(client, trip, [FLIGHT], day=3) and TWO_DAYS)
 
     assert draft.run(db, task(trip)) == {"skipped": draft.ALREADY_PLANNING}
-    assert itinerary(db) == {(3, None, "b-flight")}
+    assert itinerary(db) == {(3, None, "Flight")}

@@ -178,7 +178,7 @@ def test_an_unauthenticated_export_is_refused(anon_client, client, db):
 
 
 def test_the_expenses_sheet_carries_a_column_per_person(client, db):
-    trip = a_trip_with_one_block(client, db)
+    trip = a_trip_with_one_block(client, db, block_id="blk-sauna")
     bob = User(user_id="u-bob", google_sub="sub-bob", email="bob@example.com", name="Bob Two")
     db.add(bob)
     db.add(UserTrip(user_id=bob.user_id, trip_id=trip, role=TripRole.EDITOR))
@@ -186,7 +186,7 @@ def test_the_expenses_sheet_carries_a_column_per_person(client, db):
     client.post(f"/trips/{trip}/expenses",
                 json={"description": "Sauna", "amount_cents": 4000, "currency": "EUR",
                       "spent_on": today_utc().isoformat(), "payer_id": "u-test",
-                      "place_id": "p1", "participants": ["u-test", "u-bob"]})
+                      "block_id": "blk-sauna", "participants": ["u-test", "u-bob"]})
 
     ws = export(client, trip)["Expenses"]
 

@@ -5,6 +5,7 @@ it already owns the copy for trip notes.
 """
 
 from datetime import date, time, timedelta
+from uuid import uuid4
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -86,8 +87,8 @@ class ItineraryOut(BaseModel):
 class ItemIn(BaseModel):
     """A block the user pinned, to the minute. It may run past midnight into the trip's later days.
 
-    A place block carries a `place_id`; a custom one carries a `block_id` the client minted and a
-    title. The database enforces the same either/or.
+    A place block carries a `place_id`; a custom one carries a title. Either may carry the `block_id`
+    the client minted, which is its identity; a place block sent without one is given one here.
     """
 
     kind: BlockKind = BlockKind.PLACE
@@ -104,8 +105,9 @@ class ItemIn(BaseModel):
     @model_validator(mode="after")
     def _check_identity(self):
         if self.kind is BlockKind.PLACE:
-            if not self.place_id or self.block_id or self.title:
-                raise ValueError("a place block takes a place_id and nothing else")
+            if not self.place_id or self.title:
+                raise ValueError("a place block takes a place_id and no title")
+            self.block_id = self.block_id or str(uuid4())
         elif not self.block_id or not self.title or self.place_id:
             raise ValueError("a custom block takes a block_id and a title")
         return self
@@ -155,6 +157,7 @@ class BlockOut(BaseModel):
 class WarningOut(BaseModel):
     code: str
     place_id: str | None = None
+    block_id: str | None = None
     detail: dict = {}
 
 

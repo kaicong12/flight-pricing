@@ -47,7 +47,7 @@ export function ExpenseDialog({
   defaultDate: string;
   editing: Expense | null;
   /** Prefilled when the `$` on a block opened this, so the cost lands on that block. */
-  block?: { place_id: string | null; block_id: string | null; title: string };
+  block?: { block_id: string; title: string };
   onClose: () => void;
   onSubmit: (draft: ExpenseDraft) => void;
 }) {
@@ -93,7 +93,6 @@ export function ExpenseDialog({
       currency,
       spent_on: spentOn,
       payer_id: payerId,
-      place_id: editing?.place_id ?? block?.place_id ?? null,
       block_id: editing?.block_id ?? block?.block_id ?? null,
       participants: exact ? [] : picked,
       shares: exact

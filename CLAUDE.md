@@ -124,11 +124,13 @@ plan screen edits it from the block itself and saving one does not re-check the 
 
 **A block need not be a place.** A flight, a hotel night, a booked husky sled: `itinerary_items.kind`
 is `place` or `custom`, and a `ck_itinerary_identity` CHECK makes it either a `place_id` or a
-`block_id` + `title`, never both. The identity is the client-minted `block_id`, **not the title** — the
-same stay appears on three nights and two legs of one journey share a name, so a name could never
-address a row. `keyOf()` is the client's one identity helper for the same reason. Postgres counts
-NULLs as distinct, so `uq_itinerary_trip_place` and `uq_itinerary_trip_block` coexist with no partial
-index. A custom block carries a `description` — the booking reference, the terminal, the address —
+`title`, never both. **Every block's identity is its `block_id`, not its place and not its title** —
+the same hotel sits on three nights, a place may appear twice in one day, and two legs of one journey
+share a name, so neither a `place_id` nor a name could address a row. The client mints it, and the
+server mints one for a place block sent without (the draft, an upload). `keyOf()` is the client's one
+identity helper, and dropping a shortlist place always adds a fresh copy; moving one is dragging the
+block. `uq_itinerary_trip_block` is the only uniqueness, a cost links to a block by `block_id` alone,
+and `route_day`'s warnings name the `block_id` they are about. A custom block carries a `description` — the booking reference, the terminal, the address —
 which is the whole point: it is where a flight or an accommodation is found again. It builds no `Stop`,
 so `plan_day` never judges it against hours and `route_day` fetches hours only for the
 places. A day holding anything — a flight, a stay's overnight tail — is a filled day, and `route.plan`

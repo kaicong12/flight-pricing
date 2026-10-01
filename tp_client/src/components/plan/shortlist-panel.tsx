@@ -34,7 +34,7 @@ export function ShortlistPanel({
 }: {
   places: ShortlistPlace[];
   total: number;
-  placedDays: Map<string, number>;
+  placedDays: Map<string, number[]>;
   readOnly: boolean;
   category: string | null;
   loading: boolean;
@@ -95,7 +95,7 @@ export function ShortlistPanel({
             <ShortlistRow
               key={place.place_id}
               place={place}
-              placedDay={placedDays.get(place.place_id) ?? null}
+              placedDays={placedDays.get(place.place_id) ?? []}
               cityName={place.city_name}
               readOnly={readOnly}
               onDismiss={() => onDismiss(place)}

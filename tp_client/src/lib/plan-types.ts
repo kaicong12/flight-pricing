@@ -54,8 +54,8 @@ export type BlockKind = "place" | "custom";
 export type ItineraryItem = {
   kind: BlockKind;
   place_id: string | null;
-  /** A custom block's identity, minted here. A place block has none; its place_id is its identity. */
-  block_id: string | null;
+  /** Every block's identity, minted here. One place may be several blocks, on several days. */
+  block_id: string;
   name: string;
   /** Free text on a custom block: the flight number, the hotel address, the pickup point. */
   description: string | null;
@@ -71,8 +71,7 @@ export type ItineraryItem = {
 };
 
 /** What identifies a block on screen and in the reducer. */
-export const keyOf = (i: { place_id: string | null; block_id: string | null }) =>
-  i.place_id ?? i.block_id ?? "";
+export const keyOf = (i: { block_id: string }) => i.block_id;
 
 export type ItineraryDay = {
   day_index: number;
@@ -85,7 +84,7 @@ export type Itinerary = { days: ItineraryDay[] };
 export type PlanBlock = {
   kind: BlockKind;
   place_id: string | null;
-  block_id: string | null;
+  block_id: string;
   name: string;
   description: string | null;
   start: string;
@@ -98,6 +97,7 @@ export type PlanBlock = {
 export type PlanWarning = {
   code: string;
   place_id: string | null;
+  block_id: string | null;
   detail: Record<string, string | number>;
 };
 

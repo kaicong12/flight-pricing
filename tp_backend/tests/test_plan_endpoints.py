@@ -368,33 +368,51 @@ class TestItineraryWrite:
         assert [i["place_id"] for i in body["days"][1]["items"]] == ["p1"]
         assert db.scalar(select(ItineraryItem.day_index)) == 1
 
-    def test_stealing_a_place_from_a_day_the_client_did_not_list(self, client, db):
-        """Only day 1 is sent, but the place currently sits on day 0. It moves, not 409s."""
+    def test_moving_a_block_from_a_day_the_client_did_not_list(self, client, db):
+        """Only day 1 is sent, but the block currently sits on day 0. It moves, not 409s."""
         trip = make_trip(client)
         seed(db, ("p1", "A", 1))
-        client.put(f"/trips/{trip}/itinerary", json={"days": [
-            {"day_index": 0, "items": [{"place_id": "p1", "start_min": 900, "duration_min": 60}]}]})
+        first = client.put(f"/trips/{trip}/itinerary", json={"days": [
+            {"day_index": 0, "items": [{"place_id": "p1", "start_min": 900, "duration_min": 60}]}]}).json()
+        block = first["days"][0]["items"][0]["block_id"]
 
         body = client.put(f"/trips/{trip}/itinerary", json={"days": [
-            {"day_index": 1, "items": [{"place_id": "p1", "start_min": 900, "duration_min": 60}]}]}).json()
+            {"day_index": 1, "items": [{"place_id": "p1", "block_id": block, "start_min": 900,
+                                        "duration_min": 60}]}]}).json()
 
         assert body["days"][0]["items"] == []
-        assert [i["place_id"] for i in body["days"][1]["items"]] == ["p1"]
-        assert db.scalars(select(ItineraryItem.place_id)).all() == ["p1"]
+        assert [i["block_id"] for i in body["days"][1]["items"]] == [block]
+        assert db.scalars(select(ItineraryItem.block_id)).all() == [block]
 
-    def test_the_same_place_twice_in_one_payload_is_rejected(self, client, db):
+    def test_the_same_place_twice_on_one_day_is_two_blocks(self, client, db):
         trip = make_trip(client)
         seed(db, ("p1", "A", 1))
         r = client.put(f"/trips/{trip}/itinerary", json={"days": [{"day_index": 0, "items": [
             {"place_id": "p1", "start_min": 900, "duration_min": 60}, {"place_id": "p1", "start_min": 990, "duration_min": 60}]}]})
-        assert r.status_code == 422
+        assert r.status_code == 200, r.text
+        items = r.json()["days"][0]["items"]
+        assert [i["place_id"] for i in items] == ["p1", "p1"]
+        assert len({i["block_id"] for i in items}) == 2
 
-    def test_the_same_place_on_two_days_in_one_payload_is_rejected(self, client, db):
+    def test_the_same_place_on_two_days_stays_on_both(self, client, db):
         trip = make_trip(client)
         seed(db, ("p1", "A", 1))
+        client.put(f"/trips/{trip}/itinerary", json={"days": [
+            {"day_index": 0, "items": [{"place_id": "p1", "start_min": 900, "duration_min": 60}]}]})
         r = client.put(f"/trips/{trip}/itinerary", json={"days": [
-            {"day_index": 0, "items": [{"place_id": "p1", "start_min": 900, "duration_min": 60}]},
             {"day_index": 1, "items": [{"place_id": "p1", "start_min": 900, "duration_min": 60}]}]})
+        assert r.status_code == 200, r.text
+        assert [[i["place_id"] for i in d["items"]] for d in r.json()["days"][:2]] == [["p1"], ["p1"]]
+
+        place = client.get(f"/trips/{trip}/shortlist").json()["places"]
+        assert [(p["place_id"], p["in_itinerary"], p["day_index"]) for p in place] == [("p1", True, 0)]
+
+    def test_the_same_block_id_on_two_places_is_rejected(self, client, db):
+        trip = make_trip(client)
+        seed(db, ("p1", "A", 1), ("p2", "B", 1))
+        r = client.put(f"/trips/{trip}/itinerary", json={"days": [{"day_index": 0, "items": [
+            {"place_id": "p1", "block_id": "b", "start_min": 900, "duration_min": 60},
+            {"place_id": "p2", "block_id": "b", "start_min": 990, "duration_min": 60}]}]})
         assert r.status_code == 422
 
     def test_one_day_listed_twice_is_rejected(self, client, db):
@@ -534,6 +552,17 @@ class TestRouteDay:
         warning = next(w for w in body["warnings"] if w["code"] == "closes_before_done")
         assert warning["place_id"] == "p1"
         assert warning["detail"]["closes"] == "18:00"
+
+    def test_a_place_twice_on_one_day_warns_only_on_the_copy_that_breaks(self, client, db, hours):
+        trip = make_trip(client)
+        seed(db, ("p1", "Museum", 1))
+        put_day(client, trip, ["p1", "p1"], start=15 * 60, step=150)
+        hours["fn"] = open_hours
+
+        body = client.post(f"/trips/{trip}/days/0/route", json={}).json()
+        late = body["blocks"][1]
+        assert [w["block_id"] for w in body["warnings"]] == [late["block_id"]]
+        assert body["blocks"][0]["block_id"] != late["block_id"]
 
     def test_hours_we_never_fetched_warn_rather_than_fail(self, client, db):
         trip = make_trip(client)

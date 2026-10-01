@@ -119,11 +119,10 @@ def _balances(expenses: list[Expense], shares: list[tuple[ExpenseShare, str]],
 
 
 def _out(e: Expense, blocks: dict[str, tuple[str, int]]) -> ExpenseOut:
-    key = e.place_id or e.block_id
-    title, day = blocks.get(key or "", (None, None))
+    title, day = blocks.get(e.block_id or "", (None, None))
     return ExpenseOut(
         expense_id=e.expense_id, description=e.description, amount_cents=e.amount_cents,
-        currency=e.currency, spent_on=e.spent_on, payer_id=e.payer_id, place_id=e.place_id,
+        currency=e.currency, spent_on=e.spent_on, payer_id=e.payer_id,
         block_id=e.block_id, block_title=title, day_index=day,
         shares=[ShareOut(user_id=s.user_id, amount_cents=s.amount_cents)
                 for s in sorted(e.shares, key=lambda s: s.user_id)],
@@ -131,9 +130,9 @@ def _out(e: Expense, blocks: dict[str, tuple[str, int]]) -> ExpenseOut:
 
 
 def _blocks(db: Session, trip_id: str) -> dict[str, tuple[str | None, int]]:
-    """Title and day of every block a cost could name, keyed by whichever identity it has."""
+    """Title and day of every block a cost could name."""
     items = db.scalars(select(ItineraryItem).where(ItineraryItem.trip_id == trip_id))
-    return {item.place_id or item.block_id:
+    return {item.block_id:
             (item.title or (item.place.name if item.place else None), item.day_index)
             for item in items}
 
@@ -182,7 +181,7 @@ def add_expense(db: Session, trip_id: str, body: ExpenseIn) -> ExpenseOut:
 
     expense = Expense(expense_id=str(uuid.uuid4()), trip_id=trip_id, payer_id=body.payer_id,
                       description=body.description.strip(), amount_cents=body.amount_cents,
-                      currency=body.currency, spent_on=body.spent_on, place_id=body.place_id,
+                      currency=body.currency, spent_on=body.spent_on,
                       block_id=body.block_id)
     expense.shares = [ExpenseShare(user_id=u, amount_cents=a) for u, a in amounts.items()]
     db.add(expense)
@@ -240,7 +239,6 @@ def edit_expense(db: Session, trip_id: str, expense_id: str, body: ExpenseIn) ->
     expense.amount_cents = body.amount_cents
     expense.currency = body.currency
     expense.spent_on = body.spent_on
-    expense.place_id = body.place_id
     expense.block_id = body.block_id
     expense.shares = [ExpenseShare(user_id=u, amount_cents=a) for u, a in amounts.items()]
     db.commit()

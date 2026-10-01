@@ -84,6 +84,34 @@ const withBlock = planReducer(base, {
 });
 eq(withBlock.unsaved, [0], "placing a block marks its day unsaved");
 eq(withBlock.revision, 1, "placing a block bumps the revision");
+const p1Key = keyOf(withBlock.days[0].items[0]);
+
+// A hotel belongs to several nights: dropping a place already on a day adds another copy.
+const secondNight = planReducer(withBlock, {
+  type: "add",
+  place: place("p1", "Mentioned twice", 2),
+  day: 1,
+  startMin: 10 * 60,
+  durationMin: 60,
+});
+eq(secondNight.days.map((d) => d.items.length), [1, 1], "the first copy stays where it was");
+eq(keyOf(secondNight.days[1].items[0]) !== p1Key, true, "the copy gets its own id");
+eq(placedDays(secondNight).get("p1"), [0, 1], "the badge names every day it is on");
+const sameDay = planReducer(withBlock, {
+  type: "add",
+  place: place("p1", "Mentioned twice", 2),
+  day: 0,
+  startMin: 12 * 60,
+  durationMin: 60,
+});
+eq(sameDay.days[0].items.length, 2, "the same place may sit twice on one day");
+eq(placedDays(sameDay).get("p1"), [0], "and the badge names that day once");
+const unpinned = planReducer(secondNight, {
+  type: "remove",
+  day: 1,
+  key: keyOf(secondNight.days[1].items[0]),
+});
+eq(keyOf(unpinned.days[0].items[0]), p1Key, "removing one copy leaves the other");
 
 // A reference is a link, not an ordering: it must save but never spend a route on the day.
 const checked = (state: typeof base) =>
@@ -97,20 +125,20 @@ eq(withBlockChecked.stale, [], "a checked day is no longer stale");
 const linked = planReducer(withBlockChecked, {
   type: "reference",
   day: 0,
-  key: "p1",
+  key: p1Key,
   url: "https://airbnb.com/rooms/1",
 });
 eq(linked.days[0].items[0].reference_url, "https://airbnb.com/rooms/1", "the link is stored");
 eq(linked.unsaved, [0], "a link marks the day unsaved");
 eq(linked.stale, [], "a link does not re-route the day");
 eq(
-  planReducer(linked, { type: "reference", day: 0, key: "p1", url: "https://airbnb.com/rooms/1" })
+  planReducer(linked, { type: "reference", day: 0, key: p1Key, url: "https://airbnb.com/rooms/1" })
     .revision,
   linked.revision,
   "re-saving the same link changes nothing",
 );
 eq(
-  planReducer(linked, { type: "reference", day: 0, key: "p1", url: null }).days[0].items[0]
+  planReducer(linked, { type: "reference", day: 0, key: p1Key, url: null }).days[0].items[0]
     .reference_url,
   null,
   "clearing the link removes it",

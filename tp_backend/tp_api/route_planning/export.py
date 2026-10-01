@@ -200,22 +200,23 @@ def itinerary_sheet(ws: Worksheet, db: Session, trip: Trip, fetch: HoursLookup) 
         plan = plan_day(
             [Stop(place_id=r.Place.place_id, name=r.Place.name,
                   start_min=r.ItineraryItem.start_min, duration_min=r.ItineraryItem.duration_min,
-                  periods=hours[r.Place.place_id].periods if r.Place.place_id in hours else None)
+                  periods=hours[r.Place.place_id].periods if r.Place.place_id in hours else None,
+                  block_id=r.ItineraryItem.block_id)
              for r in items if r.Place],
             weekday=google_weekday(day_date))
-        routed = {b.place_id: b for b in plan.blocks}
+        routed = {b.block_id: b for b in plan.blocks}
 
         found: dict[str, list[PlanWarning]] = {}
         for w in plan.warnings:
-            found.setdefault(w.place_id or "", []).append(w)
+            found.setdefault(w.block_id or "", []).append(w)
 
         top = at
         for n, r in enumerate(items, start=1):
             item = r.ItineraryItem
-            block = routed.get(item.place_id) if r.Place else None
+            block = routed.get(item.block_id) if r.Place else None
             start, end = ((block.start_min, block.end_min) if block
                           else (item.start_min, item.start_min + item.duration_min))
-            text, fill, ink = _warning_cell(found.get(item.place_id or "", []))
+            text, fill, ink = _warning_cell(found.get(item.block_id, []))
             _body_row(ws, at, columns,
                       [day + 1, f"{day_date:%d %b}", n, hhmm(start), until(day, end),
                        r.Place.name if r.Place else item.title,

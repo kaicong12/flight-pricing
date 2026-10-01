@@ -113,7 +113,7 @@ export function PlanBoard({
       if (!tab) return;
       const base = `/api/trips/${trip.trip_id}/expenses`;
       const existing = tab.expenses.filter(
-        (e) => (e.place_id ?? e.block_id) === (item.place_id ?? item.block_id),
+        (e) => e.block_id === item.block_id,
       );
       if (amountCents === null) {
         await Promise.all(
@@ -130,7 +130,6 @@ export function PlanBoard({
             currency,
             spent_on: dayDate(state, item),
             payer_id: meId,
-            place_id: item.place_id,
             block_id: item.block_id,
             participants: ids,
           }),

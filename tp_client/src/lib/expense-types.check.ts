@@ -84,7 +84,6 @@ const expense = (over: Partial<Expense>): Expense => ({
   currency: "EUR",
   spent_on: "2026-10-05",
   payer_id: "me",
-  place_id: null,
   block_id: null,
   block_title: null,
   day_index: null,
@@ -93,15 +92,16 @@ const expense = (over: Partial<Expense>): Expense => ({
 });
 
 const byBlock = costsByBlock([
-  expense({ place_id: "p1" }),
-  expense({ expense_id: "e2", place_id: "p1", amount_cents: 1500 }),
-  expense({ expense_id: "e3", block_id: "b1" }),
+  expense({ block_id: "night-1" }),
+  expense({ expense_id: "e2", block_id: "night-1", amount_cents: 1500 }),
+  expense({ expense_id: "e3", block_id: "night-2" }),
   expense({ expense_id: "e4" }),
 ]);
-eq([...byBlock.keys()].sort(), ["b1", "p1"], "a cost with no block is not keyed under one");
-eq(byBlock.get("p1")!.length, 2, "a block may be paid for twice");
+eq([...byBlock.keys()].sort(), ["night-1", "night-2"], "a cost with no block is not keyed under one");
+eq(byBlock.get("night-1")!.length, 2, "a block may be paid for twice");
+eq(byBlock.get("night-2")!.length, 1, "two copies of one place keep their own costs");
 
-eq(blockCost(byBlock.get("p1")!), "55.00 EUR", "two costs on one block add up");
+eq(blockCost(byBlock.get("night-1")!), "55.00 EUR", "two costs on one block add up");
 eq(
   blockCost([expense({ currency: "EUR" }), expense({ expense_id: "e5", currency: "NOK" })]),
   "40.00 EUR + 40.00 NOK",

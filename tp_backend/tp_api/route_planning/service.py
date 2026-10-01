@@ -179,16 +179,22 @@ def shortlist(db: Session, trip_id: str, limit: int, offset: int,
         .subquery()
     )
     rank = func.coalesce(mentions.c.mention_count, 0)
+    # A place may sit on several days; the shortlist reports the earliest.
+    placed = (
+        select(ItineraryItem.place_id.label("place_id"),
+               func.min(ItineraryItem.day_index).label("day_index"))
+        .where(ItineraryItem.trip_id == trip_id)
+        .group_by(ItineraryItem.place_id)
+        .subquery()
+    )
 
     stmt = (
         select(Place, rank.label("mention_count"),
-               ItineraryItem.day_index,
+               placed.c.day_index,
                # Computed before LIMIT, so one query yields both the page and the full count.
                func.count().over().label("total"))
         .outerjoin(mentions, mentions.c.place_id == Place.place_id)
-        .outerjoin(ItineraryItem,
-                   (ItineraryItem.place_id == Place.place_id)
-                   & (ItineraryItem.trip_id == trip_id))
+        .outerjoin(placed, placed.c.place_id == Place.place_id)
         .where(in_shortlist(trip),
                ~select(TripDismissal.place_id)
                .where(TripDismissal.trip_id == trip_id,
@@ -242,7 +248,8 @@ def block_out(item: ItineraryItem, routed: Block | None) -> BlockOut:
                         description=item.description, start=hhmm(item.start_min),
                         end=hhmm(item.start_min + item.duration_min),
                         duration_min=item.duration_min)
-    return BlockOut(kind=item.kind, place_id=routed.place_id, name=routed.name,
+    return BlockOut(kind=item.kind, place_id=routed.place_id, block_id=item.block_id,
+                    name=routed.name,
                     start=hhmm(routed.start_min), end=hhmm(routed.end_min),
                     duration_min=routed.duration_min,
                     open_from=hhmm(routed.open_from) if routed.open_from is not None else None,
@@ -314,10 +321,8 @@ def replace_days(db: Session, trip_id: str, body: ItineraryIn, commit: bool = Tr
                     )
 
     items = [i for d in body.days for i in d.items]
-    place_ids = [i.place_id for i in items if i.place_id]
-    block_ids = [i.block_id for i in items if i.block_id]
-    if len(set(place_ids)) != len(place_ids):
-        raise HTTPException(422, "a place is listed twice")
+    place_ids = {i.place_id for i in items if i.place_id}
+    block_ids = [i.block_id for i in items]
     if len(set(block_ids)) != len(block_ids):
         raise HTTPException(422, "a block is listed twice")
 
@@ -325,18 +330,16 @@ def replace_days(db: Session, trip_id: str, body: ItineraryIn, commit: bool = Tr
         known = set(db.scalars(
             select(Place.place_id).where(Place.place_id.in_(place_ids), in_shortlist(trip))
         ).all())
-        missing = [p for p in place_ids if p not in known]
+        missing = sorted(place_ids - known)
         if missing:
             raise HTTPException(422, f"not a place on this trip: {missing[0]}")
 
     # Delete by submitted identity too: a block dragged in from an unlisted day would otherwise
-    # collide with uq_itinerary_trip_place or uq_itinerary_trip_block.
-    conditions = [ItineraryItem.day_index.in_([d.day_index for d in body.days])]
-    if place_ids:
-        conditions.append(ItineraryItem.place_id.in_(place_ids))
-    if block_ids:
-        conditions.append(ItineraryItem.block_id.in_(block_ids))
-    db.execute(delete(ItineraryItem).where(ItineraryItem.trip_id == trip_id, or_(*conditions)))
+    # collide with uq_itinerary_trip_block.
+    db.execute(delete(ItineraryItem).where(
+        ItineraryItem.trip_id == trip_id,
+        or_(ItineraryItem.day_index.in_([d.day_index for d in body.days]),
+            ItineraryItem.block_id.in_(block_ids))))
 
     for d in body.days:
         for item in d.items:
@@ -450,7 +453,7 @@ def one_shortlist_place(db: Session, trip: Trip, place: Place) -> ShortlistPlace
     facts = mention_facts(db, [place.place_id])
     why_go = facts.get(place.place_id, (None, None))[1]
     cat = category_of(place, facts)
-    day_index = db.scalar(select(ItineraryItem.day_index).where(
+    day_index = db.scalar(select(func.min(ItineraryItem.day_index)).where(
         ItineraryItem.trip_id == trip.trip_id, ItineraryItem.place_id == place.place_id))
     mentions = db.scalar(select(func.count()).select_from(PlaceMention)
                          .where(PlaceMention.place_id == place.place_id)) or 0
@@ -550,16 +553,18 @@ def route_day(db: Session, trip_id: str, day_index: int,
     stops = [
         Stop(place_id=r.Place.place_id, name=r.Place.name,
              start_min=r.ItineraryItem.start_min, duration_min=r.ItineraryItem.duration_min,
-             periods=hours[r.Place.place_id].periods if r.Place.place_id in hours else None)
+             periods=hours[r.Place.place_id].periods if r.Place.place_id in hours else None,
+             block_id=r.ItineraryItem.block_id)
         for r in place_rows
     ]
     plan = plan_day(stops, weekday=google_weekday(day_date))
-    routed = {b.place_id: b for b in plan.blocks}
+    routed = {b.block_id: b for b in plan.blocks}
 
     return DayRouteOut(
         day_index=day_index, date=day_date, start_time=start,
-        blocks=[block_out(r.ItineraryItem, routed.get(r.ItineraryItem.place_id)) for r in rows],
-        warnings=[WarningOut(code=w.code, place_id=w.place_id, detail=w.detail)
+        blocks=[block_out(r.ItineraryItem, routed.get(r.ItineraryItem.block_id)) for r in rows],
+        warnings=[WarningOut(code=w.code, place_id=w.place_id, block_id=w.block_id,
+                             detail=w.detail)
                   for w in plan.warnings],
         provisional=provisional,
     )

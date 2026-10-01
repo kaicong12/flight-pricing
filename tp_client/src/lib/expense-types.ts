@@ -14,7 +14,6 @@ export type Expense = {
   currency: string;
   spent_on: string;
   payer_id: string;
-  place_id: string | null;
   block_id: string | null;
   block_title: string | null;
   day_index: number | null;
@@ -62,7 +61,6 @@ export type ExpenseDraft = {
   currency: string;
   spent_on: string;
   payer_id: string;
-  place_id: string | null;
   block_id: string | null;
   participants: string[];
   shares: ExpenseShare[];
@@ -118,8 +116,7 @@ export function forReading(balance: CurrencyBalance, meId: string): MemberBalanc
 export function costsByBlock(expenses: Expense[]): Map<string, Expense[]> {
   const out = new Map<string, Expense[]>();
   for (const e of expenses) {
-    const key = e.place_id ?? e.block_id;
-    if (key) out.set(key, [...(out.get(key) ?? []), e]);
+    if (e.block_id) out.set(e.block_id, [...(out.get(e.block_id) ?? []), e]);
   }
   return out;
 }

@@ -79,7 +79,7 @@ export function DayColumn({
   const perPlace = new Map<string, PlanWarning[]>();
   const dayWide: PlanWarning[] = [];
   for (const w of stale ? [] : (route?.warnings ?? [])) {
-    if (w.place_id) perPlace.set(w.place_id, [...(perPlace.get(w.place_id) ?? []), w]);
+    if (w.block_id) perPlace.set(w.block_id, [...(perPlace.get(w.block_id) ?? []), w]);
     else dayWide.push(w);
   }
 
