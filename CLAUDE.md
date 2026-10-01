@@ -158,7 +158,8 @@ on it is the user's: the button drafts only the empty days, and the automatic dr
 entirely once the user has started planning, since a trip is now plannable before its ingestion
 settles. The Gemini call takes seconds, so the write re-checks under `lock_itinerary`, the same trip
 row lock `replace_days` takes — a day filled meanwhile is skipped, never overwritten. Why a draft
-wrote nothing is `ingest_tasks.result`, which `GET /trips/{id}` returns as `draft_result`. The shortlist it arranges is the trip's, so one draft covers every city at once.
+wrote nothing is `ingest_tasks.result`, which `GET /trips/{id}` returns as `draft_result`. The
+shortlist it arranges is the trip's, so one draft covers every city at once.
 It is queued automatically once — at `/initiate-plan` when every city was warm, otherwise by the
 last run to settle, and only when **every** city has settled and **at least one** reached DONE, so a
 half-ingested trip is never drafted and a trip with one failed city still is — and on demand by

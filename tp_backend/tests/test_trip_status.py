@@ -3,8 +3,9 @@
 from conftest import plan_body
 from sqlalchemy import select, update
 
-from libs.db import IngestTask
+from libs.db import IngestTask, Trip
 from libs.db.enums import ErrorCode, TaskKind, TaskStatus
+from libs.ingest.enqueue import ensure_trip_plan
 
 
 def test_unknown_trip_is_a_404(client):
@@ -189,3 +190,14 @@ def test_drafting_a_trip_with_every_day_filled_is_a_409(client):
 
     assert r.status_code == 409
     assert "already has something in it" in r.json()["detail"]
+
+
+def test_asking_while_the_automatic_draft_is_queued_makes_it_a_manual_one(client, db):
+    trip_id = client.post("/initiate-plan", json=plan_body()).json()["trip_id"]
+    ensure_trip_plan(db, db.get(Trip, trip_id))
+    queued = db.scalars(select(IngestTask).where(IngestTask.kind == TaskKind.ROUTE_PLAN)).one()
+
+    assert client.post(f"/trips/{trip_id}/draft").json()["status"] == TaskStatus.PENDING
+
+    db.refresh(queued)
+    assert queued.payload["manual"] is True

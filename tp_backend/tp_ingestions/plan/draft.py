@@ -189,20 +189,27 @@ NOTHING_FIT = "nothing_fit"
 
 @handles(TaskKind.ROUTE_PLAN)
 def run(session: Session, task: ClaimedTask) -> dict:
-    out = draft(session, task.payload["trip_id"], manual=bool(task.payload.get("manual")))
+    out = draft(session, task)
     session.execute(update(IngestTask).where(IngestTask.task_id == task.task_id).values(result=out))
     return out
 
 
-def draft(session: Session, trip_id: str, manual: bool) -> dict:
+def by_hand(session: Session, task: ClaimedTask) -> bool:
+    """Read afresh: the button may promote a queued automatic draft while it runs."""
+    return bool(task.payload.get("manual") or session.scalar(
+        select(IngestTask.payload["manual"].astext).where(IngestTask.task_id == task.task_id)))
+
+
+def draft(session: Session, task: ClaimedTask) -> dict:
     """Fill a trip's empty days. A day with anything on it is the user's, and the automatic draft
     stands down entirely once the user has started planning."""
+    trip_id = task.payload["trip_id"]
     trip = session.get(Trip, trip_id)
     if trip is None or trip.deleted:
         return {"skipped": NO_TRIP}
 
     filled = filled_days(session, trip_id)
-    if filled and not manual:
+    if filled and not by_hand(session, task):
         return {"skipped": ALREADY_PLANNING}
     open_days = [i for i in range(day_count(trip)) if i not in filled]
     if not open_days:
@@ -215,10 +222,9 @@ def draft(session: Session, trip_id: str, manual: bool) -> dict:
 
     chosen, rounds, bad = propose(session, trip, places, open_days)
 
-    # The model takes seconds and the user may have planned meanwhile.
     lock_itinerary(session, trip_id)
     now_filled = filled_days(session, trip_id)
-    if now_filled and not manual:
+    if now_filled and not by_hand(session, task):
         return {"skipped": ALREADY_PLANNING}
     planned = set(session.scalars(
         select(ItineraryItem.place_id).where(ItineraryItem.trip_id == trip_id,
@@ -231,7 +237,7 @@ def draft(session: Session, trip_id: str, manual: bool) -> dict:
     if not days:
         return {"skipped": NOTHING_FIT, "rounds": rounds}
 
-    replace_days(session, trip_id, ItineraryIn(days=days))
+    replace_days(session, trip_id, ItineraryIn(days=days), commit=False)
     log.info("drafted %d day(s) for %s in %d round(s)", len(days), trip_id[:8], rounds)
     out = {"days": len(days), "blocks": sum(len(d.items) for d in days), "rounds": rounds,
            "unresolved": sum(map(len, bad.values()))}

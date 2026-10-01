@@ -35,7 +35,9 @@ const MAX_POLL_MS = 3 * 60 * 1000;
 export function DraftPlan({ tripId, days }: { tripId: string; days: ItineraryDay[] }) {
   const [open, setOpen] = useState(false);
   const [drafting, setDrafting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [failure, setFailure] = useState<{ text: string; days: ItineraryDay[] } | null>(null);
+  const error = failure?.days === days ? failure.text : null;
+  const setError = (text: string | null) => setFailure(text ? { text, days } : null);
 
   const taken = days.filter((d) => piecesOn(days, d.day_index).length > 0);
   const empty = days.filter((d) => !taken.includes(d));
@@ -114,6 +116,7 @@ export function DraftPlan({ tripId, days }: { tripId: string; days: ItineraryDay
       {error && (
         <p
           role="alert"
+          onClick={() => setError(null)}
           className="absolute top-full right-0 z-10 mt-1.5 w-64 rounded-lg border border-border bg-surface px-3 py-2 text-[12.5px] leading-[1.45] text-alert shadow-sm"
         >
           {error}

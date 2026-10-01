@@ -450,6 +450,9 @@ def draft_trip(trip_id: str, db: Db) -> dict[str, str | None]:
     pending = draft_task(db, trip_id)
     if pending is not None and pending.status in (TaskStatus.PENDING, TaskStatus.RUNNING):
         log.info("draft trip=%s not queued, one is already %s", trip_id[:8], pending.status)
+        if not pending.payload.get("manual"):
+            pending.payload = pending.payload | {"manual": True}
+            db.commit()
         return {"status": pending.status}
 
     ensure_trip_plan(db, trip, force=True)

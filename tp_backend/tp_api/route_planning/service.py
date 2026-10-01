@@ -67,8 +67,8 @@ def get_trip(db: Session, trip_id: str) -> Trip:
 
 
 def lock_itinerary(db: Session, trip_id: str) -> None:
-    """Serialises every write to one trip's days, so a draft and a drag cannot interleave."""
-    db.execute(select(Trip.trip_id).where(Trip.trip_id == trip_id).with_for_update())
+    """Serialises every write to one trip's days."""
+    db.execute(select(Trip.trip_id).where(Trip.trip_id == trip_id).with_for_update(key_share=True))
 
 
 def filled_days(db: Session, trip_id: str) -> set[int]:
@@ -286,7 +286,7 @@ def read_days(db: Session, trip: Trip) -> ItineraryOut:
     return ItineraryOut(days=days)
 
 
-def replace_days(db: Session, trip_id: str, body: ItineraryIn) -> ItineraryOut:
+def replace_days(db: Session, trip_id: str, body: ItineraryIn, commit: bool = True) -> ItineraryOut:
     """Replace the listed days wholesale.
 
     A drag restates a whole day, so a whole day is what gets sent. Times come from the client and are
@@ -345,7 +345,8 @@ def replace_days(db: Session, trip_id: str, body: ItineraryIn) -> ItineraryOut:
                                  description=item.description, day_index=d.day_index,
                                  start_min=item.start_min, duration_min=item.duration_min,
                                  reference_url=item.reference_url))
-    db.commit()
+    if commit:
+        db.commit()
 
     return read_days(db, trip)
 

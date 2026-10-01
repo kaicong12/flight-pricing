@@ -208,7 +208,7 @@ def test_a_draft_with_nothing_shortlisted_spends_no_model_call(client, db, looku
     assert draft.run(db, task(trip)) == {"skipped": draft.NO_PLACES}
 
 
-def by_hand(trip):
+def manual_task(trip):
     return ClaimedTask(task_id=1, run_id="r-plan", kind=TaskKind.ROUTE_PLAN, source=None,
                        payload={"trip_id": trip, "manual": True}, attempts=1, max_attempts=3)
 
@@ -239,7 +239,7 @@ def test_a_drafted_by_hand_day_holding_only_a_flight_is_left_alone(client, db, l
                        hours_of(lambda i: periods(range(7))))
     pin(client, trip, [FLIGHT], day=1)
 
-    assert draft.run(db, by_hand(trip))["days"] == 1
+    assert draft.run(db, manual_task(trip))["days"] == 1
     assert itinerary(db) == {(0, "hel", None), (1, None, "b-flight")}
 
 
@@ -249,7 +249,7 @@ def test_a_day_filled_while_the_model_thinks_is_left_alone(client, db, lookup, m
     monkeypatch.setattr(draft, "generate",
                         lambda prompt, text: pin(client, trip, [FLIGHT], day=1) and TWO_DAYS)
 
-    out = draft.run(db, by_hand(trip))
+    out = draft.run(db, manual_task(trip))
 
     assert out["filled_meanwhile"] == [1]
     assert itinerary(db) == {(0, "hel", None), (1, None, "b-flight")}
