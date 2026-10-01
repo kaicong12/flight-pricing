@@ -54,7 +54,7 @@ export type BlockKind = "place" | "custom";
 export type ItineraryItem = {
   kind: BlockKind;
   place_id: string | null;
-  /** Every block's identity, minted here. One place may be several blocks, on several days. */
+  /** Every block's identity, minted here. */
   block_id: string;
   name: string;
   /** Free text on a custom block: the flight number, the hotel address, the pickup point. */

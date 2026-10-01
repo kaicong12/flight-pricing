@@ -1,7 +1,6 @@
 "use client";
 
-// Where the money went, one donut per currency since they never combine. Trip is everything anyone
-// paid; Mine is only your shares.
+// Where the money went, one donut per currency. Trip is everything anyone paid; Mine is your shares.
 
 import { type PieArcDatum, arc, pie } from "d3-shape";
 import { useState } from "react";

@@ -1,8 +1,6 @@
 "use client";
 
-// Asks the worker to draft the empty days. The handler leaves a day with anything on it alone, so this
-// can never overwrite the user's ordering — but new blocks appearing unannounced is still a surprise,
-// so a calendar that already has anything on it gets warned first.
+// Asks the worker to draft the empty days. A calendar that already has anything on it is warned first.
 
 import { Sparkles } from "lucide-react";
 import { useState } from "react";

@@ -105,7 +105,6 @@ export function PlanBoard({
     return out;
   }, [expenses]);
 
-  // One figure typed on a block: split evenly between everyone, paid by whoever typed it.
   const saveCost = useCallback(
     async (item: ItineraryItem, { amountCents, currency, category }: CostEntry) => {
       const tab = expenses;

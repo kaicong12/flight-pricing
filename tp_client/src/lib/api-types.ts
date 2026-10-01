@@ -76,7 +76,7 @@ export type TripStatus = Trip & {
   progress: TaskProgress[];
   failures: TaskFailure[];
   draft: string | null;
-  draft_result: { skipped?: string; filled_meanwhile?: number[] } | null;
+  draft_result: { skipped?: string } | null;
 };
 
 export const ALL_DAYS_FILLED = "Every day already has something in it. Clear a day to draft it.";

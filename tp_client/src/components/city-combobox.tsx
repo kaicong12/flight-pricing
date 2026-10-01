@@ -1,7 +1,6 @@
 "use client";
 
-// City typeahead. The value handed upward is the Google place_id, because a typed string is not an
-// identity.
+// City typeahead. The value handed upward is the Google place_id.
 
 import { useEffect, useRef, useState } from "react";
 import { ChevronsUpDownIcon } from "lucide-react";
