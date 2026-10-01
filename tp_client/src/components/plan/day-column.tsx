@@ -75,11 +75,11 @@ export function DayColumn({
   const [adding, setAdding] = useState<number | null>(null);
   const [editing, setEditing] = useState<ItineraryItem | null>(null);
 
-  const byPlace = new Map((route?.blocks ?? []).map((b) => [keyOf(b), b]));
-  const perPlace = new Map<string, PlanWarning[]>();
+  const byBlock = new Map((route?.blocks ?? []).map((b) => [keyOf(b), b]));
+  const perBlock = new Map<string, PlanWarning[]>();
   const dayWide: PlanWarning[] = [];
   for (const w of stale ? [] : (route?.warnings ?? [])) {
-    if (w.block_id) perPlace.set(w.block_id, [...(perPlace.get(w.block_id) ?? []), w]);
+    if (w.block_id) perBlock.set(w.block_id, [...(perBlock.get(w.block_id) ?? []), w]);
     else dayWide.push(w);
   }
 
@@ -176,8 +176,8 @@ export function DayColumn({
               key={keyOf(p.item)}
               placed={p}
               piece={pieceOf.get(keyOf(p.item))!}
-              block={byPlace.get(keyOf(p.item))}
-              warnings={perPlace.get(keyOf(p.item)) ?? []}
+              block={byBlock.get(keyOf(p.item))}
+              warnings={perBlock.get(keyOf(p.item)) ?? []}
               slotPx={SLOT_PX}
               readOnly={readOnly}
               cost={costs.get(keyOf(p.item)) ?? null}
@@ -194,14 +194,14 @@ export function DayColumn({
         </div>
       </div>
 
-      {perPlace.size > 0 && (
+      {perBlock.size > 0 && (
         <ul className="mt-3.5">
-          {[...perPlace.entries()].flatMap(([placeId, ws]) =>
+          {[...perBlock.entries()].flatMap(([blockId, ws]) =>
             ws.map((w) => (
-              <li key={`${placeId}:${w.code}`} className="flex gap-2.5 py-0.5">
+              <li key={`${blockId}:${w.code}`} className="flex gap-2.5 py-0.5">
                 <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-alert" />
                 <p className="text-[12.5px] leading-[1.45] text-alert">
-                  {warningText(w, byPlace.get(placeId)?.name)}
+                  {warningText(w, byBlock.get(blockId)?.name)}
                 </p>
               </li>
             )),

@@ -179,7 +179,6 @@ def shortlist(db: Session, trip_id: str, limit: int, offset: int,
         .subquery()
     )
     rank = func.coalesce(mentions.c.mention_count, 0)
-    # A place may sit on several days; the shortlist reports the earliest.
     placed = (
         select(ItineraryItem.place_id.label("place_id"),
                func.min(ItineraryItem.day_index).label("day_index"))

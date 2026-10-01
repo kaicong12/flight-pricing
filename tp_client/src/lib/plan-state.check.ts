@@ -86,7 +86,6 @@ eq(withBlock.unsaved, [0], "placing a block marks its day unsaved");
 eq(withBlock.revision, 1, "placing a block bumps the revision");
 const p1Key = keyOf(withBlock.days[0].items[0]);
 
-// A hotel belongs to several nights: dropping a place already on a day adds another copy.
 const secondNight = planReducer(withBlock, {
   type: "add",
   place: place("p1", "Mentioned twice", 2),

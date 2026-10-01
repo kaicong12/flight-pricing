@@ -161,7 +161,7 @@ def _rows(db: Session, ws, identities: dict, trip: Trip, upload: Upload) -> None
 
         place_id = identity.get("place_id") if identity else None
         block_id = identity.get("block_id") if identity else None
-        if not isinstance(block_id, str) or block_id in used_blocks:
+        if not isinstance(block_id, str) or not 0 < len(block_id) <= 36 or block_id in used_blocks:
             block_id = str(uuid4())
         try:
             if place_id and title == identity.get("name") and place_id in stored:
