@@ -11,7 +11,6 @@ from test_multi_city import PORTO, midsummer, two_cities
 from libs.db import City, ItineraryItem, Place, Trip, TripPlace
 from libs.db.enums import Confidence, TaskKind
 from libs.routing import HoursHit
-from tp_api.route_planning.export import OK_BG, WARN_BG
 from tp_api.route_planning.service import shortlist
 from tp_api.route_planning.utils import google_weekday
 from tp_ingestions.plan import draft
@@ -78,72 +77,6 @@ def test_a_day_mixing_two_cities_draws_no_complaint(client, db, lookup, hours):
     assert body["warnings"] == []
 
 
-def test_the_day_s_daylight_is_the_first_block_s_city_not_the_anchor_s(client, db, lookup, hours):
-    trip = two_city_trip(client, lookup)
-    hours["fn"] = open_until(23)
-    pin(client, trip, one_in_each_city(db, trip, hel_start=13 * 60, por_start=12 * 60))
-
-    body = client.post(f"/trips/{trip}/days/0/route", json={}).json()
-
-    assert body["daylight"] == {"sunrise": "06:01", "sunset": "21:10"}, "Porto's"
-
-
-def test_a_place_with_no_coordinates_falls_back_to_its_own_city_s_centre(client, db, lookup, hours):
-    trip = two_city_trip(client, lookup)
-    hours["fn"] = open_until(23)
-    pin(client, trip, one_in_each_city(db, trip, hel_start=13 * 60, por_start=21 * 60 + 30,
-                                       lat=None, lon=None))
-
-    body = client.post(f"/trips/{trip}/days/0/route", json={}).json()
-
-    dark = [w for w in body["warnings"] if w["code"] == "after_sunset"]
-    assert [(w["place_id"], w["detail"]["sunset"]) for w in dark] == [("por", "21:10")]
-
-
-def test_a_city_with_no_timezone_falls_back_to_the_offset_places_reported(client, db, lookup,
-                                                                         hours):
-    trip = two_city_trip(client, lookup)
-    hours["fn"] = lambda ids: {i: HoursHit(place_id=i, periods=[], weekday_descriptions=[],
-                                           utc_offset_minutes=180) for i in ids}
-    make_place(db, city_id=PORTO, place_id="por", name="Jardim do Morro", lat=41.14, lon=-8.61)
-    db.get(City, PORTO).timezone = None
-    db.commit()
-    pin(client, trip, [block("por", 12 * 60)])
-
-    body = client.post(f"/trips/{trip}/days/0/route", json={}).json()
-
-    assert body["daylight"] == {"sunrise": "08:01", "sunset": "23:10"}, "Porto at +180, not at UTC"
-
-
-def test_a_place_and_city_with_no_coordinates_report_no_daylight(client, db, lookup, hours):
-    trip = two_city_trip(client, lookup)
-    hours["fn"] = open_until(23)
-    make_place(db, city_id=PORTO, place_id="por", name="Jardim do Morro", lat=None, lon=None)
-    make_mention(db, "por", category="see")
-    porto = db.get(City, PORTO)
-    porto.lat = porto.lon = None
-    db.commit()
-    pin(client, trip, [block("por", 22 * 60 + 30, 30)])
-
-    body = client.post(f"/trips/{trip}/days/0/route", json={}).json()
-
-    assert body["daylight"] is None
-    assert [w["code"] for w in body["warnings"]] == []
-
-
-def test_polar_day_is_no_daylight_rather_than_a_sunset(client, db, lookup, hours):
-    trip = two_city_trip(client, lookup)
-    hours["fn"] = open_until(23, 30)
-    make_place(db, city_id=HELSINKI, place_id="pol", name="Longyearbyen", lat=78.9, lon=11.9)
-    make_mention(db, "pol", category="see")
-    pin(client, trip, [block("pol", 23 * 60, 30)])
-
-    body = client.post(f"/trips/{trip}/days/0/route", json={}).json()
-
-    assert body["daylight"] is None
-    assert "after_sunset" not in [w["code"] for w in body["warnings"]]
-
-
 def singapore_place(db, trip):
     db.add(City(city_id=SINGAPORE, name="Singapore", country="SG", timezone="Asia/Singapore",
                 lat=1.35, lon=103.82))
@@ -152,20 +85,6 @@ def singapore_place(db, trip):
     db.flush()
     db.add(TripPlace(trip_id=trip, place_id="sgp"))
     db.commit()
-
-
-def test_a_place_filed_under_an_uncovered_city_is_judged_where_it_actually_is(client, db, lookup,
-                                                                             hours):
-    trip = two_city_trip(client, lookup)
-    hours["fn"] = open_until(23)
-    singapore_place(db, trip)
-    pin(client, trip, [block("sgp", 21 * 60 + 30)])
-
-    body = client.post(f"/trips/{trip}/days/0/route", json={}).json()
-
-    assert body["daylight"] == {"sunrise": "07:00", "sunset": "19:11"}
-    assert [(w["code"], w["detail"]["sunset"]) for w in body["warnings"]] == \
-        [("after_sunset", "19:11")]
 
 
 def test_the_draft_prompt_names_a_city_the_trip_does_not_cover(client, db, lookup):
@@ -195,7 +114,7 @@ def workbook(client, trip):
     return load_workbook(BytesIO(r.content))["Itinerary"]
 
 
-def a_dark_porto_and_a_light_helsinki(client, db, lookup, hours, **kw):
+def a_two_city_day(client, db, lookup, hours, **kw):
     trip = two_city_trip(client, lookup, days=1)
     hours["fn"] = open_until(23, 30)
     items = one_in_each_city(db, trip, hel_start=22 * 60, por_start=21 * 60 + 30)
@@ -203,30 +122,18 @@ def a_dark_porto_and_a_light_helsinki(client, db, lookup, hours, **kw):
     return trip
 
 
-def test_the_export_bands_each_day_with_its_first_block_s_own_daylight(client, db, lookup, hours):
-    trip = a_dark_porto_and_a_light_helsinki(client, db, lookup, hours)
+def test_the_export_bands_each_day(client, db, lookup, hours):
+    trip = a_two_city_day(client, db, lookup, hours)
 
     ws = workbook(client, trip)
 
     assert ws.cell(row=4, column=1).value == \
-        f"Day 1 · {midsummer():%a %d %b} · 2 blocks · daylight 06:01–21:10"
-    assert ws.cell(row=7, column=1).value.endswith("no blocks"), "an empty day bands with no light"
-
-
-def test_the_export_warns_only_the_block_that_is_actually_dark(client, db, lookup, hours):
-    trip = a_dark_porto_and_a_light_helsinki(client, db, lookup, hours)
-
-    ws = workbook(client, trip)
-
-    assert [ws.cell(row=r, column=6).value for r in (5, 6)] == ["Jardim do Morro", "Suomenlinna"]
-    assert ws.cell(row=5, column=8).value == "dark by 21:30 — sunset 21:10"
-    assert ws.cell(row=5, column=8).fill.fgColor.rgb.endswith(WARN_BG)
-    assert ws.cell(row=6, column=8).value == "ok"
-    assert ws.cell(row=6, column=8).fill.fgColor.rgb.endswith(OK_BG)
+        f"Day 1 · {midsummer():%a %d %b} · 2 blocks"
+    assert ws.cell(row=7, column=1).value.endswith("no blocks")
 
 
 def test_the_ref_column_marks_only_the_block_that_carries_a_link(client, db, lookup, hours):
-    trip = a_dark_porto_and_a_light_helsinki(client, db, lookup, hours,
+    trip = a_two_city_day(client, db, lookup, hours,
                                              reference_url="https://www.airbnb.com/rooms/12345")
 
     ws = workbook(client, trip)

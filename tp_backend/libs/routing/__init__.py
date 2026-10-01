@@ -1,9 +1,7 @@
-"""Validation for one user-ordered day: opening hours and daylight. Travel is not modelled."""
+"""Validation for one user-ordered day: opening hours. Travel is not modelled."""
 
-from libs.routing.daylight import sun_times
 from libs.routing.hours import CLOSED, HoursHit, fetch_hours, window_for
 from libs.routing.plan import (
-    OUTDOOR,
     SLOT_MIN,
     Block,
     DayPlan,
@@ -16,7 +14,6 @@ from libs.routing.plan import (
 
 __all__ = [
     "CLOSED",
-    "OUTDOOR",
     "SLOT_MIN",
     "Block",
     "DayPlan",
@@ -27,6 +24,5 @@ __all__ = [
     "hhmm",
     "in_time_order",
     "plan_day",
-    "sun_times",
     "window_for",
 ]

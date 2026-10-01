@@ -559,14 +559,6 @@ class TestRouteDay:
 
         assert calls == [["p1"]]
 
-    def test_daylight_is_computed_locally(self, client, db):
-        trip = make_trip(client)
-        seed(db, ("p1", "A", 1))
-        put_day(client, trip, ["p1"])
-
-        body = client.post(f"/trips/{trip}/days/0/route", json={}).json()
-        assert body["daylight"]["sunrise"] < body["daylight"]["sunset"]
-
     def test_the_days_start_time_is_its_first_block(self, client, db):
         trip = make_trip(client)  # plan_body arrives at 14:30
         seed(db, ("p1", "A", 1))

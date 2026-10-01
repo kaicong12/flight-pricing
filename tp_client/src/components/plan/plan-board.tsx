@@ -426,10 +426,8 @@ export function PlanBoard({
 
         <DayMap
           day={{ ...day, items: piecesOn(state.days, day.day_index).map((p) => p.item) }}
-          route={route}
           centerLat={center?.lat ?? null}
           centerLon={center?.lon ?? null}
-          stale={isStale}
         />
       </div>
 

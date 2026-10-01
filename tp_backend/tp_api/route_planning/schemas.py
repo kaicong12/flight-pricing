@@ -158,18 +158,12 @@ class WarningOut(BaseModel):
     detail: dict = {}
 
 
-class DaylightOut(BaseModel):
-    sunrise: str
-    sunset: str
-
-
 class DayRouteOut(BaseModel):
     day_index: int
     date: date
     # The first block's time, echoed back. None on an empty day.
     start_time: time | None = None
     blocks: list[BlockOut] = []
-    daylight: DaylightOut | None = None
     warnings: list[WarningOut] = []
     provisional: list[str] = []
 

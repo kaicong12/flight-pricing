@@ -32,12 +32,11 @@ from libs.db import (
 )
 from libs.db.enums import Confidence, Sentiment, Source
 from libs.places import PlacesError, distance_km
-from libs.routing import Block, Stop, hhmm, plan_day, sun_times
+from libs.routing import Block, Stop, hhmm, plan_day
 from libs.settings import settings
 from tp_api.deps import HoursLookup, VenueLookup, VenueSearch
 from tp_api.route_planning.schemas import (
     BlockOut,
-    DaylightOut,
     DayOut,
     DayRouteOut,
     ItemOut,
@@ -57,7 +56,6 @@ from tp_api.route_planning.utils import (
     pieces,
     source_title,
     source_url,
-    tz_minutes,
 )
 
 
@@ -507,38 +505,11 @@ def load_hours(db: Session, place_ids: list[str], fetch: HoursLookup) -> dict[st
     }
 
 
-def sun_by_place(db: Session, places: Sequence[Place], on: date,
-                 hours: dict[str, PlaceHours]) -> dict[str, tuple[float | None, float | None]]:
-    if not places:
-        return {}
-    cities = {c.city_id: c for c in db.scalars(
-        select(City).where(City.city_id.in_({p.city_id for p in places})))}
-    fallback = next((h.utc_offset_minutes for h in hours.values()
-                     if h.utc_offset_minutes is not None), None)
-    out = {}
-    for p in places:
-        city = cities.get(p.city_id)
-        lat = p.lat if p.lat is not None else getattr(city, "lat", None)
-        lon = p.lon if p.lon is not None else getattr(city, "lon", None)
-        if lat is None or lon is None:
-            continue
-        got = hours.get(p.place_id)
-        own = got.utc_offset_minutes if got is not None else None
-        tz_min = tz_minutes(city, on, own if own is not None else fallback)
-        out[p.place_id] = sun_times(on, lat, lon, tz_min)
-    return out
-
-
-def first_daylight(sun: dict[str, tuple[float | None, float | None]],
-                   place_ids: Sequence[str]) -> tuple[float | None, float | None]:
-    return next((sun[pid] for pid in place_ids if pid in sun), (None, None))
-
-
 def route_day(db: Session, trip_id: str, day_index: int,
               fetch_hours: HoursLookup) -> DayRouteOut:
     """Check one day in the order it is stored and say what does not work.
 
-    Hours and daylight only — nothing here measures the distance between two blocks or asks whether
+    Hours only — nothing here measures the distance between two blocks or asks whether
     a route between them exists, which is what lets a day name places in two different cities.
     """
     trip = get_trip(db, trip_id)
@@ -562,15 +533,11 @@ def route_day(db: Session, trip_id: str, day_index: int,
     facts = mention_facts(db, place_ids)
     hours = load_hours(db, place_ids, fetch_hours)
 
-    sun = sun_by_place(db, [r.Place for r in place_rows], day_date, hours)
-    sunrise, sunset = first_daylight(sun, place_ids)
-
     stops = [
         Stop(place_id=r.Place.place_id, name=r.Place.name,
              category=category_of(r.Place, facts),
              start_min=r.ItineraryItem.start_min, duration_min=r.ItineraryItem.duration_min,
-             periods=hours[r.Place.place_id].periods if r.Place.place_id in hours else None,
-             sunset_min=sun.get(r.Place.place_id, (None, None))[1])
+             periods=hours[r.Place.place_id].periods if r.Place.place_id in hours else None)
         for r in place_rows
     ]
     plan = plan_day(stops, weekday=google_weekday(day_date))
@@ -579,8 +546,6 @@ def route_day(db: Session, trip_id: str, day_index: int,
     return DayRouteOut(
         day_index=day_index, date=day_date, start_time=start,
         blocks=[block_out(r.ItineraryItem, routed.get(r.ItineraryItem.place_id)) for r in rows],
-        daylight=(DaylightOut(sunrise=hhmm(sunrise), sunset=hhmm(sunset))
-                  if sunrise is not None and sunset is not None else None),
         warnings=[WarningOut(code=w.code, place_id=w.place_id, detail=w.detail)
                   for w in plan.warnings],
         provisional=provisional,

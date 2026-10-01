@@ -16,7 +16,7 @@ from libs.db.enums import BlockKind, TaskKind
 from libs.gemini import generate
 from libs.places import distance_km
 from libs.prompts import ITINERARY_DRAFT
-from libs.routing import SLOT_MIN, Stop, fetch_hours, hhmm, plan_day, sun_times
+from libs.routing import SLOT_MIN, Stop, fetch_hours, hhmm, plan_day
 from libs.routing.plan import CLOSED_TODAY, CLOSES_BEFORE_DONE, OPENS_LATER
 from tp_api.route_planning.schemas import DayIn, ItemIn, ItineraryIn
 from tp_api.route_planning.service import load_hours, replace_days, shortlist
@@ -25,7 +25,6 @@ from tp_api.route_planning.utils import (
     day_count,
     google_weekday,
     pieces,
-    tz_minutes,
 )
 from tp_ingestions import limits
 from tp_ingestions.queue import ClaimedTask
@@ -116,12 +115,6 @@ def render(session: Session, trip: Trip, places, open_days, feedback: str = "",
         first, last = window(trip, i)
         line = (f"day {i}, {d:%A %d %B}: usable {clock(first)}-{clock(last)} "
                 f"(start_min {first} to {last})")
-        for c in cities:
-            if c.lat is None or c.lon is None:
-                continue
-            rise, set_ = sun_times(d, c.lat, c.lon, tz_minutes(c, d, None))
-            if rise is not None:
-                line += f", {c.name} sunrise {hhmm(rise)} sunset {hhmm(set_)}"
         for at, until, name in (busy or {}).get(i, ()):
             line += f", BUSY {clock(at)}-{clock(until)} ({name}) — leave this time free"
         days.append(line)

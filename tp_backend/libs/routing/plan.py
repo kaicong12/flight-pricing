@@ -1,6 +1,6 @@
 """Check one day of pinned activity blocks and say what is wrong with it.
 
-Pure: every stop arrives carrying its own hours and its own sunset, so this never touches the network
+Pure: every stop arrives carrying its own hours, so this never touches the network
 and the whole of the validation is testable.
 
 Every block carries its own start time. Nothing here derives a time and nothing here moves a block —
@@ -17,15 +17,10 @@ from libs.routing.hours import CLOSED, Window, window_for
 # The drag and draft snap; a stored block is to the minute.
 SLOT_MIN = 30
 
-# Categories worth doing in daylight. A closed museum is a hard failure; a dark viewpoint is a
-# wasted trip, which is the same problem one step softer.
-OUTDOOR = {"see", "do"}
-
 # Warning codes. The client owns the English.
 CLOSED_TODAY = "closed"
 OPENS_LATER = "opens_later"
 CLOSES_BEFORE_DONE = "closes_before_done"
-AFTER_SUNSET = "after_sunset"
 NO_HOURS = "no_hours"
 
 
@@ -39,7 +34,6 @@ class Stop:
     start_min: int
     duration_min: int
     periods: list[dict] | None = None  # None = never fetched; [] = Places publishes none
-    sunset_min: float | None = None
 
 
 @dataclass(frozen=True)
@@ -102,12 +96,6 @@ def plan_day(stops: list[Stop], *, weekday: int) -> DayPlan:
                 warnings.append(PlanWarning(CLOSES_BEFORE_DONE, stop.place_id, {
                     "name": stop.name, "start": hhmm(stop.start_min),
                     "need_min": stop.duration_min, "closes": hhmm(open_to)}))
-
-        if (stop.category in OUTDOOR) and stop.sunset_min is not None \
-                and stop.start_min > stop.sunset_min:
-            warnings.append(PlanWarning(AFTER_SUNSET, stop.place_id, {
-                "name": stop.name, "start": hhmm(stop.start_min),
-                "sunset": hhmm(stop.sunset_min)}))
 
         blocks.append(Block(place_id=stop.place_id, name=stop.name, start_min=stop.start_min,
                             end_min=end_min, duration_min=stop.duration_min,

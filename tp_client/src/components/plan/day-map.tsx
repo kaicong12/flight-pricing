@@ -15,7 +15,7 @@ import {
 } from "maplibre-gl";
 import { useEffect, useRef } from "react";
 
-import type { DayRoute, ItineraryDay } from "@/lib/plan-types";
+import type { ItineraryDay } from "@/lib/plan-types";
 
 // A style URL, not a key — swappable without a deploy if the tile host goes away. OpenStreetMap
 // attribution is carried by the style and rendered by MapLibre's own control; do not remove it.
@@ -57,16 +57,12 @@ function marker(index: number, name: string): HTMLElement {
 // does not tear the map down and rebuild it.
 export function DayMap({
   day,
-  route,
   centerLat,
   centerLon,
-  stale,
 }: {
   day: ItineraryDay;
-  route: DayRoute | undefined;
   centerLat: number | null;
   centerLon: number | null;
-  stale: boolean;
 }) {
   const container = useRef<HTMLDivElement>(null);
   const map = useRef<MapLibreMap | null>(null);
@@ -157,12 +153,6 @@ export function DayMap({
           Day {day.day_index + 1}
         </span>
       </div>
-
-      {route?.daylight && !stale && (
-        <span className="pointer-events-none absolute right-3.5 bottom-9 flex h-7 items-center rounded-full bg-white/92 px-3 text-[12.5px] text-ink-soft shadow-card">
-          Daylight {route.daylight.sunrise} – {route.daylight.sunset}
-        </span>
-      )}
     </div>
   );
 }

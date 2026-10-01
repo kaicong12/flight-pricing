@@ -107,7 +107,6 @@ export type DayRoute = {
   /** The first block's time. Null on an empty day. */
   start_time: string | null;
   blocks: PlanBlock[];
-  daylight: { sunrise: string; sunset: string } | null;
   warnings: PlanWarning[];
   provisional: string[];
 };
@@ -129,8 +128,6 @@ export function warningText(w: PlanWarning, name?: string): string {
         return `Pinned ${d.start}, but it opens ${d.opens} — ${d.early_min} min too early.`;
       case "closes_before_done":
         return `Starts ${d.start}, needs ${d.need_min} min, closes ${d.closes}. Move it earlier.`;
-      case "after_sunset":
-        return `Starts ${d.start}, after sunset at ${d.sunset}. Worth doing in daylight.`;
       case "no_hours":
         return "No opening hours published — unverified.";
       default:

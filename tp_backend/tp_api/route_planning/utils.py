@@ -1,13 +1,12 @@
-"""Pure helpers for the planning endpoints: trip arithmetic, timezones, source links.
+"""Pure helpers for the planning endpoints: trip arithmetic, source links.
 
 No database and no HTTP — everything here is a function of its arguments.
 """
 
 import html
-from datetime import date, datetime, time
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+from datetime import date
 
-from libs.db import City, Trip
+from libs.db import Trip
 from libs.db.enums import Source
 
 SOURCE_TITLE_MAX = 80
@@ -45,17 +44,6 @@ def pieces(day_index: int, start_min: int, duration_min: int) -> list[tuple[int,
 def google_weekday(d: date) -> int:
     """Places numbers weekdays from Sunday; Python numbers them from Monday."""
     return (d.weekday() + 1) % 7
-
-
-def tz_minutes(city: City | None, on: date, fallback: int | None) -> int:
-    if city is not None and city.timezone:
-        try:
-            offset = datetime.combine(on, time(12, 0), ZoneInfo(city.timezone)).utcoffset()
-        except (ZoneInfoNotFoundError, ValueError):
-            offset = None
-        if offset is not None:
-            return int(offset.total_seconds() // 60)
-    return fallback or 0
 
 
 def source_url(source: str, ref: str, token: str | None) -> str | None:

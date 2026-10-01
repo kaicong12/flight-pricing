@@ -223,7 +223,6 @@ def test_the_draft_the_drain_queues_sees_both_cities(client, db, lookup, stubbed
     prompt = calls.draft_prompts[0]
     assert "Helsinki, FI and Porto, PT" in prompt
     assert "Old Market Hall" in prompt and "Mercado do Bolhão" in prompt
-    assert "Helsinki sunrise" in prompt and "Porto sunrise" in prompt
 
 
 def test_a_video_naming_both_cities_is_read_once_and_resolved_per_city(client, db, lookup, stubbed,

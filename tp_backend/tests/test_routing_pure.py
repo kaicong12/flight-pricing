@@ -1,11 +1,8 @@
-"""The validation core: daylight, opening windows, and the check of a pinned day. No DB, no network."""
+"""The validation core: opening windows, and the check of a pinned day. No DB, no network."""
 
-from datetime import date
-
-from libs.routing import hhmm, plan_day, sun_times, window_for
+from libs.routing import hhmm, plan_day, window_for
 from libs.routing.hours import CLOSED
 from libs.routing.plan import (
-    AFTER_SUNSET,
     CLOSED_TODAY,
     CLOSES_BEFORE_DONE,
     NO_HOURS,
@@ -27,26 +24,6 @@ FJELLHEISEN = [
 ]
 
 
-class TestDaylight:
-    def test_helsinki_in_december_has_about_six_hours(self):
-        # Published values are 08:58–15:16. This is an approximation, so it is asserted to the
-        # ten minutes that matter for "is this block after dark", not to the minute.
-        rise, set_ = sun_times(date(2026, 12, 4), 60.17, 24.94, 120)
-        assert abs(rise - (8 * 60 + 58)) < 10
-        assert abs(set_ - (15 * 60 + 16)) < 10
-        assert 6.0 < (set_ - rise) / 60 < 6.5
-
-    def test_tromso_midwinter_is_polar_night(self):
-        assert sun_times(date(2026, 12, 21), 69.65, 18.96, 60) == (None, None)
-
-    def test_tromso_midsummer_is_midnight_sun(self):
-        assert sun_times(date(2026, 6, 21), 69.65, 18.96, 120) == (None, None)
-
-    def test_a_temperate_summer_day_is_long(self):
-        rise, set_ = sun_times(date(2026, 6, 21), 41.39, 2.17, 120)
-        assert set_ - rise > 15 * 60
-
-
 class TestWindowFor:
     def test_sunday_is_day_zero(self):
         assert window_for(ARCTIC_CATHEDRAL, 0) == (13 * 60, 18 * 60)
@@ -66,9 +43,9 @@ class TestWindowFor:
         assert window_for([], 1) is None
 
 
-def stop(pid, name, *, start, category="see", minutes=60, periods=ARCTIC_CATHEDRAL, sunset=None):
+def stop(pid, name, *, start, category="see", minutes=60, periods=ARCTIC_CATHEDRAL):
     return Stop(place_id=pid, name=name, category=category, start_min=start,
-                duration_min=minutes, periods=periods, sunset_min=sunset)
+                duration_min=minutes, periods=periods)
 
 
 class TestPlanDay:
@@ -128,27 +105,6 @@ class TestPlanDay:
         for periods in (None, []):
             plan = plan_day([stop("a", "A", start=600, periods=periods)], weekday=1)
             assert [w.code for w in plan.warnings] == [NO_HOURS]
-
-    def test_an_outdoor_stop_after_sunset(self):
-        plan = plan_day([stop("a", "Fjellheisen", start=16 * 60, category="see",
-                              periods=FJELLHEISEN, sunset=15 * 60 + 29)], weekday=1)
-        assert [w.code for w in plan.warnings] == [AFTER_SUNSET]
-
-    def test_an_indoor_stop_after_sunset_is_fine(self):
-        plan = plan_day([stop("a", "Bar", start=16 * 60, category="drink",
-                              periods=FJELLHEISEN, sunset=15 * 60 + 29)], weekday=1)
-        assert plan.warnings == []
-
-    def test_polar_night_raises_no_sunset_warning(self):
-        plan = plan_day([stop("a", "Fjellheisen", start=16 * 60, periods=FJELLHEISEN)], weekday=1)
-        assert plan.warnings == []
-
-    def test_each_stop_is_judged_against_its_own_sunset(self):
-        plan = plan_day([stop("dark", "Fjellheisen", start=17 * 60, periods=FJELLHEISEN,
-                              sunset=15 * 60 + 29),
-                         stop("light", "Barceloneta", start=17 * 60, periods=FJELLHEISEN,
-                              sunset=21 * 60)], weekday=1)
-        assert [(w.code, w.place_id) for w in plan.warnings] == [(AFTER_SUNSET, "dark")]
 
 
 class TestHhmm:

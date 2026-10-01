@@ -10,7 +10,6 @@ from libs.db import (
     IngestRun,
     IngestTask,
     Place,
-    PlaceHours,
     PlaceQuery,
     Trip,
     TripCity,
@@ -24,7 +23,7 @@ from libs.ingest import latest_runs, plan_after_ingest
 from libs.places import CityDetails, VenueHit
 from tp_api.deps import venue_lookup
 from tp_api.main import app
-from tp_api.route_planning.service import first_daylight, shortlist, sun_by_place
+from tp_api.route_planning.service import shortlist
 from tp_api.schemas import today_utc
 from tp_ingestions.plan import draft
 from tp_ingestions.plan.draft import render
@@ -368,32 +367,6 @@ def midsummer() -> date:
     return date(now.year + (1 if now > date(now.year, 6, 21) else 0), 6, 21)
 
 
-def far_apart(client, db, lookup):
-    arrive = midsummer()
-    trip_id = client.post("/initiate-plan", json=two_cities(
-        lookup, arrive_date=arrive.isoformat(), arrive_time=None,
-        depart_date=(arrive + timedelta(days=1)).isoformat())).json()["trip_id"]
-    for place_id, city_id, name, lat, lon in (
-        ("hel", HELSINKI, "Suomenlinna", 60.14, 24.98),
-        ("por", PORTO, "Jardim do Morro", 41.14, -8.61),
-    ):
-        make_place(db, city_id=city_id, place_id=place_id, name=name, lat=lat, lon=lon)
-        make_mention(db, place_id, category="see")
-    client.put(f"/trips/{trip_id}/itinerary", json={"days": [{"day_index": 0, "items": [
-        {"place_id": "hel", "start_min": 21 * 60 + 30, "duration_min": 60},
-        {"place_id": "por", "start_min": 21 * 60 + 30, "duration_min": 60}]}]})
-    return trip_id
-
-
-def test_each_block_is_judged_against_its_own_city_s_sunset(client, db, lookup, hours):
-    trip_id = far_apart(client, db, lookup)
-
-    body = client.post(f"/trips/{trip_id}/days/0/route", json={}).json()
-
-    assert [w["place_id"] for w in body["warnings"] if w["code"] == "after_sunset"] == ["por"]
-    assert body["daylight"]["sunset"] > "22:00", "Helsinki's, not Porto's"
-
-
 def test_the_shortlist_says_which_city_each_place_is_in(client, db, lookup):
     trip_id = client.post("/initiate-plan", json=two_cities(lookup)).json()["trip_id"]
     make_place(db, city_id=HELSINKI, place_id="hel")
@@ -416,8 +389,6 @@ def test_the_draft_prompt_places_each_city_and_measures_from_its_own_centre(clie
     assert "Helsinki, FI and Porto, PT" in prompt
     por = next(ln for ln in prompt.splitlines() if "Bolhão" in ln)
     assert "Porto" in por and "0.0km" in por, por
-    day = next(ln for ln in prompt.splitlines() if ln.startswith("day 0"))
-    assert "Helsinki sunrise" in day and "Porto sunrise" in day, day
 
 
 def test_a_hand_added_place_is_filed_under_the_nearest_city_it_could_be_in(client, db, lookup):
@@ -432,10 +403,6 @@ def test_a_hand_added_place_is_filed_under_the_nearest_city_it_could_be_in(clien
     client.post(f"/trips/{trip_id}/places", json={"place_id": "por", "category": "see"})
 
     assert db.get(Place, "por").city_id == PORTO
-    client.put(f"/trips/{trip_id}/itinerary", json={"days": [{"day_index": 0, "items": [
-        {"place_id": "por", "start_min": 22 * 60, "duration_min": 30}]}]})
-    body = client.post(f"/trips/{trip_id}/days/0/route", json={}).json()
-    assert [w["place_id"] for w in body["warnings"] if w["code"] == "after_sunset"] == ["por"]
 
 
 def test_a_place_in_none_of_the_trip_s_cities_is_labelled_with_none_of_them(client, db, lookup):
@@ -458,11 +425,6 @@ def test_a_place_in_none_of_the_trip_s_cities_is_labelled_with_none_of_them(clie
     by_id = {p.place_id: p for p in shortlist(db, trip_id, 40, 0, None).places}
     assert by_id["kl"].city_name is None
     assert by_id["loyly"].city_name == "Helsinki"
-
-
-def test_the_day_s_window_is_the_first_block_that_has_one():
-    assert first_daylight({"b": (300.0, 1200.0)}, ["a", "b"]) == (300.0, 1200.0)
-    assert first_daylight({}, ["a"]) == (None, None)
 
 
 def test_a_place_with_no_coordinates_is_not_drafted_as_central(client, db, lookup):
@@ -505,19 +467,6 @@ def test_a_trip_created_later_claims_a_place_its_city_resolved_under_another_cit
 
     places = client.get(f"/trips/{trip_id}/shortlist").json()["places"]
     assert [p["place_id"] for p in places] == ["por"]
-
-
-def test_a_city_with_no_zone_gives_all_its_places_one_window(db):
-    make_city(db)
-    db.execute(update(City).where(City.city_id == HELSINKI).values(timezone=None))
-    for place_id in ("a", "b"):
-        make_place(db, place_id=place_id, lat=60.17, lon=24.94)
-    places = list(db.scalars(select(Place).where(Place.place_id.in_(["a", "b"]))))
-
-    sun = sun_by_place(db, places, midsummer(),
-                       {"a": PlaceHours(place_id="a", utc_offset_minutes=180)})
-
-    assert sun["a"] == sun["b"] != (None, None)
 
 
 def test_a_place_reached_through_another_city_is_named_by_the_city_it_is_in(client, db, lookup):

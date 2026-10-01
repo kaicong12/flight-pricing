@@ -90,7 +90,7 @@ const checked = (state: typeof base) =>
   planReducer(state, {
     type: "checked",
     route: { day_index: 0, date: itinerary.days[0].date, start_time: null, blocks: [],
-             daylight: null, warnings: [], provisional: [] },
+             warnings: [], provisional: [] },
   });
 const withBlockChecked = checked(withBlock);
 eq(withBlockChecked.stale, [], "a checked day is no longer stale");

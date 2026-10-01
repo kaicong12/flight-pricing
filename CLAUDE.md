@@ -114,10 +114,8 @@ them into days; `PUT /trips/{id}/itinerary` replaces whole days, because a drag 
 a sequence and positions are dense and derived. A drag snaps to the half hour; the block dialog types
 any minute, and may end a block on a later day. That block stays **one row on the day it starts** —
 one `block_id`, so one cost — and the grid draws its tail on each day it reaches (`piecesOn`). `POST /trips/{id}/days/{n}/route` then checks that
-exact order against Place Details hours and daylight and returns structured warning codes — the
-client owns the English. **Daylight is per place, not per trip**: the sun is computed from each
-block's own lat/lon in its own city's zone, so one day spanning two cities has two sunsets, and
-`first_daylight` reports the window of the first block that has one. **Travel between blocks is not
+exact order against Place Details hours and returns structured warning codes — the
+client owns the English. **Travel between blocks is not
 modelled at all** — not the time, not the
 distance, not whether a route exists. A day may name two places on opposite sides of the world and
 nothing objects; the map draws numbered pins and no line. `itinerary_items.reference_url` is the
@@ -132,9 +130,8 @@ address a row. `keyOf()` is the client's one identity helper for the same reason
 NULLs as distinct, so `uq_itinerary_trip_place` and `uq_itinerary_trip_block` coexist with no partial
 index. A custom block carries a `description` — the booking reference, the terminal, the address —
 which is the whole point: it is where a flight or an accommodation is found again. It builds no `Stop`,
-so `plan_day` never judges it against hours or daylight and `route_day` fetches hours only for the
-places; `first_daylight` therefore reports the first block that *has* a sun, which is why an
-all-flight day shows no daylight at all. `route.plan` reads them as `own_blocks` and drops any pick
+so `plan_day` never judges it against hours and `route_day` fetches hours only for the
+places. `route.plan` reads them as `own_blocks` and drops any pick
 that overlaps one — a day holding just a flight is still an empty day to draft around. The plan grid
 reveals a **"+" on hover** over any free slot, CSS-only via `group/slot`, and the dialog is mounted
 only while open so its `key` resets it rather than an effect.
@@ -179,7 +176,7 @@ account must not become one budget per host.
 | `tp_backend/libs/db` | Schema + migrations |
 | `tp_backend/tp_api` | The API |
 | `tp_backend/tp_ingestions` | The worker, through `places.resolve` |
-| `tp_backend/libs/routing` | Hours, daylight and day validation. Pure except `hours.py` |
+| `tp_backend/libs/routing` | Hours and day validation. Pure except `hours.py` |
 | `tp_client` | `/login`, `/` (form), `/trips` (list), `/trip/{trip_id}` (checklist), `/trip/{trip_id}/plan` (shortlist + days + map) |
 | `spikes/<topic>/` | Throwaway exploration. `agent_planning` is superseded by `tp_ingestions/plan`, `google_auth` by `libs/auth.py` |
 
@@ -211,15 +208,14 @@ end to end: real opening hours and a `closes_before_done` warning. The trips
 themselves were deleted when `user_trips` arrived, since they predate any owner — the cities and
 places are city-scoped and stayed, so re-creating a Tromsø trip is warm and re-tests the same path.
 A Helsinki + Singapore trip proves the multi-city path on warm cities: one interleaved shortlist, one
-draft over both, and a single day whose two blocks are judged against two different sunsets.
+draft over both, and a single day holding blocks from both cities.
 
 A **six-city, 14-day Nordic trip** — Oslo, Stockholm, Rovaniemi, Tromsø, Helsinki, Tallinn, 462 places
 — is the end-to-end proof: every city warm, all 14 days drafted automatically, then 22 custom blocks
 for the flights, the five stays, the husky sled, the reindeer camp, the aurora chase and both Tallinn
 ferries. Four days that `route_day` flagged (a coffee bar before it opened, a bistro that does Tuesday
 lunch only) were re-arranged until clean; what still warns is honest — Google has no hours for the
-Oslo Opera House roof, and Tromsø's polar night means days 9–11 report no daylight window at all
-because the sun does not rise.
+Oslo Opera House roof.
 
 # Sources
 
@@ -229,7 +225,6 @@ because the sun does not rise.
 | Food + POI | **RedNote/Xiaohongshu** — private web API, confirmed usable |
 | Identity + facts | **Google Places** `searchText` → `place_id`, then Place Details for hours |
 | Map | **MapLibre GL** with a keyless basemap — numbered pins, no route line |
-| Daylight | Computed locally (NOAA), no API |
 | Thin-city fallback | **Wikivoyage**, labelled guidebook-grade |
 | Later | Reddit, behind a disabled flag |
 
