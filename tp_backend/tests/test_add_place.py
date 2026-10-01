@@ -11,11 +11,9 @@ from tp_api.main import app
 
 # Helsinki in conftest sits at 60.17/24.94; the default radius is 50km.
 OODI = VenueHit(place_id="ChIJ_oodi", name="Oodi Library", address="Töölönlahdenkatu 4",
-                lat=60.1755, lon=24.9375, rating=4.6, rating_count=9000,
-                primary_type="Library", types=["library"])
+                lat=60.1755, lon=24.9375, primary_type="Library", types=["library"])
 FAR_AWAY = VenueHit(place_id="ChIJ_sydney", name="Sydney Opera House", address="Bennelong Point",
-                    lat=-33.8568, lon=151.2153, rating=4.7, rating_count=100000,
-                    primary_type="Opera house", types=["tourist_attraction"])
+                    lat=-33.8568, lon=151.2153, primary_type="Opera house", types=["tourist_attraction"])
 
 
 @pytest.fixture

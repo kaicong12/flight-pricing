@@ -183,7 +183,7 @@ def shortlist(db: Session, trip_id: str, limit: int, offset: int,
                .where(TripDismissal.trip_id == trip_id,
                       TripDismissal.place_id == Place.place_id)
                .exists())
-        .order_by(rank.desc(), Place.rating_count.desc().nullslast(), Place.name)
+        .order_by(rank.desc(), Place.name)
         .limit(limit)
         .offset(offset)
     )

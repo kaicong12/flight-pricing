@@ -75,12 +75,10 @@ def fake_generate(prompt, rendered, images=None):
 VENUES = {
     "Vanha Kauppahalli, Helsinki": VenueHit(
         place_id="pid-kauppahalli", name="Old Market Hall", address="Etelaranta",
-        lat=60.166, lon=24.951, rating=4.5, rating_count=8000,
-        primary_type="Market", types=["tourist_attraction"]),
+        lat=60.166, lon=24.951, primary_type="Market", types=["tourist_attraction"]),
     "Löyly, Helsinki": VenueHit(
         place_id="pid-loyly", name="Löyly", address="Hernesaarenranta 4",
-        lat=60.150, lon=24.929, rating=4.4, rating_count=2600,
-        primary_type="Sauna", types=["spa"]),
+        lat=60.150, lon=24.929, primary_type="Sauna", types=["spa"]),
 }
 
 

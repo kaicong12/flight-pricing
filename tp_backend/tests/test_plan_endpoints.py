@@ -70,11 +70,11 @@ class TestShortlist:
         assert [p["name"] for p in youtube] == ["Both", "Video only"]
         assert client.get(f"/trips/{trip}/shortlist?source=reddit").status_code == 422
 
-    def test_ties_break_on_rating_count(self, client, db):
+    def test_ties_break_on_name(self, client, db):
         trip = make_trip(client)
-        make_place(db, place_id="p1", name="Quiet", rating_count=10)
+        make_place(db, place_id="p1", name="Quiet")
         make_mention(db, "p1")
-        make_place(db, place_id="p2", name="Famous", rating_count=9000)
+        make_place(db, place_id="p2", name="Famous")
         make_mention(db, "p2")
 
         places = client.get(f"/trips/{trip}/shortlist").json()["places"]

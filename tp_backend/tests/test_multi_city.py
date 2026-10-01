@@ -427,7 +427,7 @@ def test_a_hand_added_place_is_filed_under_the_nearest_city_it_could_be_in(clien
         depart_date=(arrive + timedelta(days=1)).isoformat())).json()["trip_id"]
     app.dependency_overrides[venue_lookup] = lambda: (lambda pid: VenueHit(
         place_id="por", name="Jardim do Morro", address="Porto", lat=41.1375, lon=-8.6094,
-        rating=4.7, rating_count=900, primary_type="Park", types=["park"]))
+        primary_type="Park", types=["park"]))
 
     client.post(f"/trips/{trip_id}/places", json={"place_id": "por", "category": "see"})
 
@@ -443,10 +443,9 @@ def test_a_place_in_none_of_the_trip_s_cities_is_labelled_with_none_of_them(clie
     hits = {
         "kl": VenueHit(place_id="kl", name="GSC Mid Valley Megamall",
                        address="Mid Valley City, 59200 Kuala Lumpur", lat=3.1180, lon=101.6779,
-                       rating=4.2, rating_count=800, primary_type="Movie Theater", types=["movie"]),
+                       primary_type="Movie Theater", types=["movie"]),
         "loyly": VenueHit(place_id="loyly", name="Löyly", address="Hernesaarenranta 4, Helsinki",
-                          lat=60.1487, lon=24.9280, rating=4.5, rating_count=3000,
-                          primary_type="Sauna", types=["spa"]),
+                          lat=60.1487, lon=24.9280, primary_type="Sauna", types=["spa"]),
     }
     app.dependency_overrides[venue_lookup] = lambda: (lambda pid: hits[pid])
 
@@ -526,7 +525,7 @@ def test_a_place_reached_through_another_city_is_named_by_the_city_it_is_in(clie
     db.add(City(city_id="sgp", name="Singapore", country="SG", timezone="Asia/Singapore",
                 lat=1.2811, lon=103.8503))
     db.add(Place(place_id="maxwell", city_id="sgp", name="Maxwell Food Centre",
-                 lat=1.2803, lon=103.8451, rating_count=9000, confidence=Confidence.HIGH))
+                 lat=1.2803, lon=103.8451, confidence=Confidence.HIGH))
     db.flush()
     db.add(TripPlace(trip_id=trip_id, place_id="maxwell"))
     db.commit()

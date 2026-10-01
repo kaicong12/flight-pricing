@@ -9,8 +9,7 @@ from tp_ingestions.places import names
 
 def hit(**kw) -> VenueHit:
     return VenueHit(**{"place_id": "p1", "name": "Fjellheisen", "address": "Sollivegen 12",
-                       "lat": 69.65, "lon": 18.96, "rating": 4.5, "rating_count": 4466,
-                       "primary_type": None, "types": ["point_of_interest"]} | kw)
+                       "lat": 69.65, "lon": 18.96, "primary_type": None, "types": ["point_of_interest"]} | kw)
 
 
 @pytest.mark.parametrize("a,b", [
@@ -73,15 +72,16 @@ def test_an_empty_or_punctuation_only_name_is_rejected():
     assert names.reject_before_call("  ???  ") is not None
 
 
-def test_confidence_comes_from_the_rating_count():
-    assert names.judge("Fjellheisen", hit(rating_count=4466))[0] == Confidence.HIGH
-    assert names.judge("Fint", hit(rating_count=45))[0] == Confidence.MEDIUM
-    assert names.judge("Fint", hit(rating_count=6))[0] == Confidence.LOW
+def test_a_matching_name_is_high_confidence():
+    assert names.judge("Fjellheisen", hit())[0] == Confidence.HIGH
 
 
-def test_zero_ratings_is_a_rejection_not_a_low_score():
-    conf, reason = names.judge("Sentra", hit(rating_count=0))
-    assert conf is None and "rating" in reason
+def test_a_name_sharing_no_token_is_medium_confidence():
+    assert names.judge("Cable car up the mountain", hit())[0] == Confidence.MEDIUM
+
+
+def test_a_place_with_no_ratings_is_kept():
+    assert names.judge("Sentra", hit(name="Sentra"))[0] is not None
 
 
 def test_a_missing_type_does_not_count_against_a_place():
@@ -94,25 +94,23 @@ def test_a_missing_type_does_not_count_against_a_place():
 def test_a_chain_is_rejected_on_the_name_google_returned(official):
     """The query gate only sees what the source wrote: "Storgata" is a street, and it resolved to
     the EUROSPAR on it. Checking the official name too is free and catches the rest."""
-    conf, reason = names.judge("Storgata", hit(name=official, rating_count=812))
+    conf, reason = names.judge("Storgata", hit(name=official))
     assert conf is None and "chain" in reason
 
 
 def test_a_local_venue_is_not_mistaken_for_a_chain():
     for official in ["Bardus Bistro", "Sabi Sushi Tromsø", "Risø mat og kaffebar", "Ølhallen"]:
-        assert names.judge("x", hit(name=official, rating_count=500))[0] is not None
+        assert names.judge("x", hit(name=official))[0] is not None
 
 
 def test_a_cjk_query_resolving_to_a_latin_name_is_unconfirmed():
-    conf, reason = names.judge("好餐厅", hit(name="Some Bistro", rating_count=4466))
+    conf, reason = names.judge("好餐厅", hit(name="Some Bistro"))
     assert conf == Confidence.MEDIUM and "unconfirmed" in reason
 
 
 def test_a_cjk_query_with_a_latin_fragment_is_not_marked_unconfirmed():
-    """A Latin fragment in the query skips the unconfirmed-identity downgrade, so the rating count
-    decides."""
-    conf, _ = names.judge("Dragøy海鲜市场", hit(name="Dragøy Coastal Mathus", rating_count=756))
-    assert conf == Confidence.HIGH
+    _, reason = names.judge("Dragøy海鲜市场", hit(name="Dragøy Coastal Mathus"))
+    assert "unconfirmed" not in reason
 
 
 def test_distance_is_measured_in_kilometres_at_high_latitude():
