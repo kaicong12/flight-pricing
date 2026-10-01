@@ -92,7 +92,7 @@ export function CityCombobox({ selected, onSelect, placeholder = "Helsinki", exc
                 value={s.place_id}
                 onSelect={() => {
                   onSelect(s);
-                  setOpen(false);
+                  setQuery("");
                 }}
               >
                 {s.description}
