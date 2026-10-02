@@ -1,7 +1,6 @@
 "use client";
 
-// Adding a place the ingestion never named: search Google's venues near the city, then say what it
-// is for. Both are required — the category has nowhere else to come from with no mentions to derive.
+// Adding a place the ingestion never named.
 
 import { useEffect, useState } from "react";
 import { CheckIcon, PlusIcon } from "lucide-react";
@@ -35,7 +34,7 @@ export function PlaceSearch({
   onAdd: (placeId: string, category: string) => Promise<string | null>;
 }) {
   const [open, setOpen] = useState(false);
-  useShortcut("k", () => setOpen(true));
+  useShortcut("j", () => setOpen(true));
   const [query, setQuery] = useState("");
   const [picked, setPicked] = useState<VenueSuggestion | null>(null);
   const [category, setCategory] = useState<string | null>(null);
@@ -65,7 +64,6 @@ export function PlaceSearch({
         });
         setResults({ q, items: r.ok ? await r.json() : [] });
       } catch {
-        // An aborted keystroke is not a failure; the next one owns the result.
       }
     }, DEBOUNCE_MS);
     return () => {
@@ -107,7 +105,7 @@ export function PlaceSearch({
         <PlusIcon className="size-3.5 shrink-0 opacity-50" />
         Add a place yourself
         <span className="ml-auto">
-          <Kbd letter="K" />
+          <Kbd letter="J" />
         </span>
       </DialogTrigger>
 
@@ -119,8 +117,7 @@ export function PlaceSearch({
           </DialogDescription>
         </DialogHeader>
 
-        {/* min-w-0: a grid item defaults to min-width:auto, so the nowrap suggestion lines below
-            would widen the dialog instead of being truncated by it. */}
+        {/* min-w-0: a grid item defaults to min-width:auto. */}
         <div className="min-w-0 space-y-4">
           <div className="min-w-0 space-y-2">
             <Input

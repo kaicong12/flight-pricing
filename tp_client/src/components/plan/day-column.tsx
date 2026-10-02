@@ -1,10 +1,6 @@
 "use client";
 
 // The middle column: one day, midnight to midnight, as a half-hour grid you pin places onto.
-//
-// Each half hour is its own droppable, so a drop reports a time rather than a pixel offset. Blocks
-// are absolutely positioned from their own start_min, and overlapping ones share the width in lanes.
-// A block that started on an earlier day draws its tail here too.
 
 import { useState } from "react";
 
@@ -12,6 +8,7 @@ import { useDroppable } from "@dnd-kit/core";
 import { PlusIcon } from "lucide-react";
 
 import { Kbd } from "@/components/ui/kbd";
+import type { City } from "@/lib/api-types";
 import { type CustomDraft, customItem } from "@/lib/plan-state";
 import type { DayRoute, ItineraryDay, ItineraryItem, PlanWarning } from "@/lib/plan-types";
 import {
@@ -27,6 +24,7 @@ import {
   piecesOn,
   warningText,
 } from "@/lib/plan-types";
+import { cityColor } from "@/lib/trips";
 import { useShortcut } from "@/lib/use-shortcut";
 import { cn } from "@/lib/utils";
 
@@ -39,6 +37,8 @@ const SLOTS = Math.round((DAY_END_MIN - DAY_START_MIN) / SLOT_MIN);
 export function DayColumn({
   day,
   days,
+  cities,
+  onCity,
   windowOf,
   route,
   stale,
@@ -56,6 +56,8 @@ export function DayColumn({
 }: {
   day: ItineraryDay;
   days: ItineraryDay[];
+  cities: City[];
+  onCity: (cityId: string | null) => void;
   windowOf: (day: number) => { from: number; to: number };
   route: DayRoute | undefined;
   stale: boolean;
@@ -73,7 +75,6 @@ export function DayColumn({
   onAddCustom: (item: ItineraryItem, cost: CostEntry | null) => void;
   onEditCustom: (key: string, draft: CustomDraft) => void;
 }) {
-  // Which half hour the "+" was clicked on, or the block being edited. One dialog serves both.
   const [adding, setAdding] = useState<number | null>(null);
   const [editing, setEditing] = useState<ItineraryItem | null>(null);
 
@@ -100,9 +101,14 @@ export function DayColumn({
   return (
     <div className="px-5 pt-4 pb-5">
       <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-        <h3 className="text-[15px] font-semibold tracking-[-0.01em]">
-          Day {day.day_index + 1} · {formatDayTab(day.date)}
-        </h3>
+        <div className="flex flex-wrap items-baseline gap-x-2.5 gap-y-1">
+          <h3 className="text-[15px] font-semibold tracking-[-0.01em]">
+            Day {day.day_index + 1} · {formatDayTab(day.date)}
+          </h3>
+          {cities.length > 1 && (
+            <DayCity day={day} cities={cities} readOnly={readOnly} onCity={onCity} />
+          )}
+        </div>
         {!readOnly && (
           <button
             type="button"
@@ -167,7 +173,6 @@ export function DayColumn({
               key={m}
               day={day.day_index}
               minute={m}
-              // A slot has to fit the shortest block there is, or dropping on it cannot work.
               blocked={m < available.from || m + MIN_DURATION > available.to}
               onAdd={readOnly ? undefined : () => setAdding(m)}
             />
@@ -267,8 +272,6 @@ function Slot({
       className={cn(
         "group/slot relative border-t",
         minute % 60 === 0 ? "border-border" : "border-hairline",
-        // Tinted gaps, not transparent ones: at 5% ink on paper the hatch was easy to miss, and
-        // an hour the flight has taken away has to read as unusable at a glance.
         blocked && "bg-[repeating-linear-gradient(135deg,rgba(37,43,32,0.04)_0_4px,rgba(37,43,32,0.11)_4px_6px)]",
         isOver && "bg-brand-bg",
       )}
@@ -288,5 +291,52 @@ function Slot({
         </button>
       )}
     </div>
+  );
+}
+
+function DayCity({
+  day,
+  cities,
+  readOnly,
+  onCity,
+}: {
+  day: ItineraryDay;
+  cities: City[];
+  readOnly: boolean;
+  onCity: (cityId: string | null) => void;
+}) {
+  const color = cityColor(cities, day.city_id);
+  const dot = (
+    <span
+      className={cn("size-2 shrink-0 rounded-full", !color && "border border-faint")}
+      style={{ background: color ?? undefined }}
+    />
+  );
+  const name = cities.find((c) => c.city_id === day.city_id)?.name;
+  if (readOnly) {
+    return (
+      <span className="flex items-center gap-1.5 text-[12.5px] text-muted-foreground">
+        {dot}
+        {name ?? "No city set"}
+      </span>
+    );
+  }
+  return (
+    <label className="flex items-center gap-1.5 text-[12.5px] text-muted-foreground">
+      {dot}
+      <select
+        value={day.city_id ?? ""}
+        onChange={(e) => onCity(e.target.value || null)}
+        aria-label={`City for day ${day.day_index + 1}`}
+        className="h-7 rounded-md border border-input bg-transparent px-1.5 text-[12.5px] text-ink outline-none focus-visible:border-ring"
+      >
+        <option value="">Pick a city</option>
+        {cities.map((c) => (
+          <option key={c.city_id} value={c.city_id}>
+            {c.name}
+          </option>
+        ))}
+      </select>
+    </label>
   );
 }

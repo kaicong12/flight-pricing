@@ -21,7 +21,6 @@ from tp_ingestions.registry import handles
 log = logging.getLogger("rednote.ocr")
 
 MIN_IMAGE_BYTES = 500
-# The body named no venues — it is context only, so it does not need to be sent in full.
 CONTEXT_LIMIT = 600
 
 
@@ -54,8 +53,6 @@ def rednote_ocr(session: Session, task: ClaimedTask) -> dict:
                     session, task, Source.REDNOTE, note_id, REDNOTE_OCR.version_key,
                     REDNOTE_OCR.model) if cached else 0}
 
-    # Gemini's gate first: it is the budget that can defer, and downloading before it would throw
-    # away the images. The cards sit on a CDN, not the logged-in API, so they need no RedNote budget.
     limits.gemini().take()
     images = download(note.image_urls[:settings().rednote_ocr_max_images])
     if not images:

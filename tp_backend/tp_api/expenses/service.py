@@ -97,7 +97,6 @@ def _balances(expenses: list[Expense], shares: list[tuple[ExpenseShare, str]],
         owed[(share.user_id, currency)] += share.amount_cents
         totals.setdefault(currency, 0)
     for s in settlements:
-        # Paying down a debt moves the payer's net up and the payee's down, so the two still cancel.
         moved[(s.from_user_id, s.currency)] += s.amount_cents
         moved[(s.to_user_id, s.currency)] -= s.amount_cents
         totals.setdefault(s.currency, 0)

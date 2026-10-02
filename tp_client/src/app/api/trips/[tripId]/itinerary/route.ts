@@ -1,4 +1,4 @@
-// The user's ordering. PUT replaces whole days, because a drag is a statement about a sequence.
+// The user's ordering. PUT replaces whole days.
 
 import { proxy } from "@/lib/tp-api";
 

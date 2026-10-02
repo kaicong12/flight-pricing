@@ -1,12 +1,6 @@
 "use client";
 
-// One activity block, positioned on the grid at the time the user pinned it to. Drag the body to
-// move it earlier or later within its own day, drag either edge to change how long you spend there.
-// Use the X to take it off the day; there is no drag that moves it to another one. A block that
-// runs into later days moves from its first day and resizes from its last; the pencil does the rest.
-//
-// Warnings sit under the grid rather than inside the block: a block's height is its duration, so
-// there is no room to grow into, and the alert border already says which block is the problem.
+// One activity block, positioned on the grid at the time the user pinned it to.
 
 import { useDraggable } from "@dnd-kit/core";
 import { Link2, Pencil, X } from "lucide-react";
@@ -25,7 +19,6 @@ import {
 } from "@/lib/plan-types";
 import { cn } from "@/lib/utils";
 
-// A block of a few minutes still needs room to be seen and grabbed.
 const MIN_HEIGHT_PX = 12;
 
 export function ActivityBlock({
@@ -65,7 +58,6 @@ export function ActivityBlock({
   const own = item.kind === "custom";
 
   const broken = warnings.length > 0;
-  // At 30 minutes or less there is only room for one line, so the times move to the title.
   const short = placed.item.duration_min <= MIN_DURATION;
   const extraDays = Math.ceil(endOf(item) / DAY_END_MIN) - 1;
   const until = `${hhmm(endOf(item))}${extraDays > 0 ? ` +${extraDays}d` : ""}`;

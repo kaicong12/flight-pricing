@@ -15,10 +15,9 @@ import {
   money,
   spendByCategory,
 } from "@/lib/expense-types";
-import { cn } from "@/lib/utils";
+import { COLORS, cn } from "@/lib/utils";
 
 // Validated with the dataviz palette checker against the light surface.
-const COLORS = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300"];
 const UNTAGGED_COLOR = "#8a877e";
 const OTHER_COLOR = "#c9c6bc";
 const SIZE = 168;

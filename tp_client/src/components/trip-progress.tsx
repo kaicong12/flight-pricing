@@ -1,7 +1,6 @@
 "use client";
 
-// Polls one trip and renders the ingestion checklist, one row per (kind, status). The polled body
-// is the only source of ingest status, so nothing on the page can go stale against it.
+// Polls one trip and renders the ingestion checklist, one row per (kind, status).
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
@@ -41,8 +40,7 @@ export function TripProgress({ initial }: { initial: TripStatus }) {
       if (settled(body)) setStopped(true);
     };
 
-    // A hidden tab has its timers throttled to roughly once a minute, so poll only while visible
-    // and catch up on return. An ingest runs longer than any wall-clock cap worth guessing at.
+    // Hidden tabs throttle timers, so poll only while visible.
     const sync = () => {
       clearInterval(timer);
       if (document.hidden) return;

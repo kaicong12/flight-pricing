@@ -53,7 +53,7 @@ def cities_by_trip(session: Session, trip_ids: Sequence[str]) -> dict[str, list[
         select(TripCity.trip_id, TripCity.city_id)
         .join(Trip, Trip.trip_id == TripCity.trip_id)
         .where(TripCity.trip_id.in_(trip_ids))
-        # created_at ties: now() is the transaction clock and a trip writes every row in one.
+        # now() is the transaction clock, so created_at ties.
         .order_by(TripCity.city_id != Trip.city_id, TripCity.created_at, TripCity.city_id)
     ):
         out.setdefault(trip_id, []).append(city_id)

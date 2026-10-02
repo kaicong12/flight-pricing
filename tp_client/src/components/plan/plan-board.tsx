@@ -1,10 +1,6 @@
 "use client";
 
-// The planning screen's one stateful component. Everything mutable lives in the reducer here; the
-// three columns are given props and raise events.
-//
-// Two debounces hang off it: the ordering is written back quickly, and the day is re-checked more
-// slowly, because a write is local and the check re-reads opening hours.
+// The planning screen's one stateful component.
 
 import {
   DndContext,
@@ -22,6 +18,7 @@ import { restrictToWindowEdges } from "@dnd-kit/modifiers";
 import { sortableKeyboardCoordinates } from "@dnd-kit/sortable";
 import { useCallback, useEffect, useMemo, useReducer, useState } from "react";
 
+import { useConfirm } from "@/components/ui/confirm-dialog";
 import type { Trip } from "@/lib/api-types";
 import { type ExpenseTab, blockCost, costsByBlock, tagChoices } from "@/lib/expense-types";
 import {
@@ -58,6 +55,7 @@ import { ShortlistPanel } from "./shortlist-panel";
 const SAVE_MS = 400;
 const ROUTE_MS = 1200;
 const PAGE = 40;
+const SEARCH_MS = 250;
 
 export function PlanBoard({
   trip,
@@ -83,14 +81,17 @@ export function PlanBoard({
   );
   const [category, setCategory] = useState<string | null>(null);
   const [source, setSource] = useState<ShortlistSource | null>(null);
+  const [search, setSearch] = useState("");
+  const [q, setQ] = useState("");
   const [dragging, setDragging] = useState<string | null>(null);
   const [routingDay, setRoutingDay] = useState<number | null>(null);
-  // Stamped with the request that produced it, so "loading" is derived instead of set in an effect.
   const [loaded, setLoaded] = useState({
     category: null as string | null,
     source: null as ShortlistSource | null,
+    q: "",
   });
   const [expenses, setExpenses] = useState(initialExpenses);
+  const [confirm, confirmDialog] = useConfirm();
 
   const reloadExpenses = useCallback(async () => {
     const r = await fetch(`/api/trips/${trip.trip_id}/expenses`);
@@ -147,7 +148,6 @@ export function PlanBoard({
   const day = state.days.find((d) => d.day_index === state.activeDay) ?? state.days[0];
   const route = state.routes[state.activeDay];
   const isStale = state.stale.includes(state.activeDay);
-  // A block drawn on this day may live on an earlier one, if it runs past midnight.
   const homeOf = (key: string) => dayOf(state, key) ?? state.activeDay;
   const placed = useMemo(() => placedDays(state), [state]);
   const provisional = useMemo(
@@ -155,9 +155,6 @@ export function PlanBoard({
     [state.routes],
   );
 
-  // Write the ordering back. Only the days that actually changed are sent. Keyed on the revision
-  // rather than on which days are dirty, so a second edit to the same day re-arms the timer with
-  // fresh contents instead of letting the first one fire with a stale closure.
   const revision = state.revision;
   useEffect(() => {
     if (state.savedRevision === revision || !state.unsaved.length) return;
@@ -167,6 +164,7 @@ export function PlanBoard({
       const payload = {
         days: days.map((index) => ({
           day_index: index,
+          city_id: state.days.find((d) => d.day_index === index)?.city_id ?? null,
           items: (state.days.find((d) => d.day_index === index)?.items ?? []).map((i) => ({
             kind: i.kind,
             place_id: i.place_id,
@@ -190,7 +188,6 @@ export function PlanBoard({
           dispatch({ type: "saved", days, itinerary: await r.json(), revision });
         }
       } catch {
-        // Abandoned because another edit landed; that edit owns the write.
       }
     }, SAVE_MS);
     return () => {
@@ -200,9 +197,7 @@ export function PlanBoard({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [revision, state.savedRevision, trip.trip_id]);
 
-  // Check the visible day once its edits settle. "Re-check day" re-marks it stale, which is the
-  // same signal an edit produces, so there is one path in.
-  // The check reads the day back from the database, so it must not run until the write has landed.
+  // The check reads the day back, so it waits for the write to land.
   const activeDay = state.activeDay;
   const needsRoute =
     isStale && day && day.items.length > 0 && state.savedRevision === state.revision;
@@ -219,7 +214,7 @@ export function PlanBoard({
         if (r.ok) dispatch({ type: "checked", route: (await r.json()) as DayRoute });
         else dispatch({ type: "routeFailed", day: activeDay });
       } catch {
-        // Superseded or navigated away. Leave the day stale so it retries.
+        // Superseded: leave the day stale so it retries.
       } finally {
         setRoutingDay(null);
       }
@@ -230,8 +225,12 @@ export function PlanBoard({
     };
   }, [needsRoute, activeDay, trip.trip_id]);
 
-  // Shortlist paging, category and source filtering.
-  const settled = loaded.category === category && loaded.source === source;
+  useEffect(() => {
+    const timer = setTimeout(() => setQ(search.trim()), SEARCH_MS);
+    return () => clearTimeout(timer);
+  }, [search]);
+
+  const settled = loaded.category === category && loaded.source === source && loaded.q === q;
   useEffect(() => {
     if (settled) return;
     const controller = new AbortController();
@@ -239,32 +238,44 @@ export function PlanBoard({
       const query = new URLSearchParams({ limit: String(PAGE) });
       if (category) query.set("category", category);
       if (source) query.set("source", source);
+      if (q) query.set("q", q);
       try {
         const r = await fetch(`/api/trips/${trip.trip_id}/shortlist?${query}`, {
           signal: controller.signal,
         });
         if (r.ok) {
-          dispatch({ type: "shortlistLoaded", shortlist: await r.json(), append: false });
-          setLoaded({ category, source });
+          dispatch({
+            type: "shortlistLoaded",
+            shortlist: await r.json(),
+            append: false,
+            unfiltered: !category && !source && !q,
+          });
+          setLoaded({ category, source, q });
         }
       } catch {
-        // Superseded by another filter.
       }
     })();
     return () => controller.abort();
-  }, [settled, category, source, trip.trip_id]);
+  }, [settled, category, source, q, trip.trip_id]);
 
   const loadMore = useCallback(async () => {
     const offset = state.shortlist.length;
     const query = new URLSearchParams({ limit: String(PAGE), offset: String(offset) });
     if (category) query.set("category", category);
     if (source) query.set("source", source);
+    if (q) query.set("q", q);
     const r = await fetch(`/api/trips/${trip.trip_id}/shortlist?${query}`);
     if (r.ok) dispatch({ type: "shortlistLoaded", shortlist: await r.json(), append: true });
-  }, [category, source, state.shortlist.length, trip.trip_id]);
+  }, [category, source, q, state.shortlist.length, trip.trip_id]);
 
   const dismiss = useCallback(
     async (place: ShortlistPlace) => {
+      const ok = await confirm({
+        title: `Remove ${place.name} from the shortlist?`,
+        description: "It stops showing for everyone on this trip. Adding it back by hand restores it.",
+        action: "Remove",
+      });
+      if (!ok) return;
       dispatch({ type: "dismiss", placeId: place.place_id });
       await fetch(`/api/trips/${trip.trip_id}/dismissals`, {
         method: "POST",
@@ -272,10 +283,24 @@ export function PlanBoard({
         body: JSON.stringify({ place_id: place.place_id }),
       });
     },
-    [trip.trip_id],
+    [confirm, trip.trip_id],
   );
 
-  // Not optimistic, unlike dismiss: the server owns the name and coordinates. Resolves to an error.
+  const removeBlock = useCallback(
+    async (key: string, day: number) => {
+      const item = state.days.flatMap((d) => d.items).find((i) => keyOf(i) === key);
+      const ok = await confirm({
+        title: `Remove ${item?.name ?? "this block"} from day ${day + 1}?`,
+        description: costs.has(key)
+          ? "Its time and link go with it. Its cost stays under Expenses, no longer tied to a block."
+          : "Its time, and any link or details on it, go with it.",
+        action: "Remove block",
+      });
+      if (ok) dispatch({ type: "remove", day, key });
+    },
+    [confirm, costs, state.days],
+  );
+
   const addPlace = useCallback(
     async (placeId: string, category: string): Promise<string | null> => {
       let r: Response;
@@ -311,8 +336,6 @@ export function PlanBoard({
     const overData = over.data.current as
       | { kind?: string; day?: number; minute?: number }
       | undefined;
-    // A half-hour slot is the only thing that takes a drop, and only the active day draws any, so
-    // every drop names both a time and the day already on screen.
     if (overData?.kind !== "slot" || overData.day === undefined || overData.minute === undefined) {
       return;
     }
@@ -328,7 +351,6 @@ export function PlanBoard({
         place,
         day: targetDay,
         startMin: slotMin,
-        // A new block gets an hour unless the flight leaves less than that.
         durationMin: Math.max(
           MIN_DURATION,
           Math.min(DEFAULT_DURATION, Math.floor(room / SLOT_MIN) * SLOT_MIN),
@@ -341,7 +363,7 @@ export function PlanBoard({
     const fromDay = dayOf(state, key);
     if (fromDay === null) return;
 
-    // toDay is the block's own day, never the drop's: dragging changes when, never which day.
+    // toDay is the block's own day, never the drop's.
     dispatch({ type: "pin", key, fromDay, toDay: fromDay, startMin: slotMin });
   }
 
@@ -349,8 +371,7 @@ export function PlanBoard({
 
   return (
     <DndContext
-      // Fixed, because dnd-kit otherwise derives its aria-describedby ids from a render counter and
-      // the server and client land on different numbers.
+      // Fixed: dnd-kit's counter-derived ids differ between server and client.
       id="plan-board"
       sensors={sensors}
       collisionDetection={collisionDetection}
@@ -362,7 +383,7 @@ export function PlanBoard({
       <PlanHeader
         trip={trip}
         days={state.days}
-        placeCount={state.total}
+        placeCount={state.found}
         provisional={provisional}
         meId={meId}
         canEdit={canEdit}
@@ -382,6 +403,9 @@ export function PlanBoard({
           onCategory={setCategory}
           source={source}
           onSource={setSource}
+          search={search}
+          searched={q}
+          onSearch={setSearch}
           readOnly={!canEdit}
           onDismiss={dismiss}
           onAdd={addPlace}
@@ -391,11 +415,14 @@ export function PlanBoard({
         <section className="overflow-hidden rounded-card border border-border surface shadow-card">
           <DayTabs
             days={state.days}
+            cities={trip.cities}
             activeDay={state.activeDay}
             onSelect={(d) => dispatch({ type: "activeDay", day: d })}
           />
           <DayColumn
             day={day}
+            cities={trip.cities}
+            onCity={(cityId) => dispatch({ type: "city", day: state.activeDay, cityId })}
             days={state.days}
             windowOf={(d) => availableWindow(trip, d, state.days.length)}
             route={route}
@@ -406,7 +433,7 @@ export function PlanBoard({
             tags={tagChoices(expenses?.expenses ?? [])}
             currency={expenses?.currency ?? "EUR"}
             onCost={saveCost}
-            onRemove={(key) => dispatch({ type: "remove", day: homeOf(key), key })}
+            onRemove={(key) => void removeBlock(key, homeOf(key))}
             onReference={(key, url) => dispatch({ type: "reference", day: homeOf(key), key, url })}
             onAddCustom={(item, cost) => {
               dispatch({ type: "addCustom", day: state.activeDay, item });
@@ -417,7 +444,6 @@ export function PlanBoard({
               dispatch({ type: "editCustom", day: homeOf(key), key, draft })
             }
             onResize={(key, startMin, durationMin) => {
-              // A top-edge drag changes both, so both go through, each guarded against a no-op.
               const home = homeOf(key);
               dispatch({ type: "pin", key, fromDay: home, toDay: home, startMin });
               dispatch({ type: "duration", day: home, key, minutes: durationMin });
@@ -439,6 +465,7 @@ export function PlanBoard({
           </div>
         )}
       </DragOverlay>
+      {confirmDialog}
     </DndContext>
   );
 }
@@ -452,10 +479,7 @@ const collisionDetection: typeof pointerWithin = (args) => {
   const hit = pointerWithin(args);
   if (hit.length > 0) return hit;
 
-  // A blocked hour is not a droppable, so closestCenter is what keeps a drop on the hatched part of
-  // the grid forgiving. Off the grid altogether — a day tab, say — that same fallback would snap to
-  // whichever slot happened to be nearest and silently retime the block, so a stray drag has to
-  // mean nothing instead. A keyboard drag has no pointer and keeps the fallback.
+  // Off the grid a pointer drag drops nothing; a keyboard drag keeps closestCenter.
   const pointer = args.pointerCoordinates;
   if (!pointer) return closestCenter(args);
   const grid = document.querySelector("[data-grid]")?.getBoundingClientRect();

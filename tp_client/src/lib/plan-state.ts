@@ -1,8 +1,4 @@
 // All of the planning screen's mutable state, as one pure reducer.
-//
-// A reducer rather than a dozen useStates because the transitions are interdependent: pinning a place
-// to another day changes two days, re-sorts both, marks both unsaved and both unchecked. Doing that
-// in one place is what stops a half-applied drag.
 
 import { DEFAULT_DURATION, keyOf } from "@/lib/plan-types";
 import type {
@@ -19,6 +15,8 @@ export type PlanState = {
   shortlist: ShortlistPlace[];
   /** Places in the city, before paging. The "9 of 122" denominator. */
   total: number;
+  /** `total` with no filter or search applied: what the header counts. */
+  found: number;
   dismissed: string[];
   activeDay: number;
   routes: Record<number, DayRoute>;
@@ -43,12 +41,13 @@ export type PlanAction =
   | { type: "duration"; day: number; key: string; minutes: number }
   | { type: "reference"; day: number; key: string; url: string | null }
   | { type: "activeDay"; day: number }
+  | { type: "city"; day: number; cityId: string | null }
   | { type: "dismiss"; placeId: string }
   | { type: "checked"; route: DayRoute }
   | { type: "routeFailed"; day: number }
   | { type: "invalidate"; day: number }
   | { type: "saved"; days: number[]; itinerary: Itinerary; revision: number }
-  | { type: "shortlistLoaded"; shortlist: Shortlist; append: boolean }
+  | { type: "shortlistLoaded"; shortlist: Shortlist; append: boolean; unfiltered?: boolean }
   | { type: "placeAdded"; place: ShortlistPlace };
 
 const without = (xs: number[], y: number) => xs.filter((x) => x !== y);
@@ -134,13 +133,11 @@ export function planReducer(state: PlanState, action: PlanAction): PlanState {
       return { ...state, days: setDay(state, action.day, items), ...touched(state, [action.day]) };
     }
 
-    // A custom block is never in the shortlist, so it is only ever added here, at the time clicked.
     case "addCustom": {
       const items = [...itemsOf(state, action.day), action.item];
       return { ...state, days: setDay(state, action.day, items), ...touched(state, [action.day]) };
     }
 
-    // Not `touched`: renaming a flight says nothing about the order, so it must not re-route.
     case "editCustom": {
       const items = itemsOf(state, action.day).map((i) =>
         keyOf(i) === action.key
@@ -160,15 +157,12 @@ export function planReducer(state: PlanState, action: PlanAction): PlanState {
       return { ...state, days: setDay(state, action.day, items), ...touched(state, [action.day]) };
     }
 
-    // One action for both "move it to 14:00" and "move it to tomorrow at 14:00": a drop always
-    // names a day and a time, and there is no ordering left to state separately.
     case "pin": {
       const moving = itemsOf(state, action.fromDay).find((i) => keyOf(i) === action.key);
       if (!moving) return state;
       const pinned = { ...moving, start_min: action.startMin };
 
       if (action.fromDay === action.toDay) {
-        // A drop that changes nothing must not bump the revision, or it re-routes for free.
         if (moving.start_min === action.startMin) return state;
         const items = itemsOf(state, action.toDay).map((i) =>
           keyOf(i) === action.key ? pinned : i,
@@ -199,7 +193,6 @@ export function planReducer(state: PlanState, action: PlanAction): PlanState {
       return { ...state, days: setDay(state, action.day, items), ...touched(state, [action.day]) };
     }
 
-    // Not `touched`: a link says nothing about the order, so it must not re-route the day.
     case "reference": {
       const current = itemsOf(state, action.day).find((i) => keyOf(i) === action.key);
       if (!current || current.reference_url === action.url) return state;
@@ -217,12 +210,23 @@ export function planReducer(state: PlanState, action: PlanAction): PlanState {
     case "activeDay":
       return { ...state, activeDay: action.day };
 
+    case "city":
+      return {
+        ...state,
+        days: state.days.map((d) =>
+          d.day_index === action.day ? { ...d, city_id: action.cityId } : d,
+        ),
+        unsaved: with_(state.unsaved, action.day),
+        revision: state.revision + 1,
+      };
+
     case "dismiss":
       return {
         ...state,
         dismissed: with_str(state.dismissed, action.placeId),
         shortlist: state.shortlist.filter((p) => p.place_id !== action.placeId),
         total: Math.max(0, state.total - 1),
+        found: Math.max(0, state.found - 1),
       };
 
     case "checked":
@@ -232,16 +236,12 @@ export function planReducer(state: PlanState, action: PlanAction): PlanState {
         stale: without(state.stale, action.route.day_index),
       };
 
-    // Drop the stale marker so a failing day does not re-request on every render.
     case "routeFailed":
       return { ...state, stale: without(state.stale, action.day) };
 
-    // What "Re-check day" asks for: bin the answer we have and go again.
     case "invalidate":
       return { ...state, stale: with_(state.stale, action.day) };
 
-    // A write landed. If the user has edited since, the response describes an older plan than the
-    // one on screen, so it is dropped rather than reverting their last drag.
     case "saved": {
       if (action.revision !== state.revision) return state;
       const days = state.days.map(
@@ -259,12 +259,12 @@ export function planReducer(state: PlanState, action: PlanAction): PlanState {
       return {
         ...state,
         total: action.shortlist.total,
+        found: action.unfiltered ? action.shortlist.total : state.found,
         shortlist: action.append
           ? dedupe([...state.shortlist, ...action.shortlist.places])
           : action.shortlist.places,
       };
 
-    // Prepended, not appended: with no mentions the server ranks it last, on a page nobody scrolls to.
     case "placeAdded": {
       const known = state.shortlist.some((p) => p.place_id === action.place.place_id);
       return {
@@ -272,6 +272,7 @@ export function planReducer(state: PlanState, action: PlanAction): PlanState {
         shortlist: dedupe([action.place, ...state.shortlist]),
         dismissed: state.dismissed.filter((id) => id !== action.place.place_id),
         total: known ? state.total : state.total + 1,
+        found: known ? state.found : state.found + 1,
       };
     }
   }
@@ -309,13 +310,12 @@ export function initialState(
   itinerary: Itinerary,
   shortlist: Shortlist,
 ): PlanState {
-  // Open on a day that has something on it, so a plan built on day 2 does not look like an empty
-  // plan on day 1.
   const firstUsed = itinerary.days.find((d) => d.items.length > 0);
   return {
     days: itinerary.days,
     shortlist: shortlist.places,
     total: shortlist.total,
+    found: shortlist.total,
     dismissed: [],
     activeDay: firstUsed?.day_index ?? 0,
     routes: {},

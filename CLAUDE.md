@@ -106,7 +106,8 @@ same `places` row an ingestion would have written, filed under whichever of the 
 nearest and claimed for this trip. **Nothing checks it is near
 the city** — a place across the country is a legitimate thing to plan, because no distance is modelled
 anywhere, and a bias rather than a `locationRestriction` is what lets the modal find one. Resolution
-keeps its hard box: `search_venue` is guessing at a name and needs the geography to hold it down. It ranks last with no mentions, so the client prepends it. **A category is compulsory**, and
+keeps its hard box: `search_venue` is guessing at a name and needs the geography to hold it down. It ranks last with no mentions, so the client prepends it. A search box over the shortlist (⌘K; the add-place modal is ⌘J) filters
+server-side by name, address and why-go, because the list is paged. **A category is compulsory**, and
 is the one thing `places.category` exists for: every other category is a majority vote over
 `place_mentions`, which a hand-added place has none of, so without it the place is invisible under
 every filter chip. A person's answer beats the videos'. The user drags
@@ -134,7 +135,10 @@ helper, and dropping a shortlist place always adds a fresh copy; moving one is d
 booking reference, the terminal, the address — which is the whole point: it is where a flight or an
 accommodation is found again. It builds no `Stop`, so `plan_day` never judges it against hours and
 `route_day` fetches hours only for the places. A day holding anything — a flight, a stay's overnight
-tail — is a filled day, and `route.plan` leaves it alone. The plan grid reveals a **"+" on hover** over
+tail — is a filled day, and `route.plan` leaves it alone. **A day may be put in one of the trip's cities** — `trip_days`, written through the same `PUT
+/itinerary` only when a day sends `city_id`; the tabs show it in that city's colour, and `route.plan`
+keeps such a day to that city's places. Every delete and remove asks first through one `useConfirm`.
+The plan grid reveals a **"+" on hover** over
 any free slot, CSS-only via `group/slot`, and the dialog is mounted only while open so its `key` resets
 it rather than an effect.
 
@@ -151,7 +155,7 @@ version, the trip and each row's identity — and a hidden `_row` column; a file
 refused. It is not signed, so the sheet is untrusted input: every id in it is re-checked, and damaged
 data refuses the file or skips the row. The visible cells are what is read, so Excel edits come through: a renamed
 place or a typed-in row becomes a custom block, and an unreadable row is skipped and named in the
-preview. Costs, members and dismissals stay behind.
+preview. Costs, members, dismissals and day cities stay behind.
 
 **Costs** carry a free-text `expenses.category`: the dialog offers the trip's own tags as one-tap chips,
 most used first and one spelling per tag whatever its case. The Expenses tab draws a d3 donut per

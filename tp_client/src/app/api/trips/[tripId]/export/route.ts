@@ -1,4 +1,4 @@
-// The trip as a spreadsheet. Bytes, so it cannot ride the JSON proxy.
+// The trip as a spreadsheet.
 
 import { proxyFile } from "@/lib/tp-api";
 

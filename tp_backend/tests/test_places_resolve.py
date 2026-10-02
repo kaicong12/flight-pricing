@@ -157,7 +157,6 @@ def test_two_spellings_collapse_to_one_place_with_two_mentions(db, run, monkeypa
 
     assert len(calls) == 2
     assert len(db.scalars(select(Place)).all()) == 1
-    # One extraction is one source_ref, so the unique constraint folds them into a single mention.
     assert len(db.scalars(select(PlaceMention)).all()) == 1
     assert out["candidates"] == 2
 
@@ -214,7 +213,6 @@ def test_a_miss_is_not_cached(db, run, monkeypatch):
     db.commit()
     assert db.scalars(select(PlaceQuery)).all() == []
 
-    # The same name resolves on a later run, which a cached miss would have made impossible.
     counting(monkeypatch)
     assert resolve.places_resolve(db, task(run))["resolved"] == 1
 

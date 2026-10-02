@@ -9,8 +9,8 @@ export async function GET(
   const { tripId } = await params;
   const from = new URL(request.url).searchParams;
   const query = new URLSearchParams({ limit: from.get("limit") ?? "40" });
-  if (from.get("offset")) query.set("offset", from.get("offset")!);
-  if (from.get("category")) query.set("category", from.get("category")!);
-  if (from.get("source")) query.set("source", from.get("source")!);
+  for (const key of ["offset", "category", "source", "q"]) {
+    if (from.get(key)) query.set(key, from.get(key)!);
+  }
   return proxy(`/trips/${encodeURIComponent(tripId)}/shortlist?${query}`);
 }

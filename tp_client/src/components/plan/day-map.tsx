@@ -1,11 +1,10 @@
 "use client";
 
-// The day's places on a map, numbered in the user's order. MapLibre with a keyless basemap: no
-// Google key may reach client JS. No line is drawn between them — travel is not modelled.
+// The day's places on a map, numbered in the user's order.
 
 import "maplibre-gl/dist/maplibre-gl.css";
 
-// maplibre-gl 6 dropped its default export, so these are named.
+// maplibre-gl 6 has no default export.
 import {
   LngLatBounds,
   type LngLatBoundsLike,
@@ -17,8 +16,7 @@ import { useEffect, useRef } from "react";
 
 import type { ItineraryDay } from "@/lib/plan-types";
 
-// A style URL, not a key — swappable without a deploy if the tile host goes away. OpenStreetMap
-// attribution is carried by the style and rendered by MapLibre's own control; do not remove it.
+// OpenStreetMap attribution is rendered by the style's control; do not remove it.
 const STYLE_URL =
   process.env.NEXT_PUBLIC_MAP_STYLE_URL ?? "https://tiles.openfreemap.org/styles/positron";
 
@@ -38,7 +36,6 @@ function tint(map: MapLibreMap) {
         if (layer.type === "fill") map.setPaintProperty(layer.id, "fill-opacity", 0.35);
       }
     } catch {
-      // A style that names its layers differently just renders untinted.
     }
   }
 }
@@ -53,8 +50,7 @@ function marker(index: number, name: string): HTMLElement {
   return el;
 }
 
-// Centre arrives as two numbers rather than an object so a re-render with an equal-but-new object
-// does not tear the map down and rebuild it.
+// Two numbers, not an object: an equal-but-new object would rebuild the map.
 export function DayMap({
   day,
   centerLat,
@@ -67,9 +63,7 @@ export function DayMap({
   const container = useRef<HTMLDivElement>(null);
   const map = useRef<MapLibreMap | null>(null);
   const markers = useRef<Marker[]>([]);
-  // Our own stops do not depend on the basemap, so they are gated on the style being parsed rather
-  // than on `load`, which waits for every tile source. A tile host that never answers must not also
-  // cost us the pins.
+  // Gated on the style parsing, not `load`, which waits on every tile source.
   const styleReady = useRef(false);
   const redraw = useRef<(() => void) | null>(null);
 
@@ -88,11 +82,10 @@ export function DayMap({
       styleReady.current = true;
       redraw.current?.();
     });
-    // A tile host that goes down otherwise fails silently and looks like a bug in this component.
     m.on("error", (e) => console.error("map:", e?.error?.message ?? e));
     map.current = m;
 
-    // The column is flexible, and MapLibre only learns its size when told.
+    // MapLibre only learns its size when told.
     const observer = new ResizeObserver(() => m.resize());
     observer.observe(container.current);
 
@@ -104,7 +97,6 @@ export function DayMap({
     };
   }, [centerLat, centerLon]);
 
-  // Markers, redrawn whenever the day changes.
   useEffect(() => {
     const m = map.current;
     if (!m) return;
@@ -139,13 +131,10 @@ export function DayMap({
     if (styleReady.current) draw();
   }, [day]);
 
-  // z-31 lifts the card above the layout's z-30 grain: mix-blend-multiply over an accelerated WebGL
-  // canvas makes Chromium composite it as blank, so the map forgoes the grain to let others keep it.
-  // Both stay under the z-50 overlay layer, or the map paints over open dialogs.
+  // z-31 over the z-30 grain: Chromium blanks mix-blend-multiply over WebGL; under z-50 dialogs.
   return (
     <div className="relative z-31 h-[calc(100dvh-140px)] min-h-[420px] overflow-hidden rounded-card border border-border bg-land shadow-card isolate">
-      {/* Sized explicitly: maplibre-gl.css forces position:relative on its own container, which
-          beats an `absolute inset-0` utility and silently collapses the map to zero height. */}
+      {/* maplibre-gl.css forces position:relative on its container, so it is sized explicitly. */}
       <div ref={container} className="h-full w-full" />
 
       <div className="pointer-events-none absolute top-3.5 left-3.5 flex flex-wrap items-center gap-1.5">

@@ -61,7 +61,6 @@ def youtube_search(session: Session, task: ClaimedTask) -> dict:
             .values(video_id=hit["video_id"], title=hit["title"], channel=hit["channel"],
                     published_at=hit["published_at"], duration_s=m["duration_s"],
                     view_count=m["view_count"], captions=m["captions"], lang=m["lang"])
-            # A cached video keeps its transcript; only the metadata is worth refreshing.
             .on_conflict_do_update(
                 index_elements=["video_id"],
                 set_={"title": hit["title"], "view_count": m["view_count"],

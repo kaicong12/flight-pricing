@@ -9,7 +9,6 @@ from libs.places import PlacesError, VenueHit, VenueSuggestion
 from tp_api.deps import venue_lookup, venue_search
 from tp_api.main import app
 
-# Helsinki in conftest sits at 60.17/24.94; the default radius is 50km.
 OODI = VenueHit(place_id="ChIJ_oodi", name="Oodi Library", address="Töölönlahdenkatu 4",
                 lat=60.1755, lon=24.9375, primary_type="Library", types=["library"])
 FAR_AWAY = VenueHit(place_id="ChIJ_sydney", name="Sydney Opera House", address="Bennelong Point",
@@ -86,7 +85,6 @@ class TestAdd:
         assert body["place_id"] == "ChIJ_oodi"
         assert body["name"] == "Oodi Library"
         assert body["lat"] == pytest.approx(60.1755)
-        # No mentions, because nothing named it — it is the user's own choice.
         assert body["mention_count"] == 0
         assert body["sources"] == []
         assert body["in_itinerary"] is False
@@ -104,7 +102,6 @@ class TestAdd:
         add(client, trip, "ChIJ_oodi")
 
         places = client.get(f"/trips/{trip}/shortlist").json()["places"]
-        # Last, since ranking is by mention count and a hand-added place has none.
         assert [p["name"] for p in places] == ["Mentioned", "Oodi Library"]
 
     def test_it_can_be_dragged_onto_a_day(self, client):
@@ -112,7 +109,6 @@ class TestAdd:
         trip = make_trip(client)
         add(client, trip, "ChIJ_oodi")
 
-        # Day 0 is only usable from the arrival time, so this sits after the flight lands.
         r = client.put(f"/trips/{trip}/itinerary", json={"days": [
             {"day_index": 0, "items": [
                 {"place_id": "ChIJ_oodi", "start_min": 15 * 60, "duration_min": 60}]}]})

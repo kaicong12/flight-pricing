@@ -24,8 +24,7 @@ def _errors(*names: str) -> tuple[type[BaseException], ...]:
     return tuple(e for e in (getattr(yta, n, None) for n in names) if isinstance(e, type))
 
 
-# 1.x dropped TooManyRequests in favour of RequestBlocked/IpBlocked; PoTokenRequired is what a
-# datacenter IP gets, which is an environment problem and so must stay retryable.
+# youtube-transcript-api 1.x: RequestBlocked/IpBlocked replace TooManyRequests; PoTokenRequired stays retryable.
 PERMANENT = _errors("TranscriptsDisabled", "NoTranscriptFound", "VideoUnavailable",
                     "VideoUnplayable", "InvalidVideoId", "AgeRestricted")
 RATE_LIMITED = _errors("TooManyRequests", "RequestBlocked", "IpBlocked", "PoTokenRequired")

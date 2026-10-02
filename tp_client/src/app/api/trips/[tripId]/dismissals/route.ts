@@ -1,4 +1,4 @@
-// Striking a place off one trip's shortlist, for when Google carries the same venue twice.
+// Strikes a place off one trip's shortlist.
 
 import { proxy } from "@/lib/tp-api";
 

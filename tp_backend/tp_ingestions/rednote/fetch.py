@@ -48,8 +48,7 @@ def translated(note_card: dict) -> str | None:
 
 
 def clean(desc: str) -> str:
-    # Some notes separate every letter of a venue name with zero-width chars. Cc is left alone —
-    # newlines and tabs are the post's paragraph structure.
+    # Some notes put zero-width chars between letters; Cc is paragraph structure.
     return "".join(c for c in desc if unicodedata.category(c) != "Cf")
 
 
@@ -75,8 +74,6 @@ def rednote_fetch(session: Session, task: ClaimedTask) -> dict:
         if card.get("title"):
             note.title = card["title"]
 
-    # Its own task, not a child call: this body cost a RedNote call from a 50/h budget, so a Gemini
-    # failure must not roll it back. rednote.extract then retries against the stored body for free.
     queued = enqueue(session, [
         {"run_id": task.run_id, "kind": TaskKind.REDNOTE_EXTRACT, "source": Source.REDNOTE,
          "payload": {"note_id": note_id, "city_id": task.payload.get("city_id")},

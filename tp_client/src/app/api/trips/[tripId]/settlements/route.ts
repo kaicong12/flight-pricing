@@ -1,4 +1,4 @@
-// Recording that someone paid someone back. Nothing here moves money.
+// Records that someone paid someone back.
 
 import { proxy } from "@/lib/tp-api";
 

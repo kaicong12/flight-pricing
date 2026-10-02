@@ -23,7 +23,7 @@ def test_window_is_clamped_to_the_waking_day():
 
 def test_a_block_before_landing_is_floored_to_the_grid():
     kept = keep(trip(), picks({"index": 0, "start_min": 540, "duration_min": 60}), 4, [0])
-    assert kept == {0: [(0, 900, 60)]}  # 14:45 landing -> first usable grid minute is 15:00
+    assert kept == {0: [(0, 900, 60)]}
 
 
 def test_off_grid_times_are_snapped():
@@ -43,7 +43,7 @@ def test_a_repeated_place_is_kept_once():
 
 def test_a_block_running_past_the_window_is_dropped():
     kept = keep(trip(), picks({"index": 0, "start_min": 1350, "duration_min": 60}), 4, [0])
-    assert kept == {0: []}  # 22:30 + 60 = 23:30, past the 23:00 bound
+    assert kept == {0: []}
 
 
 def test_a_day_we_did_not_offer_is_ignored():

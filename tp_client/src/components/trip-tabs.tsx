@@ -1,10 +1,6 @@
 "use client";
 
-// The three screens one trip has. Links rather than state, because each is its own route and each
-// server-renders its own data — switching tabs must not carry the previous screen's props.
-//
-// A centered pill group in a full-bleed band, deliberately outside every page's `<main>`: the three
-// routes have three different content widths, so anything aligned to the body moves when you switch.
+// The three screens one trip has.
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";

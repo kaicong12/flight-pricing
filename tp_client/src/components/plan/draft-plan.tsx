@@ -27,7 +27,7 @@ import { formatDayTab, piecesOn } from "@/lib/plan-types";
 import { cn } from "@/lib/utils";
 
 const POLL_MS = 3000;
-// Three Gemini rounds behind a 4s throttle gap, plus the queue's 2s poll. Well clear of the worst case.
+// Three Gemini rounds behind a 4s throttle gap, plus the queue's 2s poll.
 const MAX_POLL_MS = 3 * 60 * 1000;
 
 export function DraftPlan({ tripId, days }: { tripId: string; days: ItineraryDay[] }) {
@@ -57,8 +57,6 @@ export function DraftPlan({ tripId, days }: { tripId: string; days: ItineraryDay
         setDrafting(false);
         return;
       }
-      // The days are written straight to the database by the worker, and the board's reducer owns
-      // its own copy, so re-reading the page is the only way to show them.
       window.location.reload();
     } catch {
       setError("Could not reach the server.");

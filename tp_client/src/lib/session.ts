@@ -1,5 +1,4 @@
-// The signed-in user behind the session cookie. Server-only: the token is httpOnly, so it never
-// reaches client JS.
+// The signed-in user behind the session cookie. Server-only.
 
 import { cache } from "react";
 import { cookies } from "next/headers";

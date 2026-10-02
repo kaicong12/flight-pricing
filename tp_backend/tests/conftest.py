@@ -209,8 +209,7 @@ def engine():
 def _redirect_module_sessions(engine, monkeypatch):
     """The worker opens its own sessions via libs.db.session, which is bound to the real engine at
     import time. Without this, worker tests would write to the development database."""
-    # Fetched from importlib, not `import libs.db.session`: libs.db re-exports the `session`
-    # function, which shadows the submodule of the same name.
+    # libs.db re-exports a `session` function that shadows this submodule.
     module = importlib.import_module("libs.db.session")
     monkeypatch.setattr(module, "SessionLocal",
                         sessionmaker(bind=engine, expire_on_commit=False, future=True))

@@ -1,6 +1,6 @@
 "use client";
 
-// Deleting is soft on the server, but there is no undo here, so it asks first.
+// Deleting a trip, confirmed first.
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
@@ -33,7 +33,7 @@ export function DeleteTrip({ tripId, city }: { tripId: string; city: string }) {
         setDeleting(false);
         return;
       }
-      // Stays deleting: the button must not re-arm while the route transition is in flight.
+      // Stays deleting while the route transition is in flight.
       router.push("/trips");
       router.refresh();
     } catch {

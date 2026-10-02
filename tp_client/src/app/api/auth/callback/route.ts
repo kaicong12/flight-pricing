@@ -1,5 +1,4 @@
-// Step 2 of sign-in: Google's redirect lands here. tp_api does the exchange — it holds the client
-// secret and the database — and this only turns the result into a cookie.
+// Step 2 of sign-in: Google's redirect lands here.
 
 import { redirect } from "next/navigation";
 import { cookies } from "next/headers";
@@ -16,8 +15,7 @@ export async function GET(request: Request) {
   const expected = jar.get(STATE_COOKIE)?.value;
   jar.delete(STATE_COOKIE);
 
-  // Google renders its own error page for a bad client or redirect_uri, so what reaches here is
-  // either a code or the user having pressed Deny.
+  // Google shows its own page for a bad client or redirect_uri; only a code or a Deny reaches here.
   const error = params.get("error");
   if (error) redirect(`/login?error=${encodeURIComponent(error)}`);
 

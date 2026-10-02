@@ -125,8 +125,6 @@ def finish_run_if_done(session: Session, run_id: str) -> str | None:
         select(func.count()).select_from(IngestTask)
         .where(IngestTask.run_id == run_id, IngestTask.error_code == ErrorCode.CREDENTIALS)
     )
-    # A run that got anything out of any source is a success; failed_task_count is how the UI says
-    # what we could not read. Blocked tasks are neither — they are work nothing can run yet.
     if needs_credentials:
         status = RunStatus.NEEDS_CREDENTIALS
     elif failed and not done:
@@ -142,9 +140,7 @@ def finish_run_if_done(session: Session, run_id: str) -> str | None:
     if not settled:
         return None
 
-    # Only real completed discovery makes a city fresh; otherwise a run that did nothing would
-    # suppress the next one for city_refresh_days. A trip_planning run carries a city_id but reads no
-    # source at all, so it must never buy the city another 30 days of "fresh".
+    # A trip_planning run reads no source and must not refresh the city.
     if done and session.scalar(select(IngestRun.kind).where(IngestRun.run_id == run_id)) \
             == RunKind.CITY_INGEST:
         run_city = select(IngestRun.city_id).where(IngestRun.run_id == run_id).scalar_subquery()

@@ -1,7 +1,6 @@
 "use client";
 
-// One candidate place. The blurb is a human's opinion from a video or post; the counts are machine
-// output, so they are mono.
+// One candidate place.
 
 import { useDraggable } from "@dnd-kit/core";
 import { X } from "lucide-react";

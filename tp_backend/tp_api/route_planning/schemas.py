@@ -14,8 +14,6 @@ from tp_api.schemas import today_utc
 
 MAX_STOPS_PER_DAY = 25
 
-# Regular hours are all we can ever have for a future date, so past this many days out the plan is
-# validated against them and labelled rather than presented as final.
 SPECIAL_HOURS_HORIZON_DAYS = 7
 REGULAR_HOURS_ONLY_NOTE = "regular_hours_only"
 
@@ -32,11 +30,7 @@ class SourceRefOut(BaseModel):
 
 class ShortlistPlaceOut(BaseModel):
     place_id: str
-    # Where the place was first found. Provenance, not a location: the draft prompt joins the city
-    # row through it, and nothing renders it.
     city_id: str | None = None
-    # The city the place is genuinely in — not necessarily one this trip covers, and None on a
-    # single-city trip or when it is inside no city we hold. This is the one that is shown.
     city_name: str | None = None
     name: str
     address: str | None = None
@@ -77,6 +71,7 @@ class ItemOut(BaseModel):
 class DayOut(BaseModel):
     day_index: int
     date: date
+    city_id: str | None = None
     items: list[ItemOut] = []
 
 
@@ -98,7 +93,6 @@ class ItemIn(BaseModel):
     description: str | None = Field(default=None, max_length=DESCRIPTION_MAX)
     start_min: int = Field(ge=0, lt=24 * 60)
     duration_min: int = Field(ge=1)
-    # Only the scheme is checked: a booking link is the user's to keep, and we never fetch it.
     reference_url: str | None = Field(default=None, max_length=REFERENCE_URL_MAX,
                                       pattern=r"^https?://\S+$")
 
@@ -114,7 +108,10 @@ class ItemIn(BaseModel):
 
 
 class DayIn(BaseModel):
+    """`city_id` is only written when sent; null unassigns the day."""
+
     day_index: int = Field(ge=0)
+    city_id: str | None = Field(default=None, max_length=255)
     items: list[ItemIn] = Field(default=[], max_length=MAX_STOPS_PER_DAY)
 
 
@@ -164,7 +161,6 @@ class WarningOut(BaseModel):
 class DayRouteOut(BaseModel):
     day_index: int
     date: date
-    # The first block's time, echoed back. None on an empty day.
     start_time: time | None = None
     blocks: list[BlockOut] = []
     warnings: list[WarningOut] = []

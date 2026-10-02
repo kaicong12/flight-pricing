@@ -7,7 +7,7 @@ import { currentUser } from "@/lib/session";
 export const metadata = { title: "Sign in" };
 export const dynamic = "force-dynamic";
 
-// Google's own error page handles a misconfigured client, so these are the ones that reach us.
+// Google handles a misconfigured client itself; only these reach us.
 const REASONS: Record<string, string> = {
   access_denied: "You cancelled the Google sign-in.",
   bad_state: "That sign-in link had gone stale. Try again.",

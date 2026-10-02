@@ -1,5 +1,4 @@
-// One trip in the list. The thumbnail is the trip's identity, because same city with different
-// dates is the common case.
+// One trip in the list.
 
 import Link from "next/link";
 
@@ -12,8 +11,7 @@ const CONTOURS =
 
 export function TripCard({ trip, meId }: { trip: TripSummary; meId: string }) {
   return (
-    // The share control is a sibling of the Link, not a child: a button inside an anchor is invalid
-    // markup and the anchor would swallow the click.
+    // The share control is a sibling of the Link: a button inside an anchor is invalid.
     <div className="relative">
     <Link
       href={tripHref(trip)}

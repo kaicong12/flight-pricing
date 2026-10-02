@@ -11,13 +11,13 @@ from libs.routing.plan import (
 )
 from tp_api.route_planning.utils import pieces
 
-# Google's periods use 0=Sunday. Two real shapes, taken from live Place Details responses.
+# Google's periods use 0=Sunday; shapes taken from live Place Details.
 ARCTIC_CATHEDRAL = [
     {"open": {"day": 0, "hour": 13, "minute": 0}, "close": {"day": 0, "hour": 18, "minute": 0}},
     {"open": {"day": 1, "hour": 9, "minute": 0}, "close": {"day": 1, "hour": 18, "minute": 0}},
     {"open": {"day": 2, "hour": 9, "minute": 0}, "close": {"day": 2, "hour": 18, "minute": 0}},
 ]
-# Opens 09:00 and closes at midnight, so the close carries the *next* day's number.
+# Google gives a midnight close the next day's number.
 FJELLHEISEN = [
     {"open": {"day": 0, "hour": 9, "minute": 0}, "close": {"day": 1, "hour": 0, "minute": 0}},
     {"open": {"day": 1, "hour": 9, "minute": 0}, "close": {"day": 2, "hour": 0, "minute": 0}},
@@ -30,7 +30,6 @@ class TestWindowFor:
         assert window_for(ARCTIC_CATHEDRAL, 1) == (9 * 60, 18 * 60)
 
     def test_a_close_rolling_past_midnight_clamps_to_end_of_day(self):
-        # Not (540, 0), which would read as a window that closes before it opens.
         assert window_for(FJELLHEISEN, 0) == (9 * 60, 24 * 60)
 
     def test_a_weekday_with_no_period_is_closed(self):
@@ -65,7 +64,6 @@ class TestPlanDay:
         assert [b.place_id for b in plan.blocks] == ["a", "b"]
 
     def test_two_blocks_at_the_same_time_are_ordered_by_place_id(self):
-        # Overlap is a legitimate thing to say about a day, so it needs a stable sequence.
         plan = plan_day([stop("z", "Z", start=600), stop("a", "A", start=600)], weekday=1)
         assert [b.place_id for b in plan.blocks] == ["a", "z"]
 
@@ -83,11 +81,9 @@ class TestPlanDay:
         w = [x for x in plan.warnings if x.code == OPENS_LATER]
         assert w[0].detail == {"name": "Arctic Cathedral", "start": "11:00", "opens": "13:00",
                                "early_min": 120}
-        # The whole point: the block stays where the user put it.
         assert plan.blocks[0].start_min == 11 * 60
 
     def test_closing_is_checked_against_the_end_not_the_start(self):
-        # In at 17:43 with 30 minutes needed, shut at 18:00. The start alone would look fine.
         plan = plan_day([stop("a", "Uspenski", start=17 * 60 + 43, minutes=30)], weekday=1)
         w = [x for x in plan.warnings if x.code == CLOSES_BEFORE_DONE]
         assert w[0].detail == {"name": "Uspenski", "start": "17:43", "need_min": 30,

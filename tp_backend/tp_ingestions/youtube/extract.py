@@ -44,15 +44,13 @@ def youtube_extract(session: Session, task: ClaimedTask) -> dict:
         if not text:
             raise TaskError(ErrorCode.PERMANENT, f"transcript {video_id} is empty")
         video.transcript = text
-        # Committed, not flushed: a Gemini failure below would otherwise roll the transcript back and
-        # make every retry re-fetch it, which is the PoTokenRequired surface.
+        # Committed, not flushed: a Gemini failure must not roll back the transcript.
         session.commit()
 
     limits.gemini().take()
     result = gemini.generate(YOUTUBE_TRANSCRIPT, YOUTUBE_TRANSCRIPT.render(transcript=text))
     places = result.get("places") or []
 
-    # A non-travel video still gets its row, so the gate is never paid for twice.
     session.add(Extraction(
         source=Source.YOUTUBE, source_ref=video_id,
         prompt_version=YOUTUBE_TRANSCRIPT.version_key, model=YOUTUBE_TRANSCRIPT.model,

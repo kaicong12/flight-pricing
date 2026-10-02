@@ -64,9 +64,6 @@ class Worker:
 
     def run_once(self) -> bool:
         """Claim and execute one task. False when nothing was due."""
-        # Claimed in its own transaction so the row lock is released immediately; from here on the
-        # lease in locked_at is what stops a second worker taking it. The run is marked running
-        # here too — doing it alongside the handler would roll back whenever the handler failed.
         with session() as s:
             task = queue.claim(s, self.name)
             if task is not None:
@@ -80,7 +77,6 @@ class Worker:
             settled = queue.finish_run_if_done(s, task.run_id)
         if settled:
             log.info("run %s -> %s", task.run_id, settled)
-            # A finished city is the cue to draft for everyone waiting on it.
             with session() as s:
                 drafts = plan_after_ingest(s, task.run_id)
             if drafts:
@@ -96,8 +92,6 @@ class Worker:
             return
 
         try:
-            # Handler writes and the task's completion commit together, so a crash mid-handler
-            # leaves nothing half-applied and the lease hands the task to the next worker.
             with session() as s:
                 result = handler(s, task)
                 queue.complete(s, task.task_id)
