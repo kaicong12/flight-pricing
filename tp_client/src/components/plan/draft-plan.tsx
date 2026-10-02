@@ -1,8 +1,6 @@
 "use client";
 
-// Asks the worker to draft the empty days. The handler leaves a day with blocks on it alone, so this
-// can never overwrite the user's ordering — but new blocks appearing unannounced is still a surprise,
-// so a calendar that already has anything on it gets warned first.
+// Asks the worker to draft the empty days. A calendar that already has anything on it is warned first.
 
 import { Sparkles } from "lucide-react";
 import { useState } from "react";
@@ -17,9 +15,15 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { DRAFT_PENDING, type TripStatus, errorText } from "@/lib/api-types";
+import {
+  ALL_DAYS_FILLED,
+  DRAFT_PENDING,
+  DRAFT_SKIPPED,
+  type TripStatus,
+  errorText,
+} from "@/lib/api-types";
 import type { ItineraryDay } from "@/lib/plan-types";
-import { formatDayTab } from "@/lib/plan-types";
+import { formatDayTab, piecesOn } from "@/lib/plan-types";
 import { cn } from "@/lib/utils";
 
 const POLL_MS = 3000;
@@ -29,10 +33,12 @@ const MAX_POLL_MS = 3 * 60 * 1000;
 export function DraftPlan({ tripId, days }: { tripId: string; days: ItineraryDay[] }) {
   const [open, setOpen] = useState(false);
   const [drafting, setDrafting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [failure, setFailure] = useState<{ text: string; days: ItineraryDay[] } | null>(null);
+  const error = failure?.days === days ? failure.text : null;
+  const setError = (text: string | null) => setFailure(text ? { text, days } : null);
 
-  const taken = days.filter((d) => d.items.length > 0);
-  const empty = days.filter((d) => d.items.length === 0);
+  const taken = days.filter((d) => piecesOn(days, d.day_index).length > 0);
+  const empty = days.filter((d) => !taken.includes(d));
 
   async function draft() {
     setOpen(false);
@@ -45,7 +51,12 @@ export function DraftPlan({ tripId, days }: { tripId: string; days: ItineraryDay
         setDrafting(false);
         return;
       }
-      await waitForDraft(tripId);
+      const skipped = (await waitForDraft(tripId))?.draft_result?.skipped;
+      if (skipped) {
+        setError(DRAFT_SKIPPED[skipped] ?? "The draft added nothing.");
+        setDrafting(false);
+        return;
+      }
       // The days are written straight to the database by the worker, and the board's reducer owns
       // its own copy, so re-reading the page is the only way to show them.
       window.location.reload();
@@ -55,50 +66,61 @@ export function DraftPlan({ tripId, days }: { tripId: string; days: ItineraryDay
     }
   }
 
-  // Nothing to fill: the button would queue a task that returns "every day already has items".
-  if (empty.length === 0 && !drafting) return null;
-
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <button
-        type="button"
-        onClick={() => (taken.length > 0 ? setOpen(true) : draft())}
-        disabled={drafting}
-        className={cn(
-          "flex h-9 items-center gap-1.5 rounded-full border border-border bg-surface px-3.5 text-[13px] font-medium text-ink transition-colors outline-none focus-visible:ring-3 focus-visible:ring-ring/50",
-          "hover:border-[#c6bda4] disabled:opacity-60",
-        )}
-      >
-        <Sparkles
+    <div className="relative">
+      <Dialog open={open} onOpenChange={setOpen}>
+        <button
+          type="button"
+          onClick={() => {
+            if (empty.length === 0) setError(ALL_DAYS_FILLED);
+            else if (taken.length > 0) setOpen(true);
+            else draft();
+          }}
+          disabled={drafting}
           className={cn(
-            "size-3.5",
-            drafting && "animate-[tp-pulse_1.4s_ease-in-out_infinite] motion-reduce:animate-none",
+            "flex h-9 items-center gap-1.5 rounded-full border border-border bg-surface px-3.5 text-[13px] font-medium text-ink transition-colors outline-none focus-visible:ring-3 focus-visible:ring-ring/50",
+            "hover:border-[#c6bda4] disabled:opacity-60",
           )}
-        />
-        {drafting ? "Drafting…" : "Draft my days"}
-      </button>
+        >
+          <Sparkles
+            className={cn(
+              "size-3.5",
+              drafting && "animate-[tp-pulse_1.4s_ease-in-out_infinite] motion-reduce:animate-none",
+            )}
+          />
+          {drafting ? "Drafting…" : "Draft my days"}
+        </button>
 
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>
-            {taken.length === 1
-              ? "1 day already has blocks"
-              : `${taken.length} days already have blocks`}
-          </DialogTitle>
-          <DialogDescription>
-            {listDays(taken)} {taken.length === 1 ? "is" : "are"} yours and will be left exactly as
-            you arranged {taken.length === 1 ? "it" : "them"}. Only {listDays(empty)} will be filled.
-          </DialogDescription>
-        </DialogHeader>
-        {error && <p className="text-[13px] leading-[1.5] text-alert">{error}</p>}
-        <DialogFooter>
-          <DialogClose render={<Button variant="outline" />}>Cancel</DialogClose>
-          <Button onClick={draft}>
-            Draft {empty.length === 1 ? "1 day" : `${empty.length} days`}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              {taken.length === 1
+                ? "1 day already has blocks"
+                : `${taken.length} days already have blocks`}
+            </DialogTitle>
+            <DialogDescription>
+              {listDays(taken)} {taken.length === 1 ? "is" : "are"} yours and will be left exactly as
+              you arranged {taken.length === 1 ? "it" : "them"}. Only {listDays(empty)} will be filled.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <DialogClose render={<Button variant="outline" />}>Cancel</DialogClose>
+            <Button onClick={draft}>
+              Draft {empty.length === 1 ? "1 day" : `${empty.length} days`}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      {error && (
+        <p
+          role="alert"
+          onClick={() => setError(null)}
+          className="absolute top-full right-0 z-10 mt-1.5 w-64 rounded-lg border border-border bg-surface px-3 py-2 text-[12.5px] leading-[1.45] text-alert shadow-sm"
+        >
+          {error}
+        </p>
+      )}
+    </div>
   );
 }
 
@@ -109,15 +131,16 @@ function listDays(days: ItineraryDay[]): string {
   return `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
 }
 
-/** Polls until route.plan reaches a terminal status. Resolves either way — the reload shows whatever
- * the draft managed, and a draft that failed leaves the days empty rather than wrong. */
-async function waitForDraft(tripId: string): Promise<void> {
+/** Polls until route.plan reaches a terminal status and hands back the trip that says so. A draft
+ * that failed leaves the days empty rather than wrong. */
+async function waitForDraft(tripId: string): Promise<TripStatus | null> {
   const startedAt = Date.now();
   while (Date.now() - startedAt < MAX_POLL_MS) {
     await new Promise((done) => setTimeout(done, POLL_MS));
     const r = await fetch(`/api/trips/${encodeURIComponent(tripId)}`);
     if (!r.ok) continue;
     const body = (await r.json()) as TripStatus;
-    if (!DRAFT_PENDING.includes(body.draft ?? "")) return;
+    if (!DRAFT_PENDING.includes(body.draft ?? "")) return body;
   }
+  return null;
 }

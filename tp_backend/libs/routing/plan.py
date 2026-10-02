@@ -1,6 +1,6 @@
 """Check one day of pinned activity blocks and say what is wrong with it.
 
-Pure: every stop arrives carrying its own hours and its own sunset, so this never touches the network
+Pure: every stop arrives carrying its own hours, so this never touches the network
 and the whole of the validation is testable.
 
 Every block carries its own start time. Nothing here derives a time and nothing here moves a block —
@@ -17,15 +17,10 @@ from libs.routing.hours import CLOSED, Window, window_for
 # The drag and draft snap; a stored block is to the minute.
 SLOT_MIN = 30
 
-# Categories worth doing in daylight. A closed museum is a hard failure; a dark viewpoint is a
-# wasted trip, which is the same problem one step softer.
-OUTDOOR = {"see", "do"}
-
 # Warning codes. The client owns the English.
 CLOSED_TODAY = "closed"
 OPENS_LATER = "opens_later"
 CLOSES_BEFORE_DONE = "closes_before_done"
-AFTER_SUNSET = "after_sunset"
 NO_HOURS = "no_hours"
 
 
@@ -35,11 +30,10 @@ class Stop:
 
     place_id: str
     name: str
-    category: str | None
     start_min: int
     duration_min: int
     periods: list[dict] | None = None  # None = never fetched; [] = Places publishes none
-    sunset_min: float | None = None
+    block_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -51,6 +45,7 @@ class Block:
     duration_min: int
     open_from: int | None
     open_to: int | None
+    block_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -58,6 +53,7 @@ class PlanWarning:
     code: str
     place_id: str | None
     detail: dict
+    block_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -73,8 +69,8 @@ def hhmm(minutes: float) -> str:
 
 
 def in_time_order(stops: list[Stop]) -> list[Stop]:
-    """The day's sequence. place_id breaks a tie, because two blocks may share a start time."""
-    return sorted(stops, key=lambda s: (s.start_min, s.place_id))
+    """The day's sequence. The ids break a tie, because two blocks may share a start time."""
+    return sorted(stops, key=lambda s: (s.start_min, s.place_id, s.block_id or ""))
 
 
 def plan_day(stops: list[Stop], *, weekday: int) -> DayPlan:
@@ -87,30 +83,24 @@ def plan_day(stops: list[Stop], *, weekday: int) -> DayPlan:
         open_from = open_to = None
 
         if stop.periods is None or window is None:
-            warnings.append(PlanWarning(NO_HOURS, stop.place_id, {"name": stop.name}))
+            warnings.append(PlanWarning(NO_HOURS, stop.place_id, {"name": stop.name}, stop.block_id))
         elif window == CLOSED:
-            warnings.append(PlanWarning(CLOSED_TODAY, stop.place_id, {"name": stop.name}))
+            warnings.append(PlanWarning(CLOSED_TODAY, stop.place_id, {"name": stop.name}, stop.block_id))
         else:
             open_from, open_to = window
             if stop.start_min < open_from:
                 warnings.append(PlanWarning(OPENS_LATER, stop.place_id, {
                     "name": stop.name, "start": hhmm(stop.start_min), "opens": hhmm(open_from),
-                    "early_min": open_from - stop.start_min}))
+                    "early_min": open_from - stop.start_min}, stop.block_id))
             # Against the end, not the start: arriving at 15:43 for a 30-minute visit does not work
             # if it closes at 16:00.
             if end_min > open_to:
                 warnings.append(PlanWarning(CLOSES_BEFORE_DONE, stop.place_id, {
                     "name": stop.name, "start": hhmm(stop.start_min),
-                    "need_min": stop.duration_min, "closes": hhmm(open_to)}))
-
-        if (stop.category in OUTDOOR) and stop.sunset_min is not None \
-                and stop.start_min > stop.sunset_min:
-            warnings.append(PlanWarning(AFTER_SUNSET, stop.place_id, {
-                "name": stop.name, "start": hhmm(stop.start_min),
-                "sunset": hhmm(stop.sunset_min)}))
+                    "need_min": stop.duration_min, "closes": hhmm(open_to)}, stop.block_id))
 
         blocks.append(Block(place_id=stop.place_id, name=stop.name, start_min=stop.start_min,
                             end_min=end_min, duration_min=stop.duration_min,
-                            open_from=open_from, open_to=open_to))
+                            open_from=open_from, open_to=open_to, block_id=stop.block_id))
 
     return DayPlan(blocks=blocks, warnings=warnings)

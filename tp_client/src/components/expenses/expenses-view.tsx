@@ -15,11 +15,13 @@ import {
   type ExpenseTab,
   firstName,
   money,
+  tagChoices,
 } from "@/lib/expense-types";
 import { cn } from "@/lib/utils";
 
 import { BalanceBar } from "./balance-bar";
 import { ExpenseDialog } from "./expense-dialog";
+import { SpendByCategory } from "./spend-by-category";
 
 export function ExpensesView({
   tripId,
@@ -99,7 +101,7 @@ export function ExpensesView({
           <p className="text-[14px] font-medium">Nothing spent yet.</p>
           <p className="mx-auto mt-1.5 max-w-[46ch] text-[13px] leading-[1.55] text-muted-foreground">
             Add what a meal, a ticket or a taxi cost and this fills with who is up and who is down.
-            The <span className="font-mono">$</span> on any block on the plan screen adds one too.
+            The pencil on any block on the plan screen adds one too.
           </p>
         </div>
       ) : (
@@ -129,6 +131,8 @@ export function ExpensesView({
         </div>
       )}
 
+      {tab.expenses.length > 0 && <SpendByCategory expenses={tab.expenses} meId={meId} />}
+
       {tab.expenses.length > 0 && (
         <section className="overflow-hidden rounded-card border border-border surface shadow-card">
           <h2 className="border-b border-hairline px-5 py-3.5 font-mono text-[11px] tracking-[0.04em] text-faint uppercase">
@@ -145,6 +149,7 @@ export function ExpensesView({
                       {who(e.payer_id)} paid · {e.spent_on}
                       {e.day_index !== null && ` · day ${e.day_index + 1}`}
                       {e.block_title && ` · ${e.block_title}`}
+                      {e.category && ` · ${e.category}`}
                     </p>
                   </div>
 
@@ -225,6 +230,7 @@ export function ExpensesView({
           currency={dialog.editing?.currency ?? tab.currency}
           defaultDate={defaultDate}
           editing={dialog.editing}
+          choices={tagChoices(tab.expenses)}
           onClose={() => setDialog(null)}
           onSubmit={(draft: ExpenseDraft) =>
             send(

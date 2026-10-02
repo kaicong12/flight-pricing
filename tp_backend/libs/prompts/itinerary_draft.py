@@ -56,8 +56,7 @@ last. A day's blocks must not overlap.
 
 Each place lists the city it is in and its straight-line distance from that city's own centre. Past
 about 5km a place is an excursion that eats most of a day. Keep a day inside one city unless the
-traveller asks otherwise. Things that need darkness belong after sunset in *that place's* city;
-things that need daylight do not.
+traveller asks otherwise.
 
 Places, by index:
 {places}
@@ -67,4 +66,4 @@ traveller rather than for coverage — leaving a famous place out is correct if 
 it. Never invent an index.
 {feedback}"""
 
-ITINERARY_DRAFT = Prompt(name="itinerary_draft", version="v3", template=TEMPLATE, schema=SCHEMA)
+ITINERARY_DRAFT = Prompt(name="itinerary_draft", version="v4", template=TEMPLATE, schema=SCHEMA)

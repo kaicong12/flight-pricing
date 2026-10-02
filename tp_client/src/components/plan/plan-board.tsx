@@ -23,7 +23,7 @@ import { sortableKeyboardCoordinates } from "@dnd-kit/sortable";
 import { useCallback, useEffect, useMemo, useReducer, useState } from "react";
 
 import type { Trip } from "@/lib/api-types";
-import { type ExpenseTab, blockCost, costsByBlock } from "@/lib/expense-types";
+import { type ExpenseTab, blockCost, costsByBlock, tagChoices } from "@/lib/expense-types";
 import {
   type PlanState,
   dayOf,
@@ -48,6 +48,7 @@ import {
   piecesOn,
 } from "@/lib/plan-types";
 
+import type { CostEntry } from "./custom-block";
 import { DayColumn } from "./day-column";
 import { DayMap } from "./day-map";
 import { DayTabs } from "./day-tabs";
@@ -89,7 +90,6 @@ export function PlanBoard({
     category: null as string | null,
     source: null as ShortlistSource | null,
   });
-  // The costs tab, so a block can show what it cost and the "$" can add one.
   const [expenses, setExpenses] = useState(initialExpenses);
 
   const reloadExpenses = useCallback(async () => {
@@ -105,15 +105,13 @@ export function PlanBoard({
     return out;
   }, [expenses]);
 
-  // One figure typed on a block: split evenly between everyone, paid by whoever typed it. Clearing
-  // drops every cost on that block, which is what the "$" showing a total means.
   const saveCost = useCallback(
-    async (item: ItineraryItem, amountCents: number | null, currency: string) => {
+    async (item: ItineraryItem, { amountCents, currency, category }: CostEntry, date?: string) => {
       const tab = expenses;
       if (!tab) return;
       const base = `/api/trips/${trip.trip_id}/expenses`;
       const existing = tab.expenses.filter(
-        (e) => (e.place_id ?? e.block_id) === (item.place_id ?? item.block_id),
+        (e) => e.block_id === item.block_id,
       );
       if (amountCents === null) {
         await Promise.all(
@@ -128,9 +126,9 @@ export function PlanBoard({
             description: item.name,
             amount_cents: amountCents,
             currency,
-            spent_on: dayDate(state, item),
+            category,
+            spent_on: date ?? dayDate(state, item),
             payer_id: meId,
-            place_id: item.place_id,
             block_id: item.block_id,
             participants: ids,
           }),
@@ -405,13 +403,16 @@ export function PlanBoard({
             readOnly={!canEdit}
             available={availableWindow(trip, state.activeDay, state.days.length)}
             costs={costs}
+            tags={tagChoices(expenses?.expenses ?? [])}
             currency={expenses?.currency ?? "EUR"}
             onCost={saveCost}
             onRemove={(key) => dispatch({ type: "remove", day: homeOf(key), key })}
             onReference={(key, url) => dispatch({ type: "reference", day: homeOf(key), key, url })}
-            onAddCustom={(startMin, draft, durationMin) =>
-              dispatch({ type: "addCustom", day: state.activeDay, startMin, durationMin, draft })
-            }
+            onAddCustom={(item, cost) => {
+              dispatch({ type: "addCustom", day: state.activeDay, item });
+              const date = state.days.find((d) => d.day_index === state.activeDay)?.date;
+              if (cost) saveCost(item, cost, date);
+            }}
             onEditCustom={(key, draft) =>
               dispatch({ type: "editCustom", day: homeOf(key), key, draft })
             }
@@ -426,10 +427,8 @@ export function PlanBoard({
 
         <DayMap
           day={{ ...day, items: piecesOn(state.days, day.day_index).map((p) => p.item) }}
-          route={route}
           centerLat={center?.lat ?? null}
           centerLon={center?.lon ?? null}
-          stale={isStale}
         />
       </div>
 

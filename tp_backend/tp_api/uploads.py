@@ -128,7 +128,7 @@ def _rows(db: Session, ws, identities: dict, trip: Trip, upload: Upload) -> None
     stored = (set(db.scalars(select(Place.place_id).where(Place.place_id.in_(known))))
               if known else set())
     seen_keys: set[str] = set()
-    placed: set[str] = set()
+    used_blocks: set[str] = set()
     limit = settings().max_stops_per_day
     day = None
 
@@ -160,21 +160,21 @@ def _rows(db: Session, ws, identities: dict, trip: Trip, upload: Upload) -> None
         ref = identity.get("reference_url") if identity else None
 
         place_id = identity.get("place_id") if identity else None
+        block_id = identity.get("block_id") if identity else None
+        if not isinstance(block_id, str) or not 0 < len(block_id) <= 36 or block_id in used_blocks:
+            block_id = str(uuid4())
         try:
-            if (place_id and title == identity.get("name") and place_id in stored
-                    and place_id not in placed):
-                item = ItemIn(place_id=place_id, start_min=at, duration_min=duration,
-                              description=details, reference_url=ref)
-                placed.add(place_id)
+            if place_id and title == identity.get("name") and place_id in stored:
+                item = ItemIn(place_id=place_id, block_id=block_id, start_min=at,
+                              duration_min=duration, description=details, reference_url=ref)
             else:
-                reuse = (identity and identity.get("kind") == BlockKind.CUSTOM
-                         and identity.get("block_id"))
-                item = ItemIn(kind=BlockKind.CUSTOM, block_id=reuse or str(uuid4()),
+                item = ItemIn(kind=BlockKind.CUSTOM, block_id=block_id,
                               title=title[:TITLE_MAX], description=details, start_min=at,
                               duration_min=duration, reference_url=ref)
         except ValueError:
             upload.skipped.append((r, "its hidden Trip Planner data is damaged"))
             continue
+        used_blocks.add(item.block_id)
 
         covered = pieces(day, at, duration)
         if day < 0 or covered[-1][0] >= day_count(trip):

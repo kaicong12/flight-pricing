@@ -11,6 +11,7 @@ import {
   availableWindow,
   endOf,
   endsOn,
+  firstFree,
   hhmm,
   keyOf,
   layout,
@@ -30,7 +31,7 @@ function eq(got: unknown, want: unknown, label: string) {
 const item = (place_id: string, start_min: number, duration_min = 60): ItineraryItem => ({
   kind: "place",
   place_id,
-  block_id: null,
+  block_id: `b-${place_id}`,
   name: place_id.toUpperCase(),
   description: null,
   lat: null,
@@ -49,7 +50,7 @@ const custom = (block_id: string, start_min: number, duration_min = 60): Itinera
   block_id,
 });
 
-eq(keyOf(item("p1", 600)), "p1", "a place is its place_id");
+eq(keyOf(item("p1", 600)), "b-p1", "a place block is its block_id, not its place_id");
 eq(keyOf(custom("b1", 600)), "b1", "a custom block is its block_id");
 
 eq(snap(614), 600, "snap down");
@@ -77,7 +78,7 @@ eq(
 );
 eq(
   piecesOn(days, 2).map((p) => [keyOf(p.item), p.offset, p.from, p.to]),
-  [["n1", 1440, 0, 370], ["x", 0, 600, 660]],
+  [["n1", 1440, 0, 370], ["b-x", 0, 600, 660]],
   "the next day draws the tail beside its own blocks",
 );
 eq(piecesOn(days, 0), [], "nothing reaches back to an earlier day");
@@ -98,7 +99,7 @@ eq(
   [["a", 0, 3], ["b", 1, 3], ["c", 2, 3]],
   "three-way overlap is three lanes",
 );
-eq(lanes([item("z", 600), item("a", 600)]), [["a", 0, 2], ["z", 1, 2]], "a tie orders by place_id");
+eq(lanes([item("z", 600), item("a", 600)]), [["a", 0, 2], ["z", 1, 2]], "a tie orders by block_id");
 
 eq(endOf(item("a", 600, 90)), 690, "endOf");
 eq(hhmm(1290), "21:30", "hhmm");
@@ -107,12 +108,12 @@ eq(hhmm(1470), "00:30", "hhmm wraps past midnight");
 // A warning names the block it is about, and an unknown code degrades to the code itself rather
 // than to "undefined".
 eq(
-  warningText({ code: "closes_before_done", place_id: "b",
+  warningText({ code: "closes_before_done", place_id: "b", block_id: "b-b",
                 detail: { start: "16:00", need_min: 90, closes: "17:00" } }, "Polar Museum"),
   "Polar Museum — Starts 16:00, needs 90 min, closes 17:00. Move it earlier.",
   "a warning is prefixed with the block's name",
 );
-eq(warningText({ code: "who_knows", place_id: null, detail: {} }), "who_knows", "unknown code");
+eq(warningText({ code: "who_knows", place_id: null, block_id: null, detail: {} }), "who_knows", "unknown code");
 
 // The flight window. Day 0 cannot start before landing; the last day cannot run past departure.
 const trip = { arrive_time: "13:40:00", depart_time: "17:20:00" };
@@ -125,5 +126,15 @@ eq(
   { from: 0, to: 1440 },
   "no flight times bounds nothing",
 );
+
+const open = { from: 0, to: 1440 };
+eq(firstFree([], open), 540, "an empty day starts at 09:00");
+eq(firstFree(piecesOn(days, 2), open), 540, "a block at 10:00 leaves 09:00 free");
+eq(firstFree(piecesOn(days, 2), { from: 570, to: 1440 }), 660, "09:30 arrival skips the 10:00 block");
+eq(firstFree([], { from: 435, to: 1440 }), 540, "a 07:15 arrival still waits for 09:00");
+eq(firstFree([], { from: 0, to: 480 }), 0, "a day ending at 08:00 falls back to before 09:00");
+eq(firstFree(piecesOn(days, 2), { from: 600, to: 660 }), null, "a booked window has no room");
+eq(firstFree(piecesOn(days, 2), { from: 0, to: 540 }), 390, "an overnight tail to 06:10 holds the early hours");
+eq(firstFree(piecesOn(days, 2), { from: 570, to: 660 }), 570, "half an hour fits when an hour does not");
 
 console.log("plan-types: all checks passed");

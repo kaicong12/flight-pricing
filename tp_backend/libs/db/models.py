@@ -233,21 +233,16 @@ class ItineraryItem(Base):
     falls out of it, so there is no position column — and two blocks may share a start time, because
     overlapping them is a legitimate thing to say about a day.
 
-    A `custom` block is a flight, a stay or a booking: it carries its own `title` and a client-minted
-    `block_id`, because the same title may repeat within one day and `place_id` is the only identity a
-    place block has.
+    `block_id` is every block's identity, place blocks included.
     """
 
     __tablename__ = "itinerary_items"
     __table_args__ = (
-        # A venue belongs to one day of a trip, which is what makes the shortlist's "already added"
-        # flag a join rather than a scan. NULL place_ids are distinct, so custom rows sit outside it.
-        UniqueConstraint("trip_id", "place_id", name="uq_itinerary_trip_place"),
         UniqueConstraint("trip_id", "block_id", name="uq_itinerary_trip_block"),
         _in("kind", BlockKind),
         CheckConstraint(
-            "(kind = 'place' AND place_id IS NOT NULL AND title IS NULL AND block_id IS NULL) OR "
-            "(kind = 'custom' AND title IS NOT NULL AND place_id IS NULL AND block_id IS NOT NULL)",
+            "(kind = 'place' AND place_id IS NOT NULL AND title IS NULL) OR "
+            "(kind = 'custom' AND title IS NOT NULL AND place_id IS NULL)",
             name="ck_itinerary_identity"),
         CheckConstraint("day_index >= 0", name="ck_itinerary_day"),
         # End may run past midnight, into later days; a start may not, or it belongs to the next day.
@@ -262,7 +257,8 @@ class ItineraryItem(Base):
     kind: Mapped[str] = mapped_column(String(16), nullable=False,
                                       server_default=BlockKind.PLACE)
     place_id: Mapped[str | None] = mapped_column(ForeignKey("places.place_id"), nullable=True)
-    block_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    block_id: Mapped[str] = mapped_column(String(36), nullable=False,
+                                          server_default=text("gen_random_uuid()::text"))
     title: Mapped[str | None] = mapped_column(String(120), nullable=True)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     day_index: Mapped[int] = mapped_column(Integer, nullable=False)
@@ -280,16 +276,14 @@ class Expense(Base):
     """One cost someone paid on a trip, and what it was for.
 
     Money is integer minor units in its own `currency` and is never summed across currencies — each
-    currency is its own pile, so no rate is ever needed. A cost may name the block it was for, and
-    it names it by `place_id` or `block_id`, the itinerary's stable identities: `itinerary_items.id`
-    is autoincrement and `replace_days` deletes then re-inserts, so a drag would break the link.
+    currency is its own pile, so no rate is ever needed. A cost may name the block it was for, by
+    `block_id`.
     """
 
     __tablename__ = "expenses"
     __table_args__ = (
         CheckConstraint("amount_cents > 0", name="ck_expense_amount"),
         CheckConstraint("currency ~ '^[A-Z]{3}$'", name="ck_expense_currency"),
-        CheckConstraint("place_id IS NULL OR block_id IS NULL", name="ck_expense_block"),
         Index("ix_expenses_trip", "trip_id", "spent_on"),
     )
 
@@ -301,8 +295,8 @@ class Expense(Base):
     amount_cents: Mapped[int] = mapped_column(BigInteger, nullable=False)
     currency: Mapped[str] = mapped_column(String(3), nullable=False)
     spent_on: Mapped[date] = mapped_column(Date, nullable=False)
-    place_id: Mapped[str | None] = mapped_column(ForeignKey("places.place_id"))
     block_id: Mapped[str | None] = mapped_column(String(36))
+    category: Mapped[str | None] = mapped_column(String(40))
     deleted: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
     created_at: Mapped[datetime] = _ts(nullable=False, server_default=func.now())
     updated_at: Mapped[datetime] = _ts(nullable=False, server_default=func.now(),
@@ -310,7 +304,6 @@ class Expense(Base):
 
     shares: Mapped[list["ExpenseShare"]] = relationship(back_populates="expense",
                                                         cascade="all, delete-orphan")
-    place: Mapped[Place | None] = relationship()
 
 
 class ExpenseShare(Base):
@@ -575,6 +568,7 @@ class IngestTask(Base):
     locked_at: Mapped[datetime | None] = _ts()
     error_code: Mapped[str | None] = mapped_column(String(16))
     last_error: Mapped[str | None] = mapped_column(Text)
+    result: Mapped[dict | None] = mapped_column(JSONB)
     created_at: Mapped[datetime] = _ts(nullable=False, server_default=func.now())
     finished_at: Mapped[datetime | None] = _ts()
 

@@ -6,12 +6,11 @@ from io import BytesIO
 from conftest import HELSINKI, make_mention, make_place
 from openpyxl import load_workbook
 from sqlalchemy import select
-from test_multi_city import PORTO, midsummer, two_cities
+from test_multi_city import PORTO, a_future_date, two_cities
 
 from libs.db import City, ItineraryItem, Place, Trip, TripPlace
 from libs.db.enums import Confidence, TaskKind
 from libs.routing import HoursHit
-from tp_api.route_planning.export import OK_BG, WARN_BG
 from tp_api.route_planning.service import shortlist
 from tp_api.route_planning.utils import google_weekday
 from tp_ingestions.plan import draft
@@ -21,7 +20,7 @@ SINGAPORE = "ChIJdZOLiiMR2jERnbSmdlpEFRI"
 
 
 def two_city_trip(client, lookup, days=1, **kw):
-    arrive = midsummer()
+    arrive = a_future_date()
     return client.post("/initiate-plan", json=two_cities(
         lookup, arrive_date=arrive.isoformat(), arrive_time=None, depart_time=None,
         depart_date=(arrive + timedelta(days=days)).isoformat(), **kw)).json()["trip_id"]
@@ -37,18 +36,17 @@ def block(place_id, start_min, duration_min=60, **kw):
     return {"place_id": place_id, "start_min": start_min, "duration_min": duration_min} | kw
 
 
-def open_until(hour, minute=0):
+def open_until(hour):
     return lambda ids: {i: HoursHit(place_id=i, periods=[
         {"open": {"day": d, "hour": 8, "minute": 0},
-         "close": {"day": d, "hour": hour, "minute": minute}} for d in range(7)],
+         "close": {"day": d, "hour": hour, "minute": 0}} for d in range(7)],
         weekday_descriptions=[], utc_offset_minutes=60) for i in ids}
 
 
-def one_in_each_city(db, trip, hel_start, por_start, **por):
+def one_in_each_city(db, trip, hel_start, por_start):
     make_place(db, city_id=HELSINKI, place_id="hel", name="Suomenlinna", lat=60.14, lon=24.98)
     make_mention(db, "hel", category="see")
-    make_place(db, city_id=PORTO, place_id="por", name="Jardim do Morro",
-               **{"lat": 41.15, "lon": -8.61} | por)
+    make_place(db, city_id=PORTO, place_id="por", name="Jardim do Morro", lat=41.15, lon=-8.61)
     make_mention(db, "por", category="see", source_ref="ref2")
     return [block("por", por_start), block("hel", hel_start)]
 
@@ -78,72 +76,6 @@ def test_a_day_mixing_two_cities_draws_no_complaint(client, db, lookup, hours):
     assert body["warnings"] == []
 
 
-def test_the_day_s_daylight_is_the_first_block_s_city_not_the_anchor_s(client, db, lookup, hours):
-    trip = two_city_trip(client, lookup)
-    hours["fn"] = open_until(23)
-    pin(client, trip, one_in_each_city(db, trip, hel_start=13 * 60, por_start=12 * 60))
-
-    body = client.post(f"/trips/{trip}/days/0/route", json={}).json()
-
-    assert body["daylight"] == {"sunrise": "06:01", "sunset": "21:10"}, "Porto's"
-
-
-def test_a_place_with_no_coordinates_falls_back_to_its_own_city_s_centre(client, db, lookup, hours):
-    trip = two_city_trip(client, lookup)
-    hours["fn"] = open_until(23)
-    pin(client, trip, one_in_each_city(db, trip, hel_start=13 * 60, por_start=21 * 60 + 30,
-                                       lat=None, lon=None))
-
-    body = client.post(f"/trips/{trip}/days/0/route", json={}).json()
-
-    dark = [w for w in body["warnings"] if w["code"] == "after_sunset"]
-    assert [(w["place_id"], w["detail"]["sunset"]) for w in dark] == [("por", "21:10")]
-
-
-def test_a_city_with_no_timezone_falls_back_to_the_offset_places_reported(client, db, lookup,
-                                                                         hours):
-    trip = two_city_trip(client, lookup)
-    hours["fn"] = lambda ids: {i: HoursHit(place_id=i, periods=[], weekday_descriptions=[],
-                                           utc_offset_minutes=180) for i in ids}
-    make_place(db, city_id=PORTO, place_id="por", name="Jardim do Morro", lat=41.14, lon=-8.61)
-    db.get(City, PORTO).timezone = None
-    db.commit()
-    pin(client, trip, [block("por", 12 * 60)])
-
-    body = client.post(f"/trips/{trip}/days/0/route", json={}).json()
-
-    assert body["daylight"] == {"sunrise": "08:01", "sunset": "23:10"}, "Porto at +180, not at UTC"
-
-
-def test_a_place_and_city_with_no_coordinates_report_no_daylight(client, db, lookup, hours):
-    trip = two_city_trip(client, lookup)
-    hours["fn"] = open_until(23)
-    make_place(db, city_id=PORTO, place_id="por", name="Jardim do Morro", lat=None, lon=None)
-    make_mention(db, "por", category="see")
-    porto = db.get(City, PORTO)
-    porto.lat = porto.lon = None
-    db.commit()
-    pin(client, trip, [block("por", 22 * 60 + 30, 30)])
-
-    body = client.post(f"/trips/{trip}/days/0/route", json={}).json()
-
-    assert body["daylight"] is None
-    assert [w["code"] for w in body["warnings"]] == []
-
-
-def test_polar_day_is_no_daylight_rather_than_a_sunset(client, db, lookup, hours):
-    trip = two_city_trip(client, lookup)
-    hours["fn"] = open_until(23, 30)
-    make_place(db, city_id=HELSINKI, place_id="pol", name="Longyearbyen", lat=78.9, lon=11.9)
-    make_mention(db, "pol", category="see")
-    pin(client, trip, [block("pol", 23 * 60, 30)])
-
-    body = client.post(f"/trips/{trip}/days/0/route", json={}).json()
-
-    assert body["daylight"] is None
-    assert "after_sunset" not in [w["code"] for w in body["warnings"]]
-
-
 def singapore_place(db, trip):
     db.add(City(city_id=SINGAPORE, name="Singapore", country="SG", timezone="Asia/Singapore",
                 lat=1.35, lon=103.82))
@@ -152,20 +84,6 @@ def singapore_place(db, trip):
     db.flush()
     db.add(TripPlace(trip_id=trip, place_id="sgp"))
     db.commit()
-
-
-def test_a_place_filed_under_an_uncovered_city_is_judged_where_it_actually_is(client, db, lookup,
-                                                                             hours):
-    trip = two_city_trip(client, lookup)
-    hours["fn"] = open_until(23)
-    singapore_place(db, trip)
-    pin(client, trip, [block("sgp", 21 * 60 + 30)])
-
-    body = client.post(f"/trips/{trip}/days/0/route", json={}).json()
-
-    assert body["daylight"] == {"sunrise": "07:00", "sunset": "19:11"}
-    assert [(w["code"], w["detail"]["sunset"]) for w in body["warnings"]] == \
-        [("after_sunset", "19:11")]
 
 
 def test_the_draft_prompt_names_a_city_the_trip_does_not_cover(client, db, lookup):
@@ -195,39 +113,27 @@ def workbook(client, trip):
     return load_workbook(BytesIO(r.content))["Itinerary"]
 
 
-def a_dark_porto_and_a_light_helsinki(client, db, lookup, hours, **kw):
+def a_two_city_day(client, db, lookup, hours, **kw):
     trip = two_city_trip(client, lookup, days=1)
-    hours["fn"] = open_until(23, 30)
-    items = one_in_each_city(db, trip, hel_start=22 * 60, por_start=21 * 60 + 30)
+    hours["fn"] = open_until(23)
+    items = one_in_each_city(db, trip, hel_start=13 * 60, por_start=12 * 60)
     pin(client, trip, [items[0], items[1] | kw])
     return trip
 
 
-def test_the_export_bands_each_day_with_its_first_block_s_own_daylight(client, db, lookup, hours):
-    trip = a_dark_porto_and_a_light_helsinki(client, db, lookup, hours)
+def test_the_export_bands_each_day(client, db, lookup, hours):
+    trip = a_two_city_day(client, db, lookup, hours)
 
     ws = workbook(client, trip)
 
     assert ws.cell(row=4, column=1).value == \
-        f"Day 1 · {midsummer():%a %d %b} · 2 blocks · daylight 06:01–21:10"
-    assert ws.cell(row=7, column=1).value.endswith("no blocks"), "an empty day bands with no light"
-
-
-def test_the_export_warns_only_the_block_that_is_actually_dark(client, db, lookup, hours):
-    trip = a_dark_porto_and_a_light_helsinki(client, db, lookup, hours)
-
-    ws = workbook(client, trip)
-
-    assert [ws.cell(row=r, column=6).value for r in (5, 6)] == ["Jardim do Morro", "Suomenlinna"]
-    assert ws.cell(row=5, column=8).value == "dark by 21:30 — sunset 21:10"
-    assert ws.cell(row=5, column=8).fill.fgColor.rgb.endswith(WARN_BG)
-    assert ws.cell(row=6, column=8).value == "ok"
-    assert ws.cell(row=6, column=8).fill.fgColor.rgb.endswith(OK_BG)
+        f"Day 1 · {a_future_date():%a %d %b} · 2 blocks"
+    assert ws.cell(row=7, column=1).value.endswith("no blocks")
 
 
 def test_the_ref_column_marks_only_the_block_that_carries_a_link(client, db, lookup, hours):
-    trip = a_dark_porto_and_a_light_helsinki(client, db, lookup, hours,
-                                             reference_url="https://www.airbnb.com/rooms/12345")
+    trip = a_two_city_day(client, db, lookup, hours,
+                          reference_url="https://www.airbnb.com/rooms/12345")
 
     ws = workbook(client, trip)
 
@@ -298,4 +204,63 @@ def test_a_draft_with_nothing_shortlisted_spends_no_model_call(client, db, looku
     trip = client.post("/initiate-plan", json=two_cities(lookup)).json()["trip_id"]
     monkeypatch.setattr(draft, "generate", lambda *a: 1 / 0)
 
-    assert draft.run(db, task(trip)) == {"skipped": "nothing resolved for this trip's cities yet"}
+    assert draft.run(db, task(trip)) == {"skipped": draft.NO_PLACES}
+
+
+def manual_task(trip):
+    return ClaimedTask(task_id=1, run_id="r-plan", kind=TaskKind.ROUTE_PLAN, source=None,
+                       payload={"trip_id": trip, "manual": True}, attempts=1, max_attempts=3)
+
+
+FLIGHT = {"kind": "custom", "block_id": "b-flight", "title": "Flight", "start_min": 600,
+          "duration_min": 60}
+TWO_DAYS = {"days": [{"day": 0, "picks": [{"index": 0, "start_min": 900, "duration_min": 60}]},
+                     {"day": 1, "picks": [{"index": 1, "start_min": 720, "duration_min": 60}]}]}
+
+
+def itinerary(db):
+    return {(r.day_index, r.place_id, r.title)
+            for r in db.execute(select(ItineraryItem.day_index, ItineraryItem.place_id,
+                                       ItineraryItem.title))}
+
+
+def test_the_automatic_draft_stands_down_once_any_day_has_a_block(client, db, lookup, monkeypatch):
+    trip, calls = drivable(client, db, lookup, monkeypatch, TWO_DAYS,
+                           hours_of(lambda i: periods(range(7))))
+    pin(client, trip, [FLIGHT], day=2)
+
+    assert draft.run(db, task(trip)) == {"skipped": draft.ALREADY_PLANNING}
+    assert calls == []
+    assert itinerary(db) == {(2, None, "Flight")}
+
+
+def test_a_manual_draft_leaves_a_flight_only_day_alone(client, db, lookup, monkeypatch):
+    trip, _ = drivable(client, db, lookup, monkeypatch, TWO_DAYS,
+                       hours_of(lambda i: periods(range(7))))
+    pin(client, trip, [FLIGHT], day=1)
+
+    assert draft.run(db, manual_task(trip))["days"] == 1
+    assert itinerary(db) == {(0, "hel", None), (1, None, "Flight")}
+
+
+def test_a_day_filled_while_the_model_thinks_is_left_alone(client, db, lookup, monkeypatch):
+    trip, _ = drivable(client, db, lookup, monkeypatch, TWO_DAYS,
+                       hours_of(lambda i: periods(range(7))))
+    monkeypatch.setattr(draft, "generate",
+                        lambda prompt, text: pin(client, trip, [FLIGHT], day=1) and TWO_DAYS)
+
+    out = draft.run(db, manual_task(trip))
+
+    assert out["filled_meanwhile"] == [1]
+    assert itinerary(db) == {(0, "hel", None), (1, None, "Flight")}
+
+
+def test_the_automatic_draft_stands_down_if_planning_starts_mid_draft(client, db, lookup,
+                                                                       monkeypatch):
+    trip, _ = drivable(client, db, lookup, monkeypatch, TWO_DAYS,
+                       hours_of(lambda i: periods(range(7))))
+    monkeypatch.setattr(draft, "generate",
+                        lambda prompt, text: pin(client, trip, [FLIGHT], day=3) and TWO_DAYS)
+
+    assert draft.run(db, task(trip)) == {"skipped": draft.ALREADY_PLANNING}
+    assert itinerary(db) == {(3, None, "Flight")}

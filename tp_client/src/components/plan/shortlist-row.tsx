@@ -16,13 +16,13 @@ import { cn } from "@/lib/utils";
 
 export function ShortlistRow({
   place,
-  placedDay,
+  placedDays,
   cityName,
   readOnly,
   onDismiss,
 }: {
   place: ShortlistPlace;
-  placedDay: number | null;
+  placedDays: number[];
   cityName: string | null;
   readOnly: boolean;
   onDismiss: () => void;
@@ -66,9 +66,9 @@ export function ShortlistRow({
               <X className="size-3.5" />
             </button>
           )}
-          {placedDay !== null && (
+          {placedDays.length > 0 && (
             <span className="grid h-6.5 min-w-6.5 place-items-center rounded-full bg-ok-bg px-1.5 font-mono text-[10.5px] text-ok">
-              D{placedDay + 1}
+              D{placedDays.map((d) => d + 1).join(",")}
             </span>
           )}
         </div>

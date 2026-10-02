@@ -6,12 +6,18 @@
 
 import type { CurrencyBalance, Expense } from "./expense-types";
 import {
+  OTHER,
+  UNTAGGED,
   blockCost,
+  colorSlots,
   costsByBlock,
   forReading,
+  knownCategories,
   money,
   parseAmount,
+  spendByCategory,
   splitEvenly,
+  tagChoices,
   widest,
 } from "./expense-types";
 
@@ -84,8 +90,8 @@ const expense = (over: Partial<Expense>): Expense => ({
   currency: "EUR",
   spent_on: "2026-10-05",
   payer_id: "me",
-  place_id: null,
   block_id: null,
+  category: null,
   block_title: null,
   day_index: null,
   shares: [],
@@ -93,19 +99,77 @@ const expense = (over: Partial<Expense>): Expense => ({
 });
 
 const byBlock = costsByBlock([
-  expense({ place_id: "p1" }),
-  expense({ expense_id: "e2", place_id: "p1", amount_cents: 1500 }),
-  expense({ expense_id: "e3", block_id: "b1" }),
+  expense({ block_id: "night-1" }),
+  expense({ expense_id: "e2", block_id: "night-1", amount_cents: 1500 }),
+  expense({ expense_id: "e3", block_id: "night-2" }),
   expense({ expense_id: "e4" }),
 ]);
-eq([...byBlock.keys()].sort(), ["b1", "p1"], "a cost with no block is not keyed under one");
-eq(byBlock.get("p1")!.length, 2, "a block may be paid for twice");
+eq([...byBlock.keys()].sort(), ["night-1", "night-2"], "a cost with no block is not keyed under one");
+eq(byBlock.get("night-1")!.length, 2, "a block may be paid for twice");
+eq(byBlock.get("night-2")!.length, 1, "two copies of one place keep their own costs");
 
-eq(blockCost(byBlock.get("p1")!), "55.00 EUR", "two costs on one block add up");
+eq(blockCost(byBlock.get("night-1")!), "55.00 EUR", "two costs on one block add up");
 eq(
   blockCost([expense({ currency: "EUR" }), expense({ expense_id: "e5", currency: "NOK" })]),
   "40.00 EUR + 40.00 NOK",
   "two currencies on one block are shown apart, never summed",
 );
+
+const tagged = [
+  expense({ category: "Food", amount_cents: 3000, shares: [{ user_id: "me", amount_cents: 1000 }] }),
+  expense({ expense_id: "e2", category: "food", amount_cents: 1000 }),
+  expense({ expense_id: "e3", category: "Stay", amount_cents: 9000,
+            shares: [{ user_id: "me", amount_cents: 4500 }] }),
+  expense({ expense_id: "e4", amount_cents: 500 }),
+  expense({ expense_id: "e5", category: "Food", currency: "NOK", amount_cents: 99900 }),
+];
+eq(knownCategories(tagged), ["Food", "Stay"], "one spelling per tag, the most used first");
+eq(
+  spendByCategory(tagged, "EUR"),
+  [
+    { key: "stay", label: "Stay", cents: 9000 },
+    { key: "food", label: "Food", cents: 4000 },
+    { key: UNTAGGED, label: "Untagged", cents: 500 },
+  ],
+  "a tag's case does not split its slice, and another currency stays out",
+);
+eq(
+  spendByCategory(tagged, "EUR", "me"),
+  [
+    { key: "stay", label: "Stay", cents: 4500 },
+    { key: "food", label: "Food", cents: 1000 },
+  ],
+  "mine counts only my shares",
+);
+const many = Array.from({ length: 8 }, (_, i) =>
+  expense({ expense_id: `m${i}`, category: `t${i}`, amount_cents: 1000 - i * 100 }),
+);
+eq(
+  spendByCategory(many, "EUR").map((s) => [s.key, s.cents]),
+  [["t0", 1000], ["t1", 900], ["t2", 800], ["t3", 700], ["t4", 600], [OTHER, 500 + 400 + 300]],
+  "past six slices the smallest fold into Other",
+);
+
+eq(
+  spendByCategory([expense({ category: "Other" }), expense({ expense_id: "x", amount_cents: 1 })], "EUR")
+    .map((s) => s.key),
+  ["other", UNTAGGED],
+  "a tag typed as Other is its own slice, not the fold",
+);
+const later = [...many, expense({ expense_id: "late", category: "late", amount_cents: 5000 })];
+const slots = colorSlots(spendByCategory(later, "EUR"), later, 6);
+eq(slots.get("t0"), 0, "the first tag keeps its colour");
+eq(slots.get("late"), 4, "a ninth tag takes the slot its folded neighbour left free");
+eq(
+  colorSlots(spendByCategory(tagged, "EUR"), tagged, 6).get("stay"),
+  colorSlots(spendByCategory(tagged, "EUR", "me"), tagged, 6).get("stay"),
+  "Trip and Mine paint a tag alike",
+);
+eq(
+  tagChoices([expense({ category: "food" }), expense({ expense_id: "y", category: "Ferry" })]),
+  ["food", "Ferry", "Transport", "Stay", "Activities", "Shopping"],
+  "a starter the trip already uses in another case is not offered twice",
+);
+eq(tagChoices(many).length, 8, "at most eight chips");
 
 console.log("expense-types.check.ts ok");

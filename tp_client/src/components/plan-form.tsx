@@ -126,7 +126,6 @@ export function PlanForm() {
           )}
           <div className="mt-2">
             <CityCombobox
-              selected={null}
               onSelect={addCity}
               exclude={chosen}
               placeholder={cities.length === 0 ? "Helsinki" : "Add another city"}

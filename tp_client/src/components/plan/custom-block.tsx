@@ -2,7 +2,8 @@
 
 // A block the shortlist could never hold: a flight, a hotel night, a booked activity. The title is
 // what the grid shows; the description is where the flight number or the check-in address goes.
-// The same dialog retimes any block to the minute, a place included, and may end it on a later day.
+// The same dialog retimes any block to the minute, a place included, and may end it on a later day,
+// and is where a block's link and cost are entered.
 
 import { useState } from "react";
 
@@ -15,8 +16,10 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { CategoryPicker } from "@/components/expenses/category-picker";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { CURRENCIES, parseAmount } from "@/lib/expense-types";
 import type { CustomDraft } from "@/lib/plan-state";
 import {
   DAY_END_MIN,
@@ -30,6 +33,11 @@ import {
 const TITLE_MAX = 120;
 const DESCRIPTION_MAX = 1000;
 
+/** `amountCents` null clears every cost on the block. */
+export type CostEntry = { amountCents: number | null; currency: string; category: string | null };
+
+export type BlockExtras = { url: string | null; cost: CostEntry | null };
+
 function minutes(text: string): number | null {
   const m = /^(\d{2}):(\d{2})$/.exec(text);
   return m ? Number(m[1]) * 60 + Number(m[2]) : null;
@@ -42,6 +50,9 @@ export function CustomBlockDialog({
   days,
   windowOf,
   editing,
+  cost,
+  currency,
+  tags,
   onClose,
   onSubmit,
 }: {
@@ -52,9 +63,17 @@ export function CustomBlockDialog({
   days: ItineraryDay[];
   windowOf: (day: number) => { from: number; to: number };
   editing: ItineraryItem | null;
+  cost: string | null;
+  currency: string;
+  tags: string[];
   onClose: () => void;
   /** `draft` is null for a place block, whose name and type are Google's, not the user's. */
-  onSubmit: (draft: CustomDraft | null, startMin: number, durationMin: number) => void;
+  onSubmit: (
+    draft: CustomDraft | null,
+    startMin: number,
+    durationMin: number,
+    extras: BlockExtras,
+  ) => void;
 }) {
   const own = !editing || editing.kind === "custom";
   const until = editing
@@ -66,6 +85,11 @@ export function CustomBlockDialog({
   const [start, setStart] = useState(hhmm(editing?.start_min ?? startMin));
   const [end, setEnd] = useState(hhmm(until.min));
   const [endDay, setEndDay] = useState(until.day);
+  const [url, setUrl] = useState(editing?.reference_url ?? "");
+  const [amount, setAmount] = useState("");
+  const [picked, setPicked] = useState(currency);
+  const [category, setCategory] = useState("");
+  const [clearCost, setClearCost] = useState(false);
 
   const trimmed = title.trim();
   const startAt = minutes(start);
@@ -75,8 +99,13 @@ export function CustomBlockDialog({
       ? null
       : (endDay - dayIndex) * DAY_END_MIN + endAt - startAt;
 
+  const link = url.trim();
+  const cents = parseAmount(amount.trim());
+
   const problem = (() => {
     if (startAt === null || endAt === null || duration === null) return "Pick a start and an end.";
+    if (link && !/^https?:\/\/\S+$/.test(link)) return "A link starts with http:// or https://.";
+    if (amount.trim() && !(cents && cents > 0)) return "A cost is a figure like 12.50.";
     if (duration <= 0) return "It has to end after it starts.";
     const first = windowOf(dayIndex);
     if (startAt < first.from) return `That day only starts at ${hhmm(first.from)}.`;
@@ -86,10 +115,16 @@ export function CustomBlockDialog({
 
   const save = () => {
     if ((own && !trimmed) || problem || startAt === null || duration === null) return;
+    const entry = cents
+      ? { amountCents: cents, currency: picked, category: category.trim() || null }
+      : clearCost
+        ? { amountCents: null, currency: picked, category: null }
+        : null;
     onSubmit(
       own ? { title: trimmed, description: description.trim() || null } : null,
       startAt,
       duration,
+      { url: link || null, cost: entry },
     );
     onClose();
   };
@@ -172,6 +207,70 @@ export function CustomBlockDialog({
                   ))}
               </select>
             </div>
+          </fieldset>
+
+          <Input
+            type="url"
+            value={url}
+            onChange={(e) => setUrl(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && save()}
+            placeholder="Your link — a booking, a listing, a receipt"
+            aria-label="Link"
+          />
+
+          <fieldset className="space-y-2">
+            <div className="flex items-baseline justify-between gap-3">
+              <legend className="text-[13px] font-semibold">Cost</legend>
+              {cost && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setClearCost(!clearCost);
+                    setAmount("");
+                  }}
+                  className="text-[12.5px] text-muted-foreground underline decoration-dotted underline-offset-2 hover:text-ink outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+                >
+                  {clearCost ? `keep ${cost}` : `so far ${cost} · clear`}
+                </button>
+              )}
+            </div>
+            <div className="flex gap-1.5">
+              <Input
+                value={amount}
+                disabled={clearCost}
+                inputMode="decimal"
+                placeholder={cost ? "Add another 0.00" : "0.00"}
+                onChange={(e) => setAmount(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && save()}
+                aria-label="What it cost"
+                className="min-w-0 flex-1 font-mono tabular-nums"
+              />
+              <select
+                value={picked}
+                aria-label="Currency"
+                onChange={(e) => setPicked(e.target.value)}
+                className="h-8 rounded-lg border border-input bg-transparent px-1.5 font-mono text-[12.5px] outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+              >
+                {[...new Set([currency, ...CURRENCIES])].map((c) => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
+                ))}
+              </select>
+            </div>
+            {amount.trim() && (
+              <CategoryPicker
+                value={category}
+                choices={tags}
+                onChange={setCategory}
+                onEnter={save}
+              />
+            )}
+            <p className="text-[12px] text-faint">
+              {clearCost
+                ? "Every cost on this block goes when you save."
+                : "Split evenly, you paid. The Expenses tab changes either."}
+            </p>
           </fieldset>
 
           {problem && <p className="text-[12.5px] text-alert">{problem}</p>}

@@ -89,16 +89,43 @@ class TestAddingACost:
     def test_a_cost_names_the_block_it_was_for(self, client, trip, db):
         place = make_place(db, place_id="p-museum", name="The Museum")
         client.put(f"/trips/{trip}/itinerary", json={"days": [{"day_index": 0, "items": [
-            {"kind": BlockKind.PLACE, "place_id": place, "start_min": 600,
-             "duration_min": 90}]}]})
-        r = client.post(f"/trips/{trip}/expenses", json=cost(place_id=place))
+            {"kind": BlockKind.PLACE, "place_id": place, "block_id": "b-museum",
+             "start_min": 600, "duration_min": 90}]}]})
+        r = client.post(f"/trips/{trip}/expenses", json=cost(block_id="b-museum"))
         assert r.status_code == 200, r.text
         assert r.json()["block_title"] == "The Museum"
         assert r.json()["day_index"] == 0
 
-    def test_a_cost_names_one_block_not_two(self, client, trip):
-        body = cost(place_id="p1", block_id="b1")
-        assert client.post(f"/trips/{trip}/expenses", json=body).status_code == 422
+    def test_a_cost_on_one_copy_of_a_place_is_not_on_the_other(self, client, trip, db):
+        place = make_place(db, place_id="p-hotel", name="Hotel Kämp")
+        client.put(f"/trips/{trip}/itinerary", json={"days": [
+            {"day_index": d, "items": [{"place_id": place, "block_id": f"night-{d}",
+                                        "start_min": 1200, "duration_min": 60}]}
+            for d in (0, 1)]})
+        client.post(f"/trips/{trip}/expenses", json=cost(block_id="night-1"))
+
+        costs = client.get(f"/trips/{trip}/expenses").json()["expenses"]
+        assert [(e["block_id"], e["day_index"]) for e in costs] == [("night-1", 1)]
+
+    def test_a_cost_keeps_its_tag_tidied(self, client, trip):
+        r = client.post(f"/trips/{trip}/expenses", json=cost(category="  Food   and drink "))
+        assert r.json()["category"] == "Food and drink"
+
+    def test_a_blank_tag_is_no_tag(self, client, trip):
+        assert client.post(f"/trips/{trip}/expenses",
+                           json=cost(category="   ")).json()["category"] is None
+
+    def test_a_tag_is_measured_once_tidied(self, client, trip):
+        padded = client.post(f"/trips/{trip}/expenses", json=cost(category=f"  {'x' * 40}   "))
+        assert padded.json()["category"] == "x" * 40
+        assert client.post(f"/trips/{trip}/expenses",
+                           json=cost(category="x" * 41)).status_code == 422
+
+    def test_editing_a_cost_retags_it(self, client, trip):
+        eid = client.post(f"/trips/{trip}/expenses", json=cost(category="Food")).json()["expense_id"]
+        client.put(f"/trips/{trip}/expenses/{eid}", json=cost(category="Stay"))
+        assert [e["category"] for e in client.get(f"/trips/{trip}/expenses").json()["expenses"]] \
+            == ["Stay"]
 
     def test_a_viewer_cannot_add_one(self, anon_client, db, trip):
         from datetime import UTC, datetime

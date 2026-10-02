@@ -92,6 +92,8 @@ class TripStatusOut(TripOut):
     failures: list[TaskFailure] = []
     # The route.plan task's status, or None if this trip was never drafted. The client polls on it.
     draft: str | None = None
+    # What the last draft wrote, or why it wrote nothing: route.plan's result, codes not English.
+    draft_result: dict | None = None
 
 
 class TripSummaryOut(BaseModel):

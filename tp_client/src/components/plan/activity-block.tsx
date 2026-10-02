@@ -8,13 +8,9 @@
 // Warnings sit under the grid rather than inside the block: a block's height is its duration, so
 // there is no room to grow into, and the alert border already says which block is the problem.
 
-import { useState } from "react";
-
 import { useDraggable } from "@dnd-kit/core";
-import { DollarSign, Link2, Pencil, X } from "lucide-react";
+import { Link2, Pencil, X } from "lucide-react";
 
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { CURRENCIES, parseAmount } from "@/lib/expense-types";
 import type { Piece, PlacedItem, PlanBlock, PlanWarning } from "@/lib/plan-types";
 import {
   DAY_END_MIN,
@@ -40,10 +36,7 @@ export function ActivityBlock({
   slotPx,
   readOnly,
   cost,
-  currency,
   onRemove,
-  onReference,
-  onCost,
   onResize,
   onEdit,
 }: {
@@ -56,10 +49,7 @@ export function ActivityBlock({
   readOnly: boolean;
   /** What this block has cost so far, already formatted — a block can carry more than one cost. */
   cost: string | null;
-  currency: string;
   onRemove: () => void;
-  onReference: (url: string | null) => void;
-  onCost: (amountCents: number | null, currency: string) => void;
   onResize: (startMin: number, durationMin: number) => void;
   onEdit: () => void;
 }) {
@@ -149,6 +139,9 @@ export function ActivityBlock({
               {continued ? "↳" : hhmm(item.start_min)}
             </span>
             {item.name}
+            {short && cost && (
+              <span className="ml-1.5 font-mono text-[10.5px] font-normal text-faint">{cost}</span>
+            )}
           </p>
           {!short && (
             <p className="truncate font-mono text-[10.5px] text-faint">
@@ -171,33 +164,33 @@ export function ActivityBlock({
           )}
         </div>
 
-        {readOnly ? (
-          item.reference_url ? (
-            <a
-              href={item.reference_url}
-              target="_blank"
-              rel="noreferrer"
-              aria-label={`Open your link for ${item.name}`}
-              className="absolute top-0.5 right-0.5 grid size-5 place-items-center rounded text-brand hover:bg-brand-bg"
-            >
-              <Link2 className="size-3" />
-            </a>
-          ) : null
-        ) : (
+        {item.reference_url && (
+          <a
+            href={item.reference_url}
+            target="_blank"
+            rel="noreferrer"
+            onPointerDown={(e) => e.stopPropagation()}
+            aria-label={`Open your link for ${item.name}`}
+            className={cn(
+              "absolute top-0.5 grid size-5 place-items-center rounded text-brand hover:bg-brand-bg",
+              readOnly ? "right-0.5" : "right-10.5",
+            )}
+          >
+            <Link2 className="size-3" />
+          </a>
+        )}
+
+        {!readOnly && (
           <>
             <button
               type="button"
               onPointerDown={(e) => e.stopPropagation()}
               onClick={onEdit}
-              aria-label={own ? `Edit ${item.name}` : `Change when you are at ${item.name}`}
-              className="absolute top-0.5 right-15.5 grid size-5 place-items-center rounded text-faint opacity-0 transition-opacity group-hover/block:opacity-100 hover:text-ink focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring/50"
+              aria-label={`Edit ${item.name}: time, link and cost`}
+              className="absolute top-0.5 right-5.5 grid size-5 place-items-center rounded text-faint opacity-0 transition-opacity group-hover/block:opacity-100 hover:text-ink focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring/50"
             >
               <Pencil className="size-3" />
             </button>
-
-            <Cost name={item.name} cost={cost} currency={currency} onSave={onCost} />
-
-            <Reference name={item.name} url={item.reference_url} onSave={onReference} />
 
             <button
               type="button"
@@ -219,190 +212,6 @@ export function ActivityBlock({
         )}
       </div>
     </div>
-  );
-}
-
-/**
- * What this block cost, entered where the block is. One figure and Enter: the payer is whoever is
- * typing and it splits evenly between everyone on the trip, which is the common case. The Expenses
- * tab is where an uneven split or a different payer is corrected.
- */
-function Cost({
-  name,
-  cost,
-  currency,
-  onSave,
-}: {
-  name: string;
-  cost: string | null;
-  currency: string;
-  onSave: (amountCents: number | null, currency: string) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const [amount, setAmount] = useState("");
-  const [picked, setPicked] = useState(currency);
-
-  const trimmed = amount.trim();
-  const cents = parseAmount(trimmed);
-  const valid = trimmed === "" || (cents !== null && cents > 0);
-
-  const save = () => {
-    if (!valid) return;
-    onSave(trimmed === "" ? null : cents, picked);
-    setOpen(false);
-  };
-
-  return (
-    <Popover
-      open={open}
-      onOpenChange={(next) => {
-        setOpen(next);
-        if (next) {
-          setAmount("");
-          setPicked(currency);
-        }
-      }}
-    >
-      <PopoverTrigger
-        aria-label={cost ? `${name} cost ${cost}` : `Add what ${name} cost`}
-        onPointerDown={(e) => e.stopPropagation()}
-        className={cn(
-          "absolute top-0.5 right-10.5 grid size-5 place-items-center rounded transition-opacity focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring/50",
-          cost
-            ? "text-brand hover:bg-brand-bg"
-            : "text-faint opacity-0 group-hover/block:opacity-100 hover:text-ink",
-        )}
-      >
-        <DollarSign className="size-3" />
-      </PopoverTrigger>
-
-      <PopoverContent align="end" className="gap-2">
-        <label className="text-[12px] font-medium text-ink-soft" htmlFor={`cost-${name}`}>
-          What did {name} cost?
-        </label>
-        <div className="flex gap-1.5">
-          <input
-            id={`cost-${name}`}
-            value={amount}
-            autoFocus
-            inputMode="decimal"
-            placeholder="0.00"
-            onChange={(e) => setAmount(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && save()}
-            className="h-9 min-w-0 flex-1 rounded-lg border border-input bg-transparent px-2.5 font-mono text-[13px] tabular-nums outline-none placeholder:text-faint focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
-          />
-          <select
-            value={picked}
-            aria-label="Currency"
-            onChange={(e) => setPicked(e.target.value)}
-            className="h-9 rounded-lg border border-input bg-transparent px-1.5 font-mono text-[12.5px] outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
-          >
-            {[...new Set([currency, ...CURRENCIES])].map((c) => (
-              <option key={c} value={c}>
-                {c}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div className="flex items-center justify-between gap-2">
-          <span className="text-[12px] text-faint">
-            {cost ? `So far ${cost}` : "Split evenly, you paid"}
-          </span>
-          <button
-            type="button"
-            onClick={save}
-            disabled={!valid}
-            className="h-8 rounded-full bg-ink px-3 text-[12.5px] font-medium text-primary-foreground hover:bg-ink-hover disabled:opacity-50"
-          >
-            {trimmed ? "Add" : "Clear"}
-          </button>
-        </div>
-      </PopoverContent>
-    </Popover>
-  );
-}
-
-/** The user's own link for this block: a booking confirmation, a listing, an email receipt. */
-function Reference({
-  name,
-  url,
-  onSave,
-}: {
-  name: string;
-  url: string | null;
-  onSave: (url: string | null) => void;
-}) {
-  const [draft, setDraft] = useState(url ?? "");
-  const [open, setOpen] = useState(false);
-  const trimmed = draft.trim();
-  const valid = trimmed === "" || /^https?:\/\/\S+$/.test(trimmed);
-
-  const save = () => {
-    if (!valid) return;
-    onSave(trimmed || null);
-    setOpen(false);
-  };
-
-  return (
-    <Popover
-      open={open}
-      onOpenChange={(next) => {
-        setOpen(next);
-        if (next) setDraft(url ?? "");
-      }}
-    >
-      <PopoverTrigger
-        aria-label={url ? `Edit your link for ${name}` : `Add a link for ${name}`}
-        // The block body is draggable, so the press must not reach it.
-        onPointerDown={(e) => e.stopPropagation()}
-        className={cn(
-          "absolute top-0.5 right-5.5 grid size-5 place-items-center rounded transition-opacity focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring/50",
-          url
-            ? "text-brand hover:bg-brand-bg"
-            : "text-faint opacity-0 group-hover/block:opacity-100 hover:text-ink",
-        )}
-      >
-        <Link2 className="size-3" />
-      </PopoverTrigger>
-
-      <PopoverContent align="end" className="gap-2">
-        <label className="text-[12px] font-medium text-ink-soft" htmlFor={`ref-${name}`}>
-          Your link for {name}
-        </label>
-        <input
-          id={`ref-${name}`}
-          type="url"
-          value={draft}
-          autoFocus
-          placeholder="https://airbnb.com/… or a booking email"
-          onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && save()}
-          className="h-9 rounded-lg border border-input bg-transparent px-2.5 text-[13px] outline-none placeholder:text-faint focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
-        />
-        <div className="flex items-center justify-between gap-2">
-          {url ? (
-            <a
-              href={url}
-              target="_blank"
-              rel="noreferrer"
-              className="text-[12px] font-medium text-brand underline"
-            >
-              Open
-            </a>
-          ) : (
-            <span className="text-[12px] text-faint">Only you and the trip see this.</span>
-          )}
-          <button
-            type="button"
-            onClick={save}
-            disabled={!valid}
-            className="h-8 rounded-full bg-ink px-3 text-[12.5px] font-medium text-primary-foreground hover:bg-ink-hover disabled:opacity-50"
-          >
-            {trimmed ? "Save" : "Clear"}
-          </button>
-        </div>
-      </PopoverContent>
-    </Popover>
   );
 }
 

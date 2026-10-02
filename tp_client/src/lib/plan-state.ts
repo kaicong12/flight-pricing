@@ -36,7 +36,7 @@ export type CustomDraft = { title: string; description: string | null };
 
 export type PlanAction =
   | { type: "add"; place: ShortlistPlace; day: number; startMin: number; durationMin: number }
-  | { type: "addCustom"; day: number; startMin: number; durationMin: number; draft: CustomDraft }
+  | { type: "addCustom"; day: number; item: ItineraryItem }
   | { type: "editCustom"; day: number; key: string; draft: CustomDraft }
   | { type: "remove"; day: number; key: string }
   | { type: "pin"; key: string; fromDay: number; toDay: number; startMin: number }
@@ -89,7 +89,7 @@ export function itemFor(
   return {
     kind: "place",
     place_id: place.place_id,
-    block_id: null,
+    block_id: crypto.randomUUID(),
     name: place.name,
     description: null,
     lat: place.lat,
@@ -127,17 +127,6 @@ export function customItem(
 export function planReducer(state: PlanState, action: PlanAction): PlanState {
   switch (action.type) {
     case "add": {
-      // A place sits on at most one day, so dropping one already placed just re-pins it.
-      const current = dayOf(state, action.place.place_id);
-      if (current !== null) {
-        return planReducer(state, {
-          type: "pin",
-          key: action.place.place_id,
-          fromDay: current,
-          toDay: action.day,
-          startMin: action.startMin,
-        });
-      }
       const items = [
         ...itemsOf(state, action.day),
         itemFor(action.place, action.startMin, action.durationMin),
@@ -147,10 +136,7 @@ export function planReducer(state: PlanState, action: PlanAction): PlanState {
 
     // A custom block is never in the shortlist, so it is only ever added here, at the time clicked.
     case "addCustom": {
-      const items = [
-        ...itemsOf(state, action.day),
-        customItem(action.draft, action.startMin, action.durationMin),
-      ];
+      const items = [...itemsOf(state, action.day), action.item];
       return { ...state, days: setDay(state, action.day, items), ...touched(state, [action.day]) };
     }
 
@@ -307,11 +293,13 @@ export function dayOf(state: PlanState, key: string): number | null {
 }
 
 /** Only places: this feeds the shortlist's "on day 3" badge, and a flight is on no shortlist. */
-export function placedDays(state: PlanState): Map<string, number> {
-  const out = new Map<string, number>();
+export function placedDays(state: PlanState): Map<string, number[]> {
+  const out = new Map<string, number[]>();
   for (const day of state.days) {
     for (const item of day.items) {
-      if (item.place_id) out.set(item.place_id, day.day_index);
+      if (!item.place_id) continue;
+      const days = out.get(item.place_id) ?? [];
+      if (!days.includes(day.day_index)) out.set(item.place_id, [...days, day.day_index]);
     }
   }
   return out;

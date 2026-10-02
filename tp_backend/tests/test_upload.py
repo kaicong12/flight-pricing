@@ -1,6 +1,7 @@
 """Upload new trip: only this server's own export comes back, edited in Excel or not."""
 
 import base64
+import re
 from datetime import date, timedelta
 from io import BytesIO
 
@@ -96,6 +97,32 @@ def test_edits_made_in_excel_come_through(client, db):
     assert items(db, trip) == [(0, "place", "p1", None, 960, 30),
                                (1, "custom", None, "Sleeper to Rovaniemi", 1350, 460),
                                (3, "custom", None, "Husky sled", 600, 75)]
+
+
+def test_a_place_on_two_days_comes_back_on_both_with_its_block_ids(client, db):
+    trip = client.post("/initiate-plan", json=plan_body()).json()["trip_id"]
+    make_place(db, place_id="p1", name="Hotel Kämp")
+    client.put(f"/trips/{trip}/itinerary", json={"days": [
+        {"day_index": d, "items": [{"place_id": "p1", "block_id": f"night-{d}",
+                                    "start_min": 1200, "duration_min": 60}]} for d in (0, 1)]})
+
+    copy = upload(client, exported(client, trip)).json()["trip_id"]
+    rows = db.execute(select(ItineraryItem.day_index, ItineraryItem.place_id, ItineraryItem.block_id)
+                      .where(ItineraryItem.trip_id == copy).order_by(ItineraryItem.day_index)).all()
+    assert [tuple(r) for r in rows] == [(0, "p1", "night-0"), (1, "p1", "night-1")]
+
+
+def test_an_export_without_place_block_ids_still_reads(client, db):
+    source = planned_trip(client, db)
+
+    def change(wb):
+        meta = wb[META_SHEET]
+        meta["A2"], n = re.subn(r'"block_id":"[^"]+","kind":"place"',
+                                '"block_id":null,"kind":"place"', meta["A2"].value)
+        assert n == 1
+
+    trip = upload(client, edited(exported(client, source), change)).json()["trip_id"]
+    assert items(db, trip)[0] == (0, "place", "p1", None, 900, 90)
 
 
 def test_a_renamed_place_becomes_a_custom_block(client, db):

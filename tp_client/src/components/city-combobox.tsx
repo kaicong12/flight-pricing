@@ -1,28 +1,26 @@
 "use client";
 
-// City typeahead. The visible text is the suggestion description; the value handed upward is the
-// Google place_id, because a typed string is not an identity.
+// City typeahead. The value handed upward is the Google place_id.
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ChevronsUpDownIcon } from "lucide-react";
 
 import { Command, CommandEmpty, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { cn } from "@/lib/utils";
 import type { CitySuggestion } from "@/lib/api-types";
 
 const DEBOUNCE_MS = 250;
 
 type Props = {
-  selected: CitySuggestion | null;
-  onSelect: (city: CitySuggestion | null) => void;
+  onSelect: (city: CitySuggestion) => void;
   placeholder?: string;
   exclude?: Set<string>;
 };
 
-export function CityCombobox({ selected, onSelect, placeholder = "Helsinki", exclude }: Props) {
+export function CityCombobox({ onSelect, placeholder = "Helsinki", exclude }: Props) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
+  const input = useRef<HTMLInputElement>(null);
   // Results are stamped with the query they answer, so "loading" is derived rather than a second
   // piece of state set synchronously inside the effect.
   const [results, setResults] = useState<{ q: string; items: CitySuggestion[] }>({
@@ -65,14 +63,13 @@ export function CityCombobox({ selected, onSelect, placeholder = "Helsinki", exc
         id="city"
         className="flex h-11 w-full items-center justify-between rounded-[13px] border border-input px-3.5 text-left text-sm outline-none transition-colors hover:border-[#c6bda4] focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
       >
-        <span className={cn(!selected && "text-muted-foreground")}>
-          {selected ? selected.description : placeholder}
-        </span>
+        <span className="text-muted-foreground">{placeholder}</span>
         <ChevronsUpDownIcon className="size-4 shrink-0 opacity-40" />
       </PopoverTrigger>
       <PopoverContent align="start" className="w-(--anchor-width) p-0">
         <Command shouldFilter={false}>
           <CommandInput
+            ref={input}
             autoFocus
             value={query}
             onValueChange={setQuery}
@@ -92,7 +89,8 @@ export function CityCombobox({ selected, onSelect, placeholder = "Helsinki", exc
                 value={s.place_id}
                 onSelect={() => {
                   onSelect(s);
-                  setOpen(false);
+                  setQuery("");
+                  input.current?.focus();
                 }}
               >
                 {s.description}

@@ -36,7 +36,6 @@ WARNING_TEXT = {
     "closed": "closed all day",
     "opens_later": "opens {opens}, you arrive {start}",
     "closes_before_done": "closes {closes} before you finish",
-    "after_sunset": "dark by {start} — sunset {sunset}",
     "no_hours": "opening hours unknown",
 }
 BLOCKING = {"closed"}
@@ -194,38 +193,30 @@ def itinerary_sheet(ws: Worksheet, db: Session, trip: Trip, fetch: HoursLookup) 
     for day in range(day_count(trip)):
         day_date = trip.arrive_date + timedelta(days=day)
         items = by_day.get(day, [])
-        venues = [r.Place for r in items if r.Place]
-
-        sun = service.sun_by_place(db, venues, day_date, hours)
-        sunrise, sunset = service.first_daylight(sun, [p.place_id for p in venues])
-        daylight = (f" · daylight {hhmm(sunrise)}–{hhmm(sunset)}"
-                    if sunrise is not None and sunset is not None else "")
-
         _band(ws, at, len(columns), f"Day {day + 1} · {day_date:%a %d %b} · "
-              f"{len(items) or 'no'} block{'' if len(items) == 1 else 's'}{daylight}")
+              f"{len(items) or 'no'} block{'' if len(items) == 1 else 's'}")
         at += 1
 
         plan = plan_day(
             [Stop(place_id=r.Place.place_id, name=r.Place.name,
-                  category=service.category_of(r.Place, facts),
                   start_min=r.ItineraryItem.start_min, duration_min=r.ItineraryItem.duration_min,
                   periods=hours[r.Place.place_id].periods if r.Place.place_id in hours else None,
-                  sunset_min=sun.get(r.Place.place_id, (None, None))[1])
+                  block_id=r.ItineraryItem.block_id)
              for r in items if r.Place],
             weekday=google_weekday(day_date))
-        routed = {b.place_id: b for b in plan.blocks}
+        routed = {b.block_id: b for b in plan.blocks}
 
         found: dict[str, list[PlanWarning]] = {}
         for w in plan.warnings:
-            found.setdefault(w.place_id or "", []).append(w)
+            found.setdefault(w.block_id or "", []).append(w)
 
         top = at
         for n, r in enumerate(items, start=1):
             item = r.ItineraryItem
-            block = routed.get(item.place_id) if r.Place else None
+            block = routed.get(item.block_id) if r.Place else None
             start, end = ((block.start_min, block.end_min) if block
                           else (item.start_min, item.start_min + item.duration_min))
-            text, fill, ink = _warning_cell(found.get(item.place_id or "", []))
+            text, fill, ink = _warning_cell(found.get(item.block_id, []))
             _body_row(ws, at, columns,
                       [day + 1, f"{day_date:%d %b}", n, hhmm(start), until(day, end),
                        r.Place.name if r.Place else item.title,

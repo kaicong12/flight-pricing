@@ -11,13 +11,15 @@ import { useState } from "react";
 import { useDroppable } from "@dnd-kit/core";
 import { PlusIcon } from "lucide-react";
 
-import type { CustomDraft } from "@/lib/plan-state";
+import { Kbd } from "@/components/ui/kbd";
+import { type CustomDraft, customItem } from "@/lib/plan-state";
 import type { DayRoute, ItineraryDay, ItineraryItem, PlanWarning } from "@/lib/plan-types";
 import {
   DAY_END_MIN,
   DAY_START_MIN,
   MIN_DURATION,
   SLOT_MIN,
+  firstFree,
   formatDayTab,
   hhmm,
   keyOf,
@@ -25,10 +27,11 @@ import {
   piecesOn,
   warningText,
 } from "@/lib/plan-types";
+import { useShortcut } from "@/lib/use-shortcut";
 import { cn } from "@/lib/utils";
 
 import { ActivityBlock } from "./activity-block";
-import { CustomBlockDialog } from "./custom-block";
+import { type CostEntry, CustomBlockDialog } from "./custom-block";
 
 const SLOT_PX = 26;
 const SLOTS = Math.round((DAY_END_MIN - DAY_START_MIN) / SLOT_MIN);
@@ -43,6 +46,7 @@ export function DayColumn({
   available,
   costs,
   currency,
+  tags,
   onRemove,
   onReference,
   onCost,
@@ -61,22 +65,23 @@ export function DayColumn({
   /** Each block's cost so far, already formatted, keyed the way `keyOf` keys a block. */
   costs: Map<string, string>;
   currency: string;
+  tags: string[];
   onRemove: (key: string) => void;
   onReference: (key: string, url: string | null) => void;
-  onCost: (item: ItineraryItem, amountCents: number | null, currency: string) => void;
+  onCost: (item: ItineraryItem, cost: CostEntry) => void;
   onResize: (key: string, startMin: number, durationMin: number) => void;
-  onAddCustom: (startMin: number, draft: CustomDraft, durationMin: number) => void;
+  onAddCustom: (item: ItineraryItem, cost: CostEntry | null) => void;
   onEditCustom: (key: string, draft: CustomDraft) => void;
 }) {
   // Which half hour the "+" was clicked on, or the block being edited. One dialog serves both.
   const [adding, setAdding] = useState<number | null>(null);
   const [editing, setEditing] = useState<ItineraryItem | null>(null);
 
-  const byPlace = new Map((route?.blocks ?? []).map((b) => [keyOf(b), b]));
-  const perPlace = new Map<string, PlanWarning[]>();
+  const byBlock = new Map((route?.blocks ?? []).map((b) => [keyOf(b), b]));
+  const perBlock = new Map<string, PlanWarning[]>();
   const dayWide: PlanWarning[] = [];
   for (const w of stale ? [] : (route?.warnings ?? [])) {
-    if (w.place_id) perPlace.set(w.place_id, [...(perPlace.get(w.place_id) ?? []), w]);
+    if (w.block_id) perBlock.set(w.block_id, [...(perBlock.get(w.block_id) ?? []), w]);
     else dayWide.push(w);
   }
 
@@ -86,6 +91,9 @@ export function DayColumn({
   const placed = layout(
     pieces.map((p) => ({ ...p.item, start_min: p.from, duration_min: p.to - p.from })),
   );
+  const addNext = () => setAdding(firstFree(pieces, available));
+  useShortcut("b", addNext, !readOnly);
+
   const editingOffset = editing ? (pieceOf.get(keyOf(editing))?.offset ?? 0) : 0;
   const editingDay = day.day_index - editingOffset / DAY_END_MIN;
 
@@ -95,6 +103,17 @@ export function DayColumn({
         <h3 className="text-[15px] font-semibold tracking-[-0.01em]">
           Day {day.day_index + 1} · {formatDayTab(day.date)}
         </h3>
+        {!readOnly && (
+          <button
+            type="button"
+            onClick={addNext}
+            className="flex items-center gap-1.5 rounded-full text-[12.5px] font-medium text-ink-soft outline-none hover:text-ink focus-visible:ring-3 focus-visible:ring-ring/50"
+          >
+            <PlusIcon className="size-3.5" />
+            New block
+            <Kbd letter="B" />
+          </button>
+        )}
       </div>
 
       <p className="mt-1 font-mono text-[11px] text-faint">
@@ -159,15 +178,12 @@ export function DayColumn({
               key={keyOf(p.item)}
               placed={p}
               piece={pieceOf.get(keyOf(p.item))!}
-              block={byPlace.get(keyOf(p.item))}
-              warnings={perPlace.get(keyOf(p.item)) ?? []}
+              block={byBlock.get(keyOf(p.item))}
+              warnings={perBlock.get(keyOf(p.item)) ?? []}
               slotPx={SLOT_PX}
               readOnly={readOnly}
               cost={costs.get(keyOf(p.item)) ?? null}
-              currency={currency}
               onRemove={() => onRemove(keyOf(p.item))}
-              onReference={(url) => onReference(keyOf(p.item), url)}
-              onCost={(amountCents, cur) => onCost(p.item, amountCents, cur)}
               onEdit={() => setEditing(pieceOf.get(keyOf(p.item))!.item)}
               onResize={(startMin, durationMin) =>
                 onResize(keyOf(p.item), startMin, durationMin)
@@ -177,14 +193,14 @@ export function DayColumn({
         </div>
       </div>
 
-      {perPlace.size > 0 && (
+      {perBlock.size > 0 && (
         <ul className="mt-3.5">
-          {[...perPlace.entries()].flatMap(([placeId, ws]) =>
+          {[...perBlock.entries()].flatMap(([blockId, ws]) =>
             ws.map((w) => (
-              <li key={`${placeId}:${w.code}`} className="flex gap-2.5 py-0.5">
+              <li key={`${blockId}:${w.code}`} className="flex gap-2.5 py-0.5">
                 <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-alert" />
                 <p className="text-[12.5px] leading-[1.45] text-alert">
-                  {warningText(w, byPlace.get(placeId)?.name)}
+                  {warningText(w, byBlock.get(blockId)?.name)}
                 </p>
               </li>
             )),
@@ -200,17 +216,24 @@ export function DayColumn({
           days={days}
           windowOf={windowOf}
           editing={editing}
+          cost={editing ? (costs.get(keyOf(editing)) ?? null) : null}
+          currency={currency}
+          tags={tags}
           onClose={() => {
             setAdding(null);
             setEditing(null);
           }}
-          onSubmit={(draft, startMin, durationMin) => {
+          onSubmit={(draft, startMin, durationMin, { url, cost }) => {
             if (!editing) {
-              if (draft) onAddCustom(startMin, draft, durationMin);
+              if (draft) {
+                onAddCustom({ ...customItem(draft, startMin, durationMin), reference_url: url }, cost);
+              }
               return;
             }
             if (draft) onEditCustom(keyOf(editing), draft);
             onResize(keyOf(editing), startMin, durationMin);
+            if (url !== editing.reference_url) onReference(keyOf(editing), url);
+            if (cost) onCost(editing, cost);
           }}
         />
       )}
@@ -267,4 +290,3 @@ function Slot({
     </div>
   );
 }
-

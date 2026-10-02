@@ -110,34 +110,33 @@ keeps its hard box: `search_venue` is guessing at a name and needs the geography
 is the one thing `places.category` exists for: every other category is a majority vote over
 `place_mentions`, which a hand-added place has none of, so without it the place is invisible under
 every filter chip. A person's answer beats the videos'. The user drags
-them into days; `PUT /trips/{id}/itinerary` replaces whole days, because a drag is a statement about
-a sequence and positions are dense and derived. A drag snaps to the half hour; the block dialog types
-any minute, and may end a block on a later day. That block stays **one row on the day it starts** —
-one `block_id`, so one cost — and the grid draws its tail on each day it reaches (`piecesOn`). `POST /trips/{id}/days/{n}/route` then checks that
-exact order against Place Details hours and daylight and returns structured warning codes — the
-client owns the English. **Daylight is per place, not per trip**: the sun is computed from each
-block's own lat/lon in its own city's zone, so one day spanning two cities has two sunsets, and
-`first_daylight` reports the window of the first block that has one. **Travel between blocks is not
-modelled at all** — not the time, not the
-distance, not whether a route exists. A day may name two places on opposite sides of the world and
-nothing objects; the map draws numbered pins and no line. `itinerary_items.reference_url` is the
-user's own link on a block — a booking, a listing, a receipt — stored and opened, never fetched; the
-plan screen edits it from the block itself and saving one does not re-check the day.
+them into days; `PUT /trips/{id}/itinerary` replaces whole days, because a drag is a statement about a
+sequence and positions are dense and derived. A drag snaps to the half hour; the block dialog types any
+minute, and may end a block on a later day. That block stays **one row on the day it starts** — one
+`block_id`, so one cost — and the grid draws its tail on each day it reaches (`piecesOn`). `POST
+/trips/{id}/days/{n}/route` then checks that exact order against Place Details hours and returns
+structured warning codes — the client owns the English. **Travel between blocks is not modelled at
+all** — not the time, not the distance, not whether a route exists. A day may name two places on
+opposite sides of the world and nothing objects; the map draws numbered pins and no line.
+`itinerary_items.reference_url` is the user's own link on a block — a booking, a listing, a receipt —
+stored and opened, never fetched; the plan screen edits it, and the block's cost, in the same dialog
+that retimes it, and saving one does not re-check the day.
 
 **A block need not be a place.** A flight, a hotel night, a booked husky sled: `itinerary_items.kind`
-is `place` or `custom`, and a `ck_itinerary_identity` CHECK makes it either a `place_id` or a
-`block_id` + `title`, never both. The identity is the client-minted `block_id`, **not the title** — the
-same stay appears on three nights and two legs of one journey share a name, so a name could never
-address a row. `keyOf()` is the client's one identity helper for the same reason. Postgres counts
-NULLs as distinct, so `uq_itinerary_trip_place` and `uq_itinerary_trip_block` coexist with no partial
-index. A custom block carries a `description` — the booking reference, the terminal, the address —
-which is the whole point: it is where a flight or an accommodation is found again. It builds no `Stop`,
-so `plan_day` never judges it against hours or daylight and `route_day` fetches hours only for the
-places; `first_daylight` therefore reports the first block that *has* a sun, which is why an
-all-flight day shows no daylight at all. `route.plan` reads them as `own_blocks` and drops any pick
-that overlaps one — a day holding just a flight is still an empty day to draft around. The plan grid
-reveals a **"+" on hover** over any free slot, CSS-only via `group/slot`, and the dialog is mounted
-only while open so its `key` resets it rather than an effect.
+is `place` or `custom`, and a `ck_itinerary_identity` CHECK makes it either a `place_id` or a `title`,
+never both. **Every block's identity is its `block_id`, not its place and not its title** — the same
+hotel sits on three nights, a place may appear twice in one day, and two legs of one journey share a
+name, so neither a `place_id` nor a name could address a row. The client mints it, and the server mints
+one for a place block sent without (the draft, an upload). `keyOf()` is the client's one identity
+helper, and dropping a shortlist place always adds a fresh copy; moving one is dragging the block.
+`uq_itinerary_trip_block` is the only uniqueness, a cost links to a block by `block_id` alone, and
+`route_day`'s warnings name the `block_id` they are about. A custom block carries a `description` — the
+booking reference, the terminal, the address — which is the whole point: it is where a flight or an
+accommodation is found again. It builds no `Stop`, so `plan_day` never judges it against hours and
+`route_day` fetches hours only for the places. A day holding anything — a flight, a stay's overnight
+tail — is a filled day, and `route.plan` leaves it alone. The plan grid reveals a **"+" on hover** over
+any free slot, CSS-only via `group/slot`, and the dialog is mounted only while open so its `key` resets
+it rather than an effect.
 
 `GET /trips/{id}/export.xlsx` is those same days as a workbook: Itinerary, a band per day and the
 warning in the app's own amber and clay, with a `Ref` column **only when some block has a link** and a
@@ -154,10 +153,19 @@ data refuses the file or skips the row. The visible cells are what is read, so E
 place or a typed-in row becomes a custom block, and an unreadable row is skipped and named in the
 preview. Costs, members and dismissals stay behind.
 
+**Costs** carry a free-text `expenses.category`: the dialog offers the trip's own tags as one-tap chips,
+most used first and one spelling per tag whatever its case. The Expenses tab draws a d3 donut per
+currency — never summed — by tag, Trip or Mine, with the smallest past six folded into Other.
+
 **7. Draft.** `route.plan` fills a trip's *empty* days so the plan screen opens filled — **one Gemini
 call in a loop, not an agent**: the shortlist is already a closed ranked set and `plan_day` already
-judges hours, so the model only proposes an arrangement and never goes looking. A day the user has
-touched is theirs. The shortlist it arranges is the trip's, so one draft covers every city at once.
+judges hours, so the model only proposes an arrangement and never goes looking. A day with any block
+on it is the user's: the button drafts only the empty days, and the automatic draft stands down
+entirely once the user has started planning, since a trip is now plannable before its ingestion
+settles. The Gemini call takes seconds, so the write re-checks under `lock_itinerary`, the same trip
+row lock `replace_days` takes — a day filled meanwhile is skipped, never overwritten. Why a draft
+wrote nothing is `ingest_tasks.result`, which `GET /trips/{id}` returns as `draft_result`. The
+shortlist it arranges is the trip's, so one draft covers every city at once.
 It is queued automatically once — at `/initiate-plan` when every city was warm, otherwise by the
 last run to settle, and only when **every** city has settled and **at least one** reached DONE, so a
 half-ingested trip is never drafted and a trip with one failed city still is — and on demand by
@@ -179,7 +187,7 @@ account must not become one budget per host.
 | `tp_backend/libs/db` | Schema + migrations |
 | `tp_backend/tp_api` | The API |
 | `tp_backend/tp_ingestions` | The worker, through `places.resolve` |
-| `tp_backend/libs/routing` | Hours, daylight and day validation. Pure except `hours.py` |
+| `tp_backend/libs/routing` | Hours and day validation. Pure except `hours.py` |
 | `tp_client` | `/login`, `/` (form), `/trips` (list), `/trip/{trip_id}` (checklist), `/trip/{trip_id}/plan` (shortlist + days + map) |
 | `spikes/<topic>/` | Throwaway exploration. `agent_planning` is superseded by `tp_ingestions/plan`, `google_auth` by `libs/auth.py` |
 
@@ -211,15 +219,14 @@ end to end: real opening hours and a `closes_before_done` warning. The trips
 themselves were deleted when `user_trips` arrived, since they predate any owner — the cities and
 places are city-scoped and stayed, so re-creating a Tromsø trip is warm and re-tests the same path.
 A Helsinki + Singapore trip proves the multi-city path on warm cities: one interleaved shortlist, one
-draft over both, and a single day whose two blocks are judged against two different sunsets.
+draft over both, and a single day holding blocks from both cities.
 
 A **six-city, 14-day Nordic trip** — Oslo, Stockholm, Rovaniemi, Tromsø, Helsinki, Tallinn, 462 places
 — is the end-to-end proof: every city warm, all 14 days drafted automatically, then 22 custom blocks
 for the flights, the five stays, the husky sled, the reindeer camp, the aurora chase and both Tallinn
 ferries. Four days that `route_day` flagged (a coffee bar before it opened, a bistro that does Tuesday
 lunch only) were re-arranged until clean; what still warns is honest — Google has no hours for the
-Oslo Opera House roof, and Tromsø's polar night means days 9–11 report no daylight window at all
-because the sun does not rise.
+Oslo Opera House roof.
 
 # Sources
 
@@ -229,7 +236,6 @@ because the sun does not rise.
 | Food + POI | **RedNote/Xiaohongshu** — private web API, confirmed usable |
 | Identity + facts | **Google Places** `searchText` → `place_id`, then Place Details for hours |
 | Map | **MapLibre GL** with a keyless basemap — numbered pins, no route line |
-| Daylight | Computed locally (NOAA), no API |
 | Thin-city fallback | **Wikivoyage**, labelled guidebook-grade |
 | Later | Reddit, behind a disabled flag |
 

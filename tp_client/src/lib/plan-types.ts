@@ -54,8 +54,8 @@ export type BlockKind = "place" | "custom";
 export type ItineraryItem = {
   kind: BlockKind;
   place_id: string | null;
-  /** A custom block's identity, minted here. A place block has none; its place_id is its identity. */
-  block_id: string | null;
+  /** Every block's identity, minted here. */
+  block_id: string;
   name: string;
   /** Free text on a custom block: the flight number, the hotel address, the pickup point. */
   description: string | null;
@@ -71,8 +71,7 @@ export type ItineraryItem = {
 };
 
 /** What identifies a block on screen and in the reducer. */
-export const keyOf = (i: { place_id: string | null; block_id: string | null }) =>
-  i.place_id ?? i.block_id ?? "";
+export const keyOf = (i: { block_id: string }) => i.block_id;
 
 export type ItineraryDay = {
   day_index: number;
@@ -85,7 +84,7 @@ export type Itinerary = { days: ItineraryDay[] };
 export type PlanBlock = {
   kind: BlockKind;
   place_id: string | null;
-  block_id: string | null;
+  block_id: string;
   name: string;
   description: string | null;
   start: string;
@@ -98,6 +97,7 @@ export type PlanBlock = {
 export type PlanWarning = {
   code: string;
   place_id: string | null;
+  block_id: string | null;
   detail: Record<string, string | number>;
 };
 
@@ -107,7 +107,6 @@ export type DayRoute = {
   /** The first block's time. Null on an empty day. */
   start_time: string | null;
   blocks: PlanBlock[];
-  daylight: { sunrise: string; sunset: string } | null;
   warnings: PlanWarning[];
   provisional: string[];
 };
@@ -129,8 +128,6 @@ export function warningText(w: PlanWarning, name?: string): string {
         return `Pinned ${d.start}, but it opens ${d.opens} — ${d.early_min} min too early.`;
       case "closes_before_done":
         return `Starts ${d.start}, needs ${d.need_min} min, closes ${d.closes}. Move it earlier.`;
-      case "after_sunset":
-        return `Starts ${d.start}, after sunset at ${d.sunset}. Worth doing in daylight.`;
       case "no_hours":
         return "No opening hours published — unverified.";
       default:
@@ -231,6 +228,24 @@ export function piecesOn(days: ItineraryDay[], dayIndex: number): Piece[] {
     }
   }
   return out;
+}
+
+const MORNING_MIN = 9 * 60;
+
+/** Where a new block on this day should start: the first free half hour from 09:00, then earlier. */
+export function firstFree(pieces: Piece[], window: { from: number; to: number }): number | null {
+  const from = Math.ceil(window.from / SLOT_MIN) * SLOT_MIN;
+  const morning = Math.max(from, MORNING_MIN);
+  const starts: number[] = [];
+  for (let m = morning; m < window.to; m += SLOT_MIN) starts.push(m);
+  for (let m = from; m < morning; m += SLOT_MIN) starts.push(m);
+  for (const length of [60, MIN_DURATION]) {
+    const fit = starts.find(
+      (m) => m + length <= window.to && !pieces.some((p) => m < p.to && p.from < m + length),
+    );
+    if (fit !== undefined) return fit;
+  }
+  return null;
 }
 
 /** The day a block ends on, and the minute it ends there. Midnight belongs to the day before. */
