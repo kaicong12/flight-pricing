@@ -81,7 +81,7 @@ export default async function TripPage({ params }: PageProps<"/trip/[tripId]">) 
 
         <div className="mt-4 flex items-center justify-between gap-4">
           <p className="font-mono text-[11px] text-faint">trip_id: {trip.trip_id}</p>
-          {!trip.deleted && <DeleteTrip tripId={trip.trip_id} city={trip.city.name} />}
+          {!trip.deleted && <DeleteTrip tripId={trip.trip_id} city={cityNames(trip)} />}
         </div>
       </main>
     </div>

@@ -76,6 +76,8 @@ export const keyOf = (i: { block_id: string }) => i.block_id;
 export type ItineraryDay = {
   day_index: number;
   date: string;
+  /** Which of the trip's cities the user put the day in, or unassigned. */
+  city_id?: string | null;
   items: ItineraryItem[];
 };
 

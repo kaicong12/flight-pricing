@@ -9,6 +9,7 @@ import { Pencil, Plus, X } from "lucide-react";
 import { useCallback, useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 import {
   type Expense,
   type ExpenseDraft,
@@ -40,6 +41,7 @@ export function ExpensesView({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [dialog, setDialog] = useState<{ editing: Expense | null } | null>(null);
+  const [confirm, confirmDialog] = useConfirm();
 
   const base = `/api/trips/${encodeURIComponent(tripId)}`;
 
@@ -176,7 +178,14 @@ export function ExpensesView({
                       <IconButton
                         label={`Remove ${e.description}`}
                         disabled={busy}
-                        onClick={() => send(`/expenses/${e.expense_id}`, { method: "DELETE" })}
+                        onClick={async () => {
+                          const ok = await confirm({
+                            title: `Delete “${e.description}”?`,
+                            description: `${money(e.amount_cents, e.currency)} and everyone's share of it leave every balance. There is no undo.`,
+                            action: "Delete expense",
+                          });
+                          if (ok) await send(`/expenses/${e.expense_id}`, { method: "DELETE" });
+                        }}
                       >
                         <X className="size-3.5" />
                       </IconButton>
@@ -211,7 +220,14 @@ export function ExpensesView({
                   <IconButton
                     label="Undo this payment"
                     disabled={busy}
-                    onClick={() => send(`/settlements/${s.settlement_id}`, { method: "DELETE" })}
+                    onClick={async () => {
+                      const ok = await confirm({
+                        title: "Undo this payment?",
+                        description: `${who(s.from_user_id)} paying ${who(s.to_user_id).replace(/^You$/, "you")} ${money(s.amount_cents, s.currency)} is forgotten, and the balances go back to owing it.`,
+                        action: "Undo payment",
+                      });
+                      if (ok) await send(`/settlements/${s.settlement_id}`, { method: "DELETE" });
+                    }}
                   >
                     <X className="size-3.5" />
                   </IconButton>
@@ -242,6 +258,7 @@ export function ExpensesView({
           }
         />
       )}
+      {confirmDialog}
     </div>
   );
 }

@@ -24,6 +24,7 @@ from libs.db import (
     PlaceMention,
     RedNotePost,
     Trip,
+    TripDay,
     TripDismissal,
     TripPlace,
     YouTubeVideo,
@@ -166,7 +167,8 @@ def in_shortlist(trip: Trip | type[Trip]):
 
 
 def shortlist(db: Session, trip_id: str, limit: int, offset: int,
-              category: str | None, source: Source | None = None) -> ShortlistOut:
+              category: str | None, source: Source | None = None,
+              q: str | None = None) -> ShortlistOut:
     """The trip's places, ranked by how many independent sources mentioned each one.
 
     `source` keeps a place any one of whose mentions came from it, so a hand-added place drops out.
@@ -208,6 +210,14 @@ def shortlist(db: Session, trip_id: str, limit: int, offset: int,
                           .where(PlaceMention.place_id == Place.place_id,
                                  PlaceMention.source == source)
                           .exists())
+    if q:
+        stmt = stmt.where(or_(Place.name.icontains(q, autoescape=True),
+                              Place.address.icontains(q, autoescape=True),
+                              select(PlaceMention.place_id)
+                              .where(PlaceMention.place_id == Place.place_id,
+                                     PlaceMention.sentiment == Sentiment.RECOMMENDED,
+                                     PlaceMention.why_go.icontains(q, autoescape=True))
+                              .exists()))
     rows = db.execute(stmt).all()
 
     place_ids = [r.Place.place_id for r in rows]
@@ -274,7 +284,10 @@ def read_days(db: Session, trip: Trip) -> ItineraryOut:
     rows = day_rows(db, trip.trip_id)
     facts = mention_facts(db, [r.Place.place_id for r in rows if r.Place])
 
-    days = [DayOut(day_index=i, date=trip.arrive_date + timedelta(days=i), items=[])
+    cities = dict(db.execute(select(TripDay.day_index, TripDay.city_id)
+                             .where(TripDay.trip_id == trip.trip_id)).tuples().all())
+    days = [DayOut(day_index=i, date=trip.arrive_date + timedelta(days=i), items=[],
+                   city_id=cities.get(i))
             for i in range(day_count(trip))]
     for r in rows:
         item, place = r.ItineraryItem, r.Place
@@ -325,6 +338,11 @@ def replace_days(db: Session, trip_id: str, body: ItineraryIn, commit: bool = Tr
     if len(set(block_ids)) != len(block_ids):
         raise HTTPException(422, "a block is listed twice")
 
+    named = {d.day_index: d.city_id for d in body.days if "city_id" in d.model_fields_set}
+    covered = {c.city_id for c in trip_cities(db, trip)}
+    if stray := {c for c in named.values() if c} - covered:
+        raise HTTPException(422, f"not a city on this trip: {min(stray)}")
+
     if place_ids:
         known = set(db.scalars(
             select(Place.place_id).where(Place.place_id.in_(place_ids), in_shortlist(trip))
@@ -347,6 +365,11 @@ def replace_days(db: Session, trip_id: str, body: ItineraryIn, commit: bool = Tr
                                  description=item.description, day_index=d.day_index,
                                  start_min=item.start_min, duration_min=item.duration_min,
                                  reference_url=item.reference_url))
+    if named:
+        db.execute(delete(TripDay).where(TripDay.trip_id == trip_id,
+                                         TripDay.day_index.in_(named)))
+        db.add_all(TripDay(trip_id=trip_id, day_index=i, city_id=c)
+                   for i, c in named.items() if c)
     if commit:
         db.commit()
 

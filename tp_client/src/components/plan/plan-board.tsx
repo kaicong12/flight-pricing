@@ -22,6 +22,7 @@ import { restrictToWindowEdges } from "@dnd-kit/modifiers";
 import { sortableKeyboardCoordinates } from "@dnd-kit/sortable";
 import { useCallback, useEffect, useMemo, useReducer, useState } from "react";
 
+import { useConfirm } from "@/components/ui/confirm-dialog";
 import type { Trip } from "@/lib/api-types";
 import { type ExpenseTab, blockCost, costsByBlock, tagChoices } from "@/lib/expense-types";
 import {
@@ -58,6 +59,7 @@ import { ShortlistPanel } from "./shortlist-panel";
 const SAVE_MS = 400;
 const ROUTE_MS = 1200;
 const PAGE = 40;
+const SEARCH_MS = 250;
 
 export function PlanBoard({
   trip,
@@ -83,14 +85,18 @@ export function PlanBoard({
   );
   const [category, setCategory] = useState<string | null>(null);
   const [source, setSource] = useState<ShortlistSource | null>(null);
+  const [search, setSearch] = useState("");
+  const [q, setQ] = useState("");
   const [dragging, setDragging] = useState<string | null>(null);
   const [routingDay, setRoutingDay] = useState<number | null>(null);
   // Stamped with the request that produced it, so "loading" is derived instead of set in an effect.
   const [loaded, setLoaded] = useState({
     category: null as string | null,
     source: null as ShortlistSource | null,
+    q: "",
   });
   const [expenses, setExpenses] = useState(initialExpenses);
+  const [confirm, confirmDialog] = useConfirm();
 
   const reloadExpenses = useCallback(async () => {
     const r = await fetch(`/api/trips/${trip.trip_id}/expenses`);
@@ -167,6 +173,7 @@ export function PlanBoard({
       const payload = {
         days: days.map((index) => ({
           day_index: index,
+          city_id: state.days.find((d) => d.day_index === index)?.city_id ?? null,
           items: (state.days.find((d) => d.day_index === index)?.items ?? []).map((i) => ({
             kind: i.kind,
             place_id: i.place_id,
@@ -230,8 +237,13 @@ export function PlanBoard({
     };
   }, [needsRoute, activeDay, trip.trip_id]);
 
-  // Shortlist paging, category and source filtering.
-  const settled = loaded.category === category && loaded.source === source;
+  useEffect(() => {
+    const timer = setTimeout(() => setQ(search.trim()), SEARCH_MS);
+    return () => clearTimeout(timer);
+  }, [search]);
+
+  // Shortlist paging, category, source and search filtering.
+  const settled = loaded.category === category && loaded.source === source && loaded.q === q;
   useEffect(() => {
     if (settled) return;
     const controller = new AbortController();
@@ -239,32 +251,45 @@ export function PlanBoard({
       const query = new URLSearchParams({ limit: String(PAGE) });
       if (category) query.set("category", category);
       if (source) query.set("source", source);
+      if (q) query.set("q", q);
       try {
         const r = await fetch(`/api/trips/${trip.trip_id}/shortlist?${query}`, {
           signal: controller.signal,
         });
         if (r.ok) {
-          dispatch({ type: "shortlistLoaded", shortlist: await r.json(), append: false });
-          setLoaded({ category, source });
+          dispatch({
+            type: "shortlistLoaded",
+            shortlist: await r.json(),
+            append: false,
+            unfiltered: !category && !source && !q,
+          });
+          setLoaded({ category, source, q });
         }
       } catch {
         // Superseded by another filter.
       }
     })();
     return () => controller.abort();
-  }, [settled, category, source, trip.trip_id]);
+  }, [settled, category, source, q, trip.trip_id]);
 
   const loadMore = useCallback(async () => {
     const offset = state.shortlist.length;
     const query = new URLSearchParams({ limit: String(PAGE), offset: String(offset) });
     if (category) query.set("category", category);
     if (source) query.set("source", source);
+    if (q) query.set("q", q);
     const r = await fetch(`/api/trips/${trip.trip_id}/shortlist?${query}`);
     if (r.ok) dispatch({ type: "shortlistLoaded", shortlist: await r.json(), append: true });
-  }, [category, source, state.shortlist.length, trip.trip_id]);
+  }, [category, source, q, state.shortlist.length, trip.trip_id]);
 
   const dismiss = useCallback(
     async (place: ShortlistPlace) => {
+      const ok = await confirm({
+        title: `Remove ${place.name} from the shortlist?`,
+        description: "It stops showing for everyone on this trip. Adding it back by hand restores it.",
+        action: "Remove",
+      });
+      if (!ok) return;
       dispatch({ type: "dismiss", placeId: place.place_id });
       await fetch(`/api/trips/${trip.trip_id}/dismissals`, {
         method: "POST",
@@ -272,7 +297,22 @@ export function PlanBoard({
         body: JSON.stringify({ place_id: place.place_id }),
       });
     },
-    [trip.trip_id],
+    [confirm, trip.trip_id],
+  );
+
+  const removeBlock = useCallback(
+    async (key: string, day: number) => {
+      const item = state.days.flatMap((d) => d.items).find((i) => keyOf(i) === key);
+      const ok = await confirm({
+        title: `Remove ${item?.name ?? "this block"} from day ${day + 1}?`,
+        description: costs.has(key)
+          ? "Its time and link go with it. Its cost stays under Expenses, no longer tied to a block."
+          : "Its time, and any link or details on it, go with it.",
+        action: "Remove block",
+      });
+      if (ok) dispatch({ type: "remove", day, key });
+    },
+    [confirm, costs, state.days],
   );
 
   // Not optimistic, unlike dismiss: the server owns the name and coordinates. Resolves to an error.
@@ -362,7 +402,7 @@ export function PlanBoard({
       <PlanHeader
         trip={trip}
         days={state.days}
-        placeCount={state.total}
+        placeCount={state.found}
         provisional={provisional}
         meId={meId}
         canEdit={canEdit}
@@ -382,6 +422,9 @@ export function PlanBoard({
           onCategory={setCategory}
           source={source}
           onSource={setSource}
+          search={search}
+          searched={q}
+          onSearch={setSearch}
           readOnly={!canEdit}
           onDismiss={dismiss}
           onAdd={addPlace}
@@ -391,11 +434,14 @@ export function PlanBoard({
         <section className="overflow-hidden rounded-card border border-border surface shadow-card">
           <DayTabs
             days={state.days}
+            cities={trip.cities}
             activeDay={state.activeDay}
             onSelect={(d) => dispatch({ type: "activeDay", day: d })}
           />
           <DayColumn
             day={day}
+            cities={trip.cities}
+            onCity={(cityId) => dispatch({ type: "city", day: state.activeDay, cityId })}
             days={state.days}
             windowOf={(d) => availableWindow(trip, d, state.days.length)}
             route={route}
@@ -406,7 +452,7 @@ export function PlanBoard({
             tags={tagChoices(expenses?.expenses ?? [])}
             currency={expenses?.currency ?? "EUR"}
             onCost={saveCost}
-            onRemove={(key) => dispatch({ type: "remove", day: homeOf(key), key })}
+            onRemove={(key) => void removeBlock(key, homeOf(key))}
             onReference={(key, url) => dispatch({ type: "reference", day: homeOf(key), key, url })}
             onAddCustom={(item, cost) => {
               dispatch({ type: "addCustom", day: state.activeDay, item });
@@ -439,6 +485,7 @@ export function PlanBoard({
           </div>
         )}
       </DragOverlay>
+      {confirmDialog}
     </DndContext>
   );
 }

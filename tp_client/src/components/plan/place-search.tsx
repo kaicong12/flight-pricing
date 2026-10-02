@@ -35,7 +35,7 @@ export function PlaceSearch({
   onAdd: (placeId: string, category: string) => Promise<string | null>;
 }) {
   const [open, setOpen] = useState(false);
-  useShortcut("k", () => setOpen(true));
+  useShortcut("j", () => setOpen(true));
   const [query, setQuery] = useState("");
   const [picked, setPicked] = useState<VenueSuggestion | null>(null);
   const [category, setCategory] = useState<string | null>(null);
@@ -107,7 +107,7 @@ export function PlaceSearch({
         <PlusIcon className="size-3.5 shrink-0 opacity-50" />
         Add a place yourself
         <span className="ml-auto">
-          <Kbd letter="K" />
+          <Kbd letter="J" />
         </span>
       </DialogTrigger>
 

@@ -2,11 +2,14 @@
 
 // The left column: every place the ingestion found, ranked by how many independent sources named it.
 
-import { ListFilter } from "lucide-react";
+import { ListFilter, Search } from "lucide-react";
+import { useRef } from "react";
 
 import { FilterChip } from "@/components/ui/filter-chip";
+import { Kbd } from "@/components/ui/kbd";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import type { ShortlistPlace, ShortlistSource } from "@/lib/plan-types";
+import { useShortcut } from "@/lib/use-shortcut";
 import { cn } from "@/lib/utils";
 
 import { PlaceSearch } from "./place-search";
@@ -29,6 +32,9 @@ export function ShortlistPanel({
   onCategory,
   source,
   onSource,
+  search,
+  searched,
+  onSearch,
   onDismiss,
   onAdd,
   onMore,
@@ -44,10 +50,20 @@ export function ShortlistPanel({
   /** Null is every source, which is also the only filter that keeps a place added by hand. */
   source: ShortlistSource | null;
   onSource: (source: ShortlistSource | null) => void;
+  search: string;
+  /** The search the list on screen answers, which trails `search` by a debounce. */
+  searched: string;
+  onSearch: (search: string) => void;
   onDismiss: (place: ShortlistPlace) => void;
   onAdd: (placeId: string, category: string) => Promise<string | null>;
   onMore: () => void;
 }) {
+  const input = useRef<HTMLInputElement>(null);
+  useShortcut("k", () => {
+    input.current?.focus();
+    input.current?.select();
+  });
+
   return (
     <section className="flex max-h-[calc(100dvh-140px)] flex-col overflow-hidden rounded-card border border-border surface shadow-card">
       <div className="border-b border-border px-5 pt-4.5 pb-4">
@@ -61,7 +77,27 @@ export function ShortlistPanel({
           Ranked by how many independent sources mentioned it. Add one to a day, then drag to order.
         </p>
 
-        <div className="mt-3.5 flex items-start gap-2">
+        <label className="mt-3.5 flex h-9 items-center gap-2 rounded-[13px] border border-input px-3 transition-colors focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50">
+          <Search className="size-3.5 shrink-0 text-faint" />
+          <input
+            ref={input}
+            type="search"
+            value={search}
+            onChange={(e) => onSearch(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key !== "Escape") return;
+              onSearch("");
+              e.currentTarget.blur();
+            }}
+            placeholder="Search the shortlist"
+            aria-label="Search the shortlist"
+            maxLength={120}
+            className="min-w-0 flex-1 bg-transparent text-[13px] outline-none placeholder:text-muted-foreground [&::-webkit-search-cancel-button]:hidden"
+          />
+          {!search && <Kbd letter="K" />}
+        </label>
+
+        <div className="mt-3 flex items-start gap-2">
           <div className="flex flex-1 flex-wrap gap-1.5">
             <FilterChip active={category === null} onClick={() => onCategory(null)}>
               All
@@ -84,7 +120,9 @@ export function ShortlistPanel({
         <p className="px-5 py-8 text-[13.5px] text-muted-foreground">
           {loading
             ? "Loading the shortlist…"
-            : category || source
+            : searched
+              ? `Nothing on the shortlist matches “${searched}”.`
+              : category || source
               ? `Nothing ${category ? `tagged ${category} ` : ""}${
                   source ? `from ${SOURCES.find((x) => x.id === source)?.label} ` : ""
                 }yet.`
@@ -109,6 +147,7 @@ export function ShortlistPanel({
         <button
           type="button"
           onClick={onMore}
+          disabled={loading}
           className="shrink-0 border-t border-border px-5 py-3 font-mono text-[11px] tracking-[0.04em] text-faint uppercase transition-colors hover:text-ink outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
         >
           {loading ? "Loading…" : `Show more (${total - places.length} left)`}

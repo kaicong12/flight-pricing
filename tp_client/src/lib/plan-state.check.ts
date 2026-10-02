@@ -173,4 +173,8 @@ eq(removed.days[0].items.map((i) => keyOf(i)), [keyOf(late)], "removing one leav
 // The shortlist's "on day 3" badge is a place lookup, and a flight is on no shortlist.
 eq(placedDays(twice).size, 0, "a custom block claims no shortlist row");
 
+const placedIn = planReducer(base, { type: "city", day: 1, cityId: "oslo" });
+eq(placedIn.days.map((d) => d.city_id ?? null), [null, "oslo"], "only that day moves city");
+eq([placedIn.unsaved, placedIn.stale], [[1], base.stale], "a city is written, never re-routed");
+
 console.log("plan-state: all checks passed");

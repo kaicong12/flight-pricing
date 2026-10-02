@@ -77,6 +77,7 @@ class ItemOut(BaseModel):
 class DayOut(BaseModel):
     day_index: int
     date: date
+    city_id: str | None = None
     items: list[ItemOut] = []
 
 
@@ -114,7 +115,10 @@ class ItemIn(BaseModel):
 
 
 class DayIn(BaseModel):
+    """`city_id` is only written when sent; null unassigns the day."""
+
     day_index: int = Field(ge=0)
+    city_id: str | None = Field(default=None, max_length=255)
     items: list[ItemIn] = Field(default=[], max_length=MAX_STOPS_PER_DAY)
 
 

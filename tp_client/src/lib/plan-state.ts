@@ -19,6 +19,8 @@ export type PlanState = {
   shortlist: ShortlistPlace[];
   /** Places in the city, before paging. The "9 of 122" denominator. */
   total: number;
+  /** `total` with no filter or search applied: what the header counts. */
+  found: number;
   dismissed: string[];
   activeDay: number;
   routes: Record<number, DayRoute>;
@@ -43,12 +45,13 @@ export type PlanAction =
   | { type: "duration"; day: number; key: string; minutes: number }
   | { type: "reference"; day: number; key: string; url: string | null }
   | { type: "activeDay"; day: number }
+  | { type: "city"; day: number; cityId: string | null }
   | { type: "dismiss"; placeId: string }
   | { type: "checked"; route: DayRoute }
   | { type: "routeFailed"; day: number }
   | { type: "invalidate"; day: number }
   | { type: "saved"; days: number[]; itinerary: Itinerary; revision: number }
-  | { type: "shortlistLoaded"; shortlist: Shortlist; append: boolean }
+  | { type: "shortlistLoaded"; shortlist: Shortlist; append: boolean; unfiltered?: boolean }
   | { type: "placeAdded"; place: ShortlistPlace };
 
 const without = (xs: number[], y: number) => xs.filter((x) => x !== y);
@@ -217,12 +220,23 @@ export function planReducer(state: PlanState, action: PlanAction): PlanState {
     case "activeDay":
       return { ...state, activeDay: action.day };
 
+    case "city":
+      return {
+        ...state,
+        days: state.days.map((d) =>
+          d.day_index === action.day ? { ...d, city_id: action.cityId } : d,
+        ),
+        unsaved: with_(state.unsaved, action.day),
+        revision: state.revision + 1,
+      };
+
     case "dismiss":
       return {
         ...state,
         dismissed: with_str(state.dismissed, action.placeId),
         shortlist: state.shortlist.filter((p) => p.place_id !== action.placeId),
         total: Math.max(0, state.total - 1),
+        found: Math.max(0, state.found - 1),
       };
 
     case "checked":
@@ -259,6 +273,7 @@ export function planReducer(state: PlanState, action: PlanAction): PlanState {
       return {
         ...state,
         total: action.shortlist.total,
+        found: action.unfiltered ? action.shortlist.total : state.found,
         shortlist: action.append
           ? dedupe([...state.shortlist, ...action.shortlist.places])
           : action.shortlist.places,
@@ -272,6 +287,7 @@ export function planReducer(state: PlanState, action: PlanAction): PlanState {
         shortlist: dedupe([action.place, ...state.shortlist]),
         dismissed: state.dismissed.filter((id) => id !== action.place.place_id),
         total: known ? state.total : state.total + 1,
+        found: known ? state.found : state.found + 1,
       };
     }
   }
@@ -316,6 +332,7 @@ export function initialState(
     days: itinerary.days,
     shortlist: shortlist.places,
     total: shortlist.total,
+    found: shortlist.total,
     dismissed: [],
     activeDay: firstUsed?.day_index ?? 0,
     routes: {},

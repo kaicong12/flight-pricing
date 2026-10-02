@@ -11,7 +11,7 @@ from datetime import timedelta
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
-from libs.db import City, IngestTask, ItineraryItem, Trip, trip_cities
+from libs.db import City, IngestTask, ItineraryItem, Trip, TripDay, trip_cities
 from libs.db.enums import TaskKind
 from libs.gemini import generate
 from libs.places import distance_km
@@ -59,6 +59,19 @@ def clock(m: int) -> str:
     return "24:00" if m >= 24 * 60 else hhmm(m)
 
 
+def day_cities(session: Session, trip: Trip) -> dict[int, str]:
+    """The name of the city the user put each day in."""
+    return dict(session.execute(
+        select(TripDay.day_index, City.name).join(City, City.city_id == TripDay.city_id)
+        .where(TripDay.trip_id == trip.trip_id)).tuples().all())
+
+
+def off_city(places, open_days, named: dict[int, str]) -> set[tuple[int, int]]:
+    """Every (day, index) pairing a place with a day the user put in another city."""
+    return {(d, i) for d in open_days if d in named
+            for i, p in enumerate(places) if p.city_name not in (None, named[d])}
+
+
 def render(session: Session, trip: Trip, places, open_days, feedback: str = "") -> str:
     """The whole prompt: the candidates, and the clock facts the model needs to time them."""
     cities = trip_cities(session, trip)
@@ -77,12 +90,14 @@ def render(session: Session, trip: Trip, places, open_days, feedback: str = "") 
                     f"{'?' if km is None else format(km, '.1f')}km | {p.mention_count} sources"
                     + (f" | {p.why_go}" if p.why_go else ""))
 
+    named = day_cities(session, trip)
     days = []
     for i in range(day_count(trip)):
         d = trip.arrive_date + timedelta(days=i)
         first, last = window(trip, i)
         line = (f"day {i}, {d:%A %d %B}: usable {clock(first)}-{clock(last)} "
-                f"(start_min {first} to {last})")
+                f"(start_min {first} to {last})"
+                + (f", in {named[i]} only" if i in named else ""))
         days.append(line)
 
     return ITINERARY_DRAFT.render(
@@ -157,7 +172,8 @@ def propose(session: Session, trip: Trip, places, open_days) -> tuple[dict, int,
 
     Stops clean, or the first round that fails to beat the best so far, and always returns that best.
     """
-    best, fewest, feedback, shut = ({}, {}), None, "", set()
+    best, fewest, feedback = ({}, {}), None, ""
+    shut = off_city(places, open_days, day_cities(session, trip))
     for r in range(1, ROUNDS + 1):
         limits.gemini().take()
         reply = generate(ITINERARY_DRAFT, render(session, trip, places, open_days, feedback))

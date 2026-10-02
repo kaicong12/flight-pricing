@@ -50,8 +50,9 @@ def get_shortlist(
     offset: Annotated[int, Query(ge=0)] = 0,
     category: Annotated[str | None, Query(max_length=16)] = None,
     source: Source | None = None,
+    q: Annotated[str | None, Query(max_length=120)] = None,
 ) -> ShortlistOut:
-    return service.shortlist(db, trip_id, limit, offset, category, source)
+    return service.shortlist(db, trip_id, limit, offset, category, source, q and q.strip())
 
 
 @router.get("/trips/{trip_id}/itinerary", response_model=ItineraryOut)

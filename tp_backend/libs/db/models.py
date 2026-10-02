@@ -390,6 +390,17 @@ class TripCity(Base):
     created_at: Mapped[datetime] = _ts(nullable=False, server_default=func.now())
 
 
+class TripDay(Base):
+    """Which of the trip's cities the user says a day is in. A day with no row is unassigned."""
+
+    __tablename__ = "trip_days"
+
+    trip_id: Mapped[str] = mapped_column(ForeignKey("trips.trip_id", ondelete="CASCADE"),
+                                         primary_key=True)
+    day_index: Mapped[int] = mapped_column(Integer, primary_key=True)
+    city_id: Mapped[str] = mapped_column(ForeignKey("cities.city_id"), nullable=False)
+
+
 class PlaceHours(Base):
     """Cached regular opening hours for one place, with a TTL.
 

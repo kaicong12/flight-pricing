@@ -4,6 +4,7 @@
 // server-only import (tp_api reads cookies) would drag `next/headers` into the browser bundle.
 
 import { TERMINAL_STATUSES, type City, type Trip, type TripRole } from "@/lib/api-types";
+import { COLORS } from "@/lib/utils";
 
 export type TripListItem = Pick<Trip, "trip_id" | "name" | "city" | "cities" | "arrive_date" | "depart_date" | "ingest" | "your_role"> & {
   tasks_done: number;
@@ -32,6 +33,12 @@ type Covered = { city?: City | null; cities?: City[] | null };
 export function cityNames(trip: Covered): string {
   const all = trip.cities?.length ? trip.cities : trip.city ? [trip.city] : [];
   return all.map((c) => c.name).join(" + ");
+}
+
+/** A city's colour is its place in the trip's own list, so every screen colours it alike. */
+export function cityColor(cities: { city_id: string }[], cityId: string | null | undefined) {
+  const i = cities.findIndex((c) => c.city_id === cityId);
+  return i < 0 ? null : COLORS[i % COLORS.length];
 }
 
 /** The city names are the fallback, so an unnamed trip still reads as something. */

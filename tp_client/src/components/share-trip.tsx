@@ -16,6 +16,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 import type { Member, TripRole, User } from "@/lib/api-types";
 import { cn } from "@/lib/utils";
 
@@ -85,6 +86,7 @@ export function ShareTrip({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [confirm, confirmDialog] = useConfirm();
 
   const q = query.trim();
 
@@ -151,7 +153,22 @@ export function ShareTrip({
     router.refresh();
   }
 
-  async function unshare(userId: string) {
+  async function unshare(userId: string, email: string) {
+    const ok = await confirm(
+      userId === meId
+        ? {
+            title: "Leave this trip?",
+            description: "It leaves your trips list. Only the owner can add you back.",
+            action: "Leave trip",
+          }
+        : {
+            title: `Remove ${email}?`,
+            description:
+              "They lose access to this trip. What they paid or owe stays in the balances, and you can share it with them again.",
+            action: "Remove",
+          },
+    );
+    if (!ok) return;
     if (!(await send(`/api/trips/${tripId}/members/${userId}`, { method: "DELETE" }))) return;
     if (userId === meId) {
       setOpen(false);
@@ -291,7 +308,7 @@ export function ShareTrip({
                   <button
                     type="button"
                     disabled={busy}
-                    onClick={() => void unshare(m.user_id)}
+                    onClick={() => void unshare(m.user_id, m.email)}
                     aria-label={`Remove ${m.email}`}
                     className="grid size-6 shrink-0 place-items-center rounded-full text-faint transition-colors hover:bg-alert-bg hover:text-alert disabled:opacity-60 outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
                   >
@@ -316,7 +333,7 @@ export function ShareTrip({
             <button
               type="button"
               disabled={busy}
-              onClick={() => void unshare(meId)}
+              onClick={() => void unshare(meId, "")}
               className="flex h-8 items-center gap-1.5 rounded-full px-3 text-[12.5px] font-medium text-alert transition-colors hover:bg-alert-bg disabled:opacity-60 outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
             >
               <LogOut className="size-3.5" />
@@ -324,6 +341,7 @@ export function ShareTrip({
             </button>
           )}
         </div>
+        {confirmDialog}
       </DialogContent>
     </Dialog>
   );

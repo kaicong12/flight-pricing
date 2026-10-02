@@ -264,3 +264,56 @@ def test_the_automatic_draft_stands_down_if_planning_starts_mid_draft(client, db
 
     assert draft.run(db, task(trip)) == {"skipped": draft.ALREADY_PLANNING}
     assert itinerary(db) == {(3, None, "Flight")}
+
+
+def test_a_day_keeps_the_city_it_was_put_in(client, db, lookup):
+    trip = two_city_trip(client, lookup, days=2)
+
+    pin_day = {"days": [{"day_index": 1, "city_id": PORTO, "items": []}]}
+    days = client.put(f"/trips/{trip}/itinerary", json=pin_day).json()["days"]
+    assert [d["city_id"] for d in days][:2] == [None, PORTO]
+
+    pin(client, trip, [], day=1)
+    assert client.get(f"/trips/{trip}/itinerary").json()["days"][1]["city_id"] == PORTO, \
+        "a day sent without city_id keeps its city"
+
+    unset = {"days": [{"day_index": 1, "city_id": None, "items": []}]}
+    assert client.put(f"/trips/{trip}/itinerary", json=unset).json()["days"][1]["city_id"] is None
+
+
+def test_a_day_cannot_be_put_in_a_city_the_trip_does_not_cover(client, db, lookup):
+    trip = two_city_trip(client, lookup)
+    singapore_place(db, trip)
+
+    r = client.put(f"/trips/{trip}/itinerary",
+                   json={"days": [{"day_index": 0, "city_id": SINGAPORE, "items": []}]})
+    assert r.status_code == 422
+
+
+def test_the_draft_keeps_a_city_day_to_that_city(client, db, lookup, monkeypatch):
+    trip, calls = drivable(client, db, lookup, monkeypatch, BOTH,
+                           hours_of(lambda i: periods(range(7))))
+    client.put(f"/trips/{trip}/itinerary",
+               json={"days": [{"day_index": 0, "city_id": PORTO, "items": []}]})
+
+    assert draft.run(db, task(trip))["blocks"] == 1
+    assert db.scalars(select(ItineraryItem.place_id)).all() == ["por"]
+    assert "in Porto only" in calls[0]
+
+
+def test_the_shortlist_search_matches_name_address_and_why_go(client, db, lookup):
+    trip = two_city_trip(client, lookup)
+    make_place(db, city_id=HELSINKI, place_id="a", name="Löyly", address="Hernesaarenranta 4")
+    make_mention(db, "a")
+    make_place(db, city_id=PORTO, place_id="b", name="Bolhão")
+    make_mention(db, "b", source_ref="r2", why_go="the best 100%_sauna fish")
+
+    def names(q):
+        return [p["name"] for p in
+                client.get(f"/trips/{trip}/shortlist", params={"q": q}).json()["places"]]
+
+    assert names("löy") == ["Löyly"]
+    assert names("HERNES") == ["Löyly"]
+    assert names("100%_") == ["Bolhão"]
+    assert names("B%o") == []
+    assert sorted(names("  ")) == ["Bolhão", "Löyly"]
