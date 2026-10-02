@@ -1,5 +1,4 @@
-// The planning screen: shortlist beside the ordered day beside the map. The user owns the order; we
-// route it and say what does not work.
+// The planning screen: shortlist beside the ordered day beside the map.
 
 import { notFound, redirect } from "next/navigation";
 
@@ -38,8 +37,7 @@ export default async function PlanPage({ params }: PageProps<"/trip/[tripId]/pla
   ]);
   if (!trip || !itinerary) notFound();
 
-  // CityOut carries no coordinates, so the map opens on the places themselves. Every resolved place
-  // has a lat/lon, and a city with none has nothing to show anyway.
+  // CityOut carries no coordinates.
   const center = firstPoint(itinerary, shortlist);
 
   return (

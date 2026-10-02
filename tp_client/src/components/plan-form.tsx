@@ -76,7 +76,7 @@ export function PlanForm() {
         setSubmitting(false);
         return;
       }
-      // Stays submitting: the button must not re-arm while the route transition is in flight.
+      // Stays submitting while the route transition is in flight.
       router.push(tripHref(body as Trip));
     } catch {
       setError("Could not reach the server.");

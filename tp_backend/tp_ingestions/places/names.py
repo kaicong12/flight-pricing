@@ -9,14 +9,11 @@ import unicodedata
 from libs.db.enums import Confidence
 from libs.places import VenueHit
 
-# NFKD leaves these alone: they are letters, not accented forms. Without folding them,
-# "Tromsø Cathedral" and "Tromso Cathedral" are different cache keys.
+# NFKD does not decompose these letters.
 FOLD = str.maketrans({"ø": "o", "Ø": "o", "æ": "ae", "Æ": "ae", "å": "a", "Å": "a",
                       "ß": "ss", "đ": "d", "ł": "l", "ð": "d", "þ": "th", "ı": "i"})
 
-# A name made only of these is a category, not a venue. Places answers a bare "bakery" with the
-# best-known bakery in the box — 4.7 stars, 553 ratings — and nothing in the response says it was a
-# category. So this list is the only defence, and it has to run before the call.
+# Places answers a bare category with its best-known venue.
 GENERIC = {
     "the", "a", "an", "and", "of", "or", "in", "at", "some", "this", "that", "my", "our",
     "cafe", "coffee", "restaurant", "bar", "pub", "bistro", "bakery", "brewery", "diner", "eatery",
@@ -31,8 +28,6 @@ GENERIC = {
     "pizza", "sushi", "ramen", "seafood", "fish", "meat", "cake", "dessert", "ice", "sweetheart",
 }
 
-# Present in many cities, so a recommendation of one is not a recommendation of a place. Matched on
-# the normalised name, whole-string or as a leading word, so "Bardus Bistro" is unaffected.
 CHAINS = {
     "mcdonalds", "burger king", "kfc", "subway", "starbucks", "dominos", "pizza hut",
     "hard rock cafe", "7 eleven", "seven eleven", "circle k", "espresso house", "waynes coffee",
@@ -61,8 +56,6 @@ def _squash(name: str) -> str:
 
 
 _CHAINS = {_squash(c) for c in CHAINS}
-# Only distinctive brands may match as a prefix. "max" or "bit" as a prefix would reject a real
-# venue whose name merely starts that way.
 _CHAIN_PREFIXES = {c for c in _CHAINS if len(c) >= 6}
 
 
@@ -100,12 +93,9 @@ def judge(query: str, hit: VenueHit) -> tuple[Confidence | None, str]:
     Type is not a signal: Fjellheisen, Tromsø's top attraction, comes back with an empty
     primaryTypeDisplayName and only point_of_interest, so a type rule would reject it.
     """
-    # The pre-call gate only sees what the source wrote, and "Storgata" is a street that resolves to
-    # the supermarket on it. The official name is free to check and catches what the query missed.
     if _is_chain(query_norm(hit.name)):
         return None, f"chain ({hit.name})"
 
-    # A Chinese name landing on a Latin one is only identity if a Latin fragment carried the match.
     if _is_cjk(query) and not _has_latin(query) and not _is_cjk(hit.name):
         return Confidence.MEDIUM, f"unconfirmed identity: {query!r} resolved to a Latin name"
 

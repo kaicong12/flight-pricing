@@ -1,5 +1,4 @@
-// Server-side helper for talking to tp_api. Only route handlers and server components import this,
-// so no key, upstream URL or session token ever reaches client JS.
+// Server-only helper for talking to tp_api.
 
 import { cookies } from "next/headers";
 
@@ -7,7 +6,7 @@ import { SESSION_COOKIE } from "@/lib/cookies";
 
 const BASE = process.env.TP_API_URL ?? "http://127.0.0.1:8000";
 
-// The Response constructor rejects a body on any of these, so a 204 from tp_api must stay bodyless.
+// The Response constructor rejects a body on these statuses.
 const NULL_BODY_STATUSES = new Set([101, 103, 204, 205, 304]);
 
 /** Every tp_api route except sign-in is authed, so the session travels on all of them from here. */

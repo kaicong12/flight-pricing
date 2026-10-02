@@ -54,8 +54,6 @@ def test_warm_city_returns_no_ingest(client, db):
 
     assert body["ingest"] is None
     assert db.get(Trip, body["trip_id"]) is not None
-    # No discovery work, but the draft still has to be queued: a warm city settles no run, so
-    # plan_after_ingest never fires and this is the only chance to ask for one.
     kinds = db.scalars(select(IngestTask.kind)).all()
     assert kinds == [TaskKind.ROUTE_PLAN]
     assert db.scalar(select(IngestTask.payload)) == {"trip_id": body["trip_id"]}
@@ -78,7 +76,6 @@ def test_a_trip_created_mid_run_catches_up_when_the_run_settles(client, db):
     reconciles rather than anything locking."""
     run_id = client.post("/initiate-plan", json=plan_body()).json()["ingest"]["run_id"]
     trip_id = db.scalar(select(Trip.trip_id))
-    # Resolved without the claim the worker would have written — the race, not a shortcut.
     db.add(Place(place_id="missed", city_id=HELSINKI, name="Missed", confidence=Confidence.HIGH))
     db.execute(update(IngestRun).values(status=RunStatus.DONE))
     db.commit()

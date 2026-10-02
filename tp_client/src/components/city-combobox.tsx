@@ -21,8 +21,6 @@ export function CityCombobox({ onSelect, placeholder = "Helsinki", exclude }: Pr
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const input = useRef<HTMLInputElement>(null);
-  // Results are stamped with the query they answer, so "loading" is derived rather than a second
-  // piece of state set synchronously inside the effect.
   const [results, setResults] = useState<{ q: string; items: CitySuggestion[] }>({
     q: "",
     items: [],
@@ -48,7 +46,6 @@ export function CityCombobox({ onSelect, placeholder = "Helsinki", exclude }: Pr
         });
         setResults({ q, items: r.ok ? await r.json() : [] });
       } catch {
-        // An aborted keystroke is not a failure; the next one owns the result.
       }
     }, DEBOUNCE_MS);
     return () => {

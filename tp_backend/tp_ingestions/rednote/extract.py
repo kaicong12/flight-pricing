@@ -72,7 +72,6 @@ def extract_note(session: Session, task: ClaimedTask, note: RedNotePost) -> dict
         is_promotional=bool(result.get("is_promotional")), content_type=result.get("content_type"),
         place_count=len(places), result=result))
 
-    # Desc-first: OCR is ~10x the tokens, so it runs only for the ~38% of notes whose text names nothing.
     queued = 0 if places else queue_ocr(session, task, note, city)
 
     resolve = enqueue_resolve(session, task, Source.REDNOTE, note.note_id,

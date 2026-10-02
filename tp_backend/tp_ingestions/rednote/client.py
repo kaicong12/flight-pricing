@@ -20,7 +20,7 @@ FEED_URL = "https://webapi.rednote.com/api/sns/web/v1/feed"
 UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
       "(KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36")
 
-# The API answers "not logged in" in prose rather than a stable code, so match the wording.
+# The API reports "not logged in" only in prose.
 AUTH_HINTS = ("登录", "login", "登陆", "验证")
 
 log = logging.getLogger("rednote.client")
@@ -89,7 +89,7 @@ def _post(url: str, endpoint: str, body: dict) -> dict:
     if not data.get("success"):
         msg = str(data.get("msg", ""))
         code = data.get("code")
-        # A throttled call can answer 200 with zero results, so never read "empty" as "done".
+        # A throttled call can answer 200 with zero results.
         if any(h in msg for h in AUTH_HINTS):
             raise TaskError(ErrorCode.CREDENTIALS, f"rednote code={code} msg={msg[:120]}")
         raise TaskError(ErrorCode.TRANSIENT, f"rednote code={code} msg={msg[:120]}")

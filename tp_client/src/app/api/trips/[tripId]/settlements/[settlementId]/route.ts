@@ -1,4 +1,4 @@
-// Undoing a recorded payment, for when it was entered against the wrong person.
+// Undoes a recorded payment.
 
 import { proxy } from "@/lib/tp-api";
 

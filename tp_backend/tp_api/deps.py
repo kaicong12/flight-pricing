@@ -63,7 +63,6 @@ def require_trip_access(
     return row.role
 
 
-# 403 not 404 here: a member already knows the trip exists.
 def require_edit(role: Annotated[str, Depends(require_trip_access)]) -> None:
     if role == TripRole.VIEWER:
         raise HTTPException(403, "you can view this trip but not change it")

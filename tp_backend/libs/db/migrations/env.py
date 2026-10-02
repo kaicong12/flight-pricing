@@ -6,30 +6,17 @@ from sqlalchemy import engine_from_config, pool
 from libs.db.models import Base
 from libs.settings import settings
 
-# this is the Alembic Config object, which provides
-# access to the values within the .ini file in use.
 config = context.config
 
-# Interpret the config file for Python logging.
-# disable_existing_loggers stays off: alembic's default is True, which silently disables every logger
-# already created — so a migration run in the same process as the app kills the app's own logging.
+# alembic's default disable_existing_loggers=True silences the app's loggers.
 if config.config_file_name is not None:
     fileConfig(config.config_file_name, disable_existing_loggers=False)
 
-# add your model's MetaData object here
-# for 'autogenerate' support
-# from myapp import mymodel
-# target_metadata = mymodel.Base.metadata
 target_metadata = Base.metadata
 
 _url = config.get_main_option("sqlalchemy.url", None)
 if not _url or _url.startswith("driver://"):
     config.set_main_option("sqlalchemy.url", settings().database_url)
-
-# other values from the config, defined by the needs of env.py,
-# can be acquired:
-# my_important_option = config.get_main_option("my_important_option")
-# ... etc.
 
 
 def run_migrations_offline() -> None:

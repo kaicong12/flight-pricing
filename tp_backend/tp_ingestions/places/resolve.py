@@ -114,11 +114,7 @@ def places_resolve(session: Session, task: ClaimedTask) -> dict:
 
     radius = settings().places_search_radius_m
     counts = dict.fromkeys(("candidates", "filtered", "cached", "resolved", "rejected"), 0)
-    # Misses are not cached in place_queries, so this keeps a name repeated inside one extraction
-    # from costing two calls. In-process only: it cannot poison a later run.
     missed: set[str] = set()
-    # A claim is what shortlists a place, so every trip in this city needs one — including for a
-    # cache hit, which writes a mention without resolving anything.
     touched: set[str] = set()
 
     for place in (extraction.result or {}).get("places") or []:
@@ -134,8 +130,6 @@ def places_resolve(session: Session, task: ClaimedTask) -> dict:
             counts["filtered"] += 1
             continue
 
-        # remember() writes inside this transaction, so a name repeated within one extraction is
-        # already a cache hit by the second time round.
         key = names.query_norm(name)
         place_id = cached(session, city.city_id, key)
         if place_id:
@@ -147,7 +141,7 @@ def places_resolve(session: Session, task: ClaimedTask) -> dict:
             counts["rejected"] += 1
             continue
 
-        # The city suffix is not optional: bare "Tromso Cathedral" resolves to a different church.
+        # Places needs the city suffix; a bare name resolves elsewhere.
         try:
             hit = search_venue(f"{name}, {city.name}", city.lat, city.lon, radius)
         except PlacesError as e:

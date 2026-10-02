@@ -105,7 +105,6 @@ def mention_facts(db: Session, place_ids: Sequence[str]) -> dict[str, tuple[str 
     for r in rows:
         if r.category:
             categories.setdefault(r.place_id, Counter())[r.category] += 1
-        # Prefer the fullest recommendation: one sentence of why-go beats a three-word one.
         if (r.why_go and r.sentiment == Sentiment.RECOMMENDED
                 and len(r.why_go) > len(blurbs.get(r.place_id, ""))):
             blurbs[r.place_id] = r.why_go
@@ -192,7 +191,6 @@ def shortlist(db: Session, trip_id: str, limit: int, offset: int,
     stmt = (
         select(Place, rank.label("mention_count"),
                placed.c.day_index,
-               # Computed before LIMIT, so one query yields both the page and the full count.
                func.count().over().label("total"))
         .outerjoin(mentions, mentions.c.place_id == Place.place_id)
         .outerjoin(placed, placed.c.place_id == Place.place_id)
@@ -227,8 +225,6 @@ def shortlist(db: Session, trip_id: str, limit: int, offset: int,
         rows = [r for r in rows if category_of(r.Place, facts) == category]
 
     cities = trip_cities(db, trip)
-    # A place reached through another city's query cache is filed under a city this trip may not
-    # cover, so the row it is labelled from is not always one of `cities`.
     filed = {c.city_id: c for c in db.scalars(
         select(City).where(City.city_id.in_({r.Place.city_id for r in rows})))}
     places = []
@@ -351,8 +347,7 @@ def replace_days(db: Session, trip_id: str, body: ItineraryIn, commit: bool = Tr
         if missing:
             raise HTTPException(422, f"not a place on this trip: {missing[0]}")
 
-    # Delete by submitted identity too: a block dragged in from an unlisted day would otherwise
-    # collide with uq_itinerary_trip_block.
+    # Delete by submitted block_id too, or uq_itinerary_trip_block collides.
     db.execute(delete(ItineraryItem).where(
         ItineraryItem.trip_id == trip_id,
         or_(ItineraryItem.day_index.in_([d.day_index for d in body.days]),
@@ -444,7 +439,6 @@ def add_place(db: Session, trip_id: str, place_id: str, category: str,
 
     existing = db.get(Place, place_id)
     if existing is not None:
-        # Already stored, so spend no Places call.
         existing.category = category
         claim_place(db, trip_id, place_id)
         db.commit()
@@ -459,7 +453,6 @@ def add_place(db: Session, trip_id: str, place_id: str, category: str,
     if hit.lat is None or hit.lon is None:
         raise HTTPException(422, "that place has no location")
 
-    # city_id records where the place was found, not a claim that it is inside the city.
     city = nearest_city(trip_cities(db, trip), hit.lat, hit.lon)
     upsert_place(db, city, hit, hit.name, Confidence.HIGH, "added by hand", category)
     claim_place(db, trip_id, hit.place_id)
@@ -523,7 +516,6 @@ def load_hours(db: Session, place_ids: list[str], fetch: HoursLookup) -> dict[st
     try:
         fetched = fetch(stale)
     except PlacesError:
-        # Hours we could not reach are simply unknown; plan_day warns rather than failing the day.
         return cached
 
     now = datetime.now(UTC)
@@ -564,10 +556,8 @@ def route_day(db: Session, trip_id: str, day_index: int,
     if len(rows) > settings().max_stops_per_day:
         raise HTTPException(422, f"a day takes at most {settings().max_stops_per_day} stops")
 
-    # The day starts when its first block does. Rows are already in time order.
     start = time(rows[0].ItineraryItem.start_min // 60, rows[0].ItineraryItem.start_min % 60)
 
-    # A custom block has no hours to judge, so it is echoed back in time order and never routed.
     place_rows = [r for r in rows if r.Place]
     place_ids = [r.Place.place_id for r in place_rows]
     hours = load_hours(db, place_ids, fetch_hours)

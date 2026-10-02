@@ -273,7 +273,6 @@ class TestDismissals:
 
 class TestItineraryRead:
     def test_every_day_of_the_trip_appears_even_when_empty(self, client):
-        # plan_body is a 3-night trip, so four days inclusive.
         days = client.get(f"/trips/{make_trip(client)}/itinerary").json()["days"]
         assert [d["day_index"] for d in days] == [0, 1, 2, 3]
         assert all(d["items"] == [] for d in days)
@@ -588,7 +587,7 @@ class TestRouteDay:
         assert calls == [["p1"]]
 
     def test_the_days_start_time_is_its_first_block(self, client, db):
-        trip = make_trip(client)  # plan_body arrives at 14:30
+        trip = make_trip(client)
         seed(db, ("p1", "A", 1))
         put_day(client, trip, ["p1"], start=19 * 60)
 
@@ -634,7 +633,7 @@ class TestProvisional:
         assert body["provisional"] == []
 
     def test_past_a_week_out_only_regular_hours_are_knowable(self, client, db):
-        trip = make_trip(client)  # 30 days out
+        trip = make_trip(client)
         body = client.post(f"/trips/{trip}/days/0/route", json={}).json()
         assert body["provisional"] == [REGULAR_HOURS_ONLY_NOTE]
 

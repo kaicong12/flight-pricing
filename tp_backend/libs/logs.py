@@ -29,9 +29,7 @@ class JsonFormatter(logging.Formatter):
         return json.dumps(payload, default=str)
 
 
-# uvicorn attaches its own handlers to these and does not propagate, so without taking them over the
-# access log stays plain text while the app's lines are JSON — and `| json` then fails on most of what
-# the API emits.
+# uvicorn's loggers have their own handlers and do not propagate.
 UVICORN_LOGGERS = ("uvicorn", "uvicorn.error", "uvicorn.access")
 
 
@@ -43,10 +41,10 @@ def install(level: int = logging.INFO, json_logs: bool | None = None) -> None:
     handler.setFormatter(
         JsonFormatter() if json_logs else logging.Formatter(TEXT_FORMAT, TEXT_DATEFMT)
     )
-    # force=True: basicConfig is a no-op once anything has put a handler on the root logger.
+    # basicConfig is a no-op once the root logger has a handler.
     logging.basicConfig(level=level, handlers=[handler], force=True)
 
-    # Runs after uvicorn has configured itself, because uvicorn imports the app last.
+    # Must run after uvicorn configures itself.
     for name in UVICORN_LOGGERS:
         logger = logging.getLogger(name)
         logger.handlers.clear()

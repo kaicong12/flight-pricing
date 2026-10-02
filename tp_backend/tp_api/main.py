@@ -82,8 +82,7 @@ from tp_api.uploads import NotOurExport, Upload, read
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    # Endpoints are sync, so they run in anyio's threadpool. Leaving it wider than the connection
-    # pool just moves the queue: requests would wait on pool_timeout and fail at 30s instead.
+    # The threadpool is capped at the connection pool size.
     to_thread.current_default_thread_limiter().total_tokens = settings().db_max_connections
     yield
 
@@ -97,8 +96,6 @@ app.include_router(users_router)
 metrics.install(app)
 logs.install()
 
-# uvicorn already logs a line per request, so nothing here repeats method, path or status. These are
-# the decisions behind a response that an access log cannot show.
 log = logging.getLogger("tp_api")
 
 Db = Annotated[Session, Depends(db_session)]
@@ -151,7 +148,7 @@ def create_trip(db: Session, lookup: CityLookup, user: User, body: InitiatePlanR
             log.warning("initiate-plan places lookup failed place_id=%s: %s", place_id, e)
             raise HTTPException(502, f"places lookup failed: {e}") from e
         city = ensure_city(db, details)
-        # Keyed on the resolved id, not the input: Places answers an alias with the canonical one.
+        # Places answers an alias with the canonical id.
         resolved.setdefault(city.city_id, city)
     cities = list(resolved.values())
 
@@ -178,8 +175,6 @@ def create_trip(db: Session, lookup: CityLookup, user: User, body: InitiatePlanR
     runs = [r for r in (ensure_city_ingest(db, c) for c in cities) if r is not None]
     if not runs:
         ensure_trip_plan(db, trip)
-    # Which of the two paths a trip took is invisible from the response alone, and it decides whether
-    # anything is coming: a warm city's plan screen fills from a draft, a cold one's from a run.
     log.info("initiate-plan trip=%s cities=%s ingest=%s", trip.trip_id[:8],
              " ".join(f"{c.name}:{c.city_id}" for c in cities),
              f"run:{runs[0].run_id} {runs[0].status}"
@@ -288,7 +283,6 @@ def list_trips(db: Db, user: Me) -> list[TripSummaryOut]:
     if not trips:
         return []
 
-    # One query each rather than per trip: the list is the landing screen and N trips share cities.
     covered = cities_by_trip(db, [t.trip_id for t in trips])
     for t in trips:
         covered.setdefault(t.trip_id, [t.city_id])
@@ -308,8 +302,6 @@ def list_trips(db: Db, user: Me) -> list[TripSummaryOut]:
             counts[row.run_id] = (done + (row.n if row.status in DONE_TASK_STATUSES else 0),
                                   total + row.n)
 
-    # The shortlist's own predicates, correlated on Trip rather than one trip_id, so this stays one
-    # query for every trip.
     dismissed = (select(TripDismissal.place_id)
                  .where(TripDismissal.trip_id == Trip.trip_id,
                         TripDismissal.place_id == Place.place_id)
@@ -374,7 +366,6 @@ def get_trip(trip_id: str, db: Db, role: Annotated[str, Depends(require_trip_acc
         ).all()
         progress = [TaskProgress(kind=r.kind, status=r.status, count=r.n) for r in rows]
 
-        # Grouped on the message too: twenty videos failing for one reason is one thing to read.
         bad = db.execute(
             select(IngestTask.kind, IngestTask.status, IngestTask.error_code,
                    IngestTask.last_error, func.count().label("n"))
@@ -388,8 +379,6 @@ def get_trip(trip_id: str, db: Db, role: Annotated[str, Depends(require_trip_acc
         failures = [TaskFailure(kind=r.kind, status=r.status, error_code=r.error_code,
                                 last_error=r.last_error, count=r.n) for r in bad]
 
-    # The draft lives in a trip_planning run, which the query above deliberately excludes, so it is
-    # appended by hand. Without it the checklist shows nothing while a draft is in flight.
     draft = draft_task(db, trip_id)
     if draft is not None:
         progress.append(TaskProgress(kind=draft.kind, status=draft.status, count=1))

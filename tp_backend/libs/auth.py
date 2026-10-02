@@ -84,8 +84,7 @@ def exchange_code(code: str) -> GoogleIdentity:
     except httpx.HTTPError as e:
         raise AuthError(f"google token endpoint unreachable: {e}") from e
     if r.status_code != 200:
-        # invalid_grant covers a reused code, an expired one and a mismatched redirect_uri alike, so
-        # the body is the only thing that tells them apart.
+        # invalid_grant covers reused, expired and redirect-mismatched codes alike.
         raise AuthError(f"google rejected the code: {r.status_code} {r.text}")
 
     id_token = r.json().get("id_token")
@@ -116,7 +115,7 @@ def upsert_user(db: Session, who: GoogleIdentity) -> User:
             set_={"email": who.email, "name": who.name, "picture": who.picture,
                   "updated_at": func.now()})
         .returning(User)
-        # Without this the identity map wins and a second sign-in returns the stale profile.
+        # Otherwise the identity map returns the stale profile.
         .execution_options(populate_existing=True)
     ).one()
 

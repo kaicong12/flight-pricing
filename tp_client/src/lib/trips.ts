@@ -1,7 +1,4 @@
-// The trips list: tp_api's GET /trips shaped for the card, which wants display strings.
-//
-// Pure, and it has to stay that way: client components import the formatters from here, so one
-// server-only import (tp_api reads cookies) would drag `next/headers` into the browser bundle.
+// The trips list: tp_api's GET /trips shaped for the card. Must stay free of server-only imports.
 
 import { TERMINAL_STATUSES, type City, type Trip, type TripRole } from "@/lib/api-types";
 import { COLORS } from "@/lib/utils";
@@ -111,8 +108,7 @@ function byStartDate(trips: TripSummary[], today: string): TripSummary[] {
   return [...upcoming, ...past];
 }
 
-// The server's own calendar date. toISOString() would give the UTC date, which puts a trip
-// starting today into the past bucket for part of the day.
+// Local date; toISOString() would give the UTC one.
 function localToday(): string {
   const now = new Date();
   const pad = (n: number) => String(n).padStart(2, "0");

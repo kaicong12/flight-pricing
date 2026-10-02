@@ -1,7 +1,4 @@
 // One currency's pile: what it came to, a diverging bar per person, and the payments that clear it.
-//
-// The bar is centred on zero — owed-to-them grows right, owes grows left — because the question the
-// tab answers is which side of nothing each person is on, not how much was spent.
 
 import { Button } from "@/components/ui/button";
 import type { Member } from "@/lib/api-types";

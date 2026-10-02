@@ -1,6 +1,4 @@
-// Covers this segment and /plan below it. Deliberately does not say which of the two it is: tp_api
-// answers 404 for a trip you cannot see so that trip ids stay unguessable, and saying "not shared
-// with you" here would give that back.
+// Must not say whether the trip exists: tp_api 404s a trip you cannot see.
 
 import Link from "next/link";
 

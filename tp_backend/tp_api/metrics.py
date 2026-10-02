@@ -33,9 +33,7 @@ def install(app: FastAPI) -> None:
         response = await call_next(request)
         elapsed = time.perf_counter() - started
 
-        # FastAPI leaves the matched route here. Label with its template, never request.url.path:
-        # one series per endpoint, not one per trip id. Absent when nothing matched, and a junk
-        # path must not mint a series of its own.
+        # Label with the route template, never the raw path; absent when nothing matched.
         route = request.scope.get("route")
         if route is not None:
             REQUEST_DURATION.labels(

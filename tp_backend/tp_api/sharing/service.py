@@ -63,7 +63,7 @@ def add_member(db: Session, trip_id: str, body: MemberIn) -> MemberOut:
     log.info("shared trip=%s with=%s as=%s", trip_id[:8], user.email, body.role)
 
     if joined:
-        # Imported here, not at module scope: tp_api.expenses.service imports this module.
+        # Circular import: tp_api.expenses.service imports this module.
         from tp_api.expenses.service import include_member
 
         include_member(db, trip_id, body.user_id)

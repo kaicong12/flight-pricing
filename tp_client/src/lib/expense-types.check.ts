@@ -1,8 +1,4 @@
-// Checks for the money arithmetic in expense-types.ts. There is no test runner in tp_client, so
-// this is runnable on its own: npx tsx src/lib/expense-types.check.ts
-//
-// It covers the parts a wrong answer hides rather than crashes on — a split that loses a cent, an
-// amount box that reads 1.005 as something, and the ordering the balance bar depends on.
+// Checks for expense-types.ts: npx tsx src/lib/expense-types.check.ts
 
 import type { CurrencyBalance, Expense } from "./expense-types";
 import {
@@ -27,7 +23,6 @@ function eq(got: unknown, want: unknown, label: string) {
   if (a !== b) throw new Error(`${label}\n  got  ${a}\n  want ${b}`);
 }
 
-// An even split always adds back up to what was paid.
 for (const amount of [1, 7, 100, 999, 1000, 12345, 100000]) {
   for (let people = 1; people <= 7; people++) {
     const ids = Array.from({ length: people }, (_, i) => `u${i}`);

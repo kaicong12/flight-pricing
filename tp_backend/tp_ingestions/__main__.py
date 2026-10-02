@@ -17,8 +17,6 @@ def main() -> int:
     ap.add_argument("--quiet", action="store_true")
     args = ap.parse_args()
 
-    # Same format as the API's, which matters once both are in one log store: the worker's own
-    # basicConfig kept it readable on a TTY but left `{service="worker"} | json` matching nothing.
     logs.install(level=logging.WARNING if args.quiet else logging.INFO)
 
     worker = Worker(name=args.name, poll_interval=args.poll_interval)

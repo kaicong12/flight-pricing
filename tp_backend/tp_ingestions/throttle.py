@@ -80,7 +80,6 @@ class Throttler:
         """Spend one call, committed immediately so it survives the caller rolling back."""
         with session() as s:
             s.add(ThrottleCall(domain=self.domain))
-            # Kept small: nothing outside the longest window can affect any decision.
             s.execute(delete(ThrottleCall).where(
                 ThrottleCall.domain == self.domain,
                 ThrottleCall.called_at < datetime.now(UTC) - timedelta(seconds=self._longest)))
@@ -113,8 +112,6 @@ class Throttler:
             if wait <= 0:
                 return
             if wait > self.max_inline_wait:
-                # Handed back via run_after rather than held: sleeping keeps a task lease and a
-                # connection, and the queue has no kind filter, so it would stall other sources.
                 raise Throttled(f"{self.domain} throttled for {wait:.0f}s",
                                 retry_after=timedelta(seconds=wait))
             if wait >= 0.1:

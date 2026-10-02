@@ -86,8 +86,7 @@ class User(Base):
     user_id: Mapped[str] = mapped_column(String(36), primary_key=True)
     google_sub: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
     email: Mapped[str] = mapped_column(String(320), nullable=False)
-    # Google documents both as "might be provided", and picture URLs rotate, so both are refreshed
-    # on every sign-in rather than trusted from the first one.
+    # Google may omit both, and picture URLs rotate.
     name: Mapped[str | None] = mapped_column(String(120))
     picture: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = _ts(nullable=False, server_default=func.now())
@@ -178,10 +177,7 @@ class Place(Base):
     rating: Mapped[float | None] = mapped_column(Float)
     rating_count: Mapped[int | None] = mapped_column(Integer)
     primary_type: Mapped[str | None] = mapped_column(String(120))
-    # The town Places says the venue is in. Only the hand-add path fetches it, and it is a label
-    # only: `city_id` is still where the place was filed.
     locality: Mapped[str | None] = mapped_column(String(120))
-    # Set only by hand. Every other category is derived from mentions, which a manual place has none.
     category: Mapped[str | None] = mapped_column(String(16))
     resolved_from_name: Mapped[str | None] = mapped_column(Text)
     confidence: Mapped[str] = mapped_column(String(16), nullable=False)
@@ -245,7 +241,6 @@ class ItineraryItem(Base):
             "(kind = 'custom' AND title IS NOT NULL AND place_id IS NULL)",
             name="ck_itinerary_identity"),
         CheckConstraint("day_index >= 0", name="ck_itinerary_day"),
-        # End may run past midnight, into later days; a start may not, or it belongs to the next day.
         CheckConstraint("start_min >= 0 AND start_min < 1440", name="ck_itinerary_start"),
         CheckConstraint("duration_min > 0", name="ck_itinerary_duration"),
         Index("ix_itinerary_trip_day", "trip_id", "day_index", "start_min"),
@@ -524,7 +519,6 @@ class IngestRun(Base):
     __table_args__ = (
         _in("kind", RunKind),
         _in("status", RunStatus),
-        # Two friends planning the same city join one run instead of double-spending the budget.
         Index("uq_run_active_city", "city_id", unique=True,
               postgresql_where=text("kind = 'city_ingest' AND status IN ('pending', 'running')")),
     )
@@ -568,7 +562,7 @@ class IngestTask(Base):
     kind: Mapped[str] = mapped_column(String(32), nullable=False)
     source: Mapped[str | None] = mapped_column(String(16))
     payload: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default=text("'{}'::jsonb"))
-    # Wide because keys embed a city_id, which is a Google place_id.
+    # Wide because keys embed a Google place_id.
     dedupe_key: Mapped[str] = mapped_column(String(512), nullable=False)
     status: Mapped[str] = mapped_column(String(16), nullable=False,
                                         server_default=text("'pending'"))

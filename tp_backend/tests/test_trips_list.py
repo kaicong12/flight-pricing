@@ -64,7 +64,6 @@ def test_place_count_agrees_with_the_shortlist(client, db):
     db.commit()
     for i in range(3):
         make_place(db, city_id=city_id, place_id=f"p{i}", name=f"Place {i}")
-    # Another city's ingestion claims nothing here; the hand-add is what reaches it.
     make_place(db, city_id="elsewhere", place_id="far", name="Opera House")
     db.add(TripPlace(trip_id=trip_id, place_id="far"))
     db.add(TripDismissal(trip_id=trip_id, place_id="p0"))

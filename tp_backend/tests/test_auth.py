@@ -29,13 +29,9 @@ from tp_api.main import app
 WHO = GoogleIdentity(sub="118…420", email="friend@example.com", name="A Friend",
                      picture="https://lh3.googleusercontent.com/a/x=s96-c")
 
-# Every route that may be reached without a session. Anything else added here is a decision, not an
-# oversight: /auth/url and /auth/google are sign-in itself, and the other two must not touch the
-# database.
 OPEN_ROUTES = {("GET", "/auth/url"), ("POST", "/auth/google"),
                ("GET", "/health"), ("GET", "/metrics")}
 
-# Writes with no static role gate. Each is a decision with a reason, not an oversight.
 UNGATED_WRITES = {
     ("POST", "/trips/{trip_id}/days/{day_index}/route"):
         "writes only the shared place_hours cache, and a viewer checks a day too",
@@ -163,7 +159,7 @@ class TestUpsert:
                 upsert_user(other, WHO)
                 other.commit()
                 outcome.append(None)
-            except Exception as e:  # noqa: BLE001 — reported through the assert below
+            except Exception as e:  # noqa: BLE001
                 outcome.append(e)
             finally:
                 other.close()
@@ -220,7 +216,6 @@ class TestAuthUrl:
         assert q["state"] == ["s" * 12]
         assert q["response_type"] == ["code"]
         assert q["scope"] == ["openid email profile"]
-        # Without both of these a returning user comes back with no refresh_token.
         assert q["access_type"] == ["offline"] and q["prompt"] == ["consent"]
 
     def test_a_short_state_is_rejected(self, anon_client):
@@ -282,7 +277,6 @@ class TestTripsAreScopedToTheirUser:
         db.commit()
         client.headers["Authorization"] = "Bearer other-token"
 
-        # 404 everywhere, so the gate cannot be used to discover which trip ids exist.
         assert client.get(f"/trips/{trip_id}").status_code == 404
         assert client.get(f"/trips/{trip_id}/shortlist").status_code == 404
         assert client.get(f"/trips/{trip_id}/itinerary").status_code == 404

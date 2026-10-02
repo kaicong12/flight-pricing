@@ -161,8 +161,7 @@ def tasks(db, kind=None, run_id=None):
         q = q.where(IngestTask.kind == kind)
     if run_id is not None:
         q = q.where(IngestTask.run_id == run_id)
-    # Ordered explicitly: an UPDATE leaves dead space a later INSERT reuses, so heap order is not
-    # insertion order.
+    # Heap order is not insertion order after an UPDATE.
     return db.scalars(q.order_by(IngestTask.task_id)).all()
 
 

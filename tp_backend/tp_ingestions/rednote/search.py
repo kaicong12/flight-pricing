@@ -26,7 +26,6 @@ def rednote_search(session: Session, task: ClaimedTask) -> dict:
     limits.rednote().take()
     notes = client.search_notes(keyword)
 
-    # A note whose body we already have is never re-fetched.
     known = set(session.scalars(
         select(RedNotePost.note_id)
         .where(RedNotePost.note_id.in_([n["note_id"] for n in notes]),
@@ -38,14 +37,12 @@ def rednote_search(session: Session, task: ClaimedTask) -> dict:
             pg_insert(RedNotePost)
             .values(note_id=note["note_id"], xsec_token=note["xsec_token"], title=note["title"],
                     likes=note["likes"], author=note["author"])
-            # The token is single-use-ish and rotates per search, so refresh it; never clobber a body.
+            # xsec_token rotates per search.
             .on_conflict_do_update(
                 index_elements=["note_id"],
                 set_={"xsec_token": note["xsec_token"], "likes": note["likes"]})
         )
 
-    # page_size is 20, so an uncapped fan-out would spend most of an hour's budget on one city.
-    # Keep the API's relevance order.
     fresh = [n for n in notes if n["note_id"] not in known][:settings().rednote_max_fetch_per_search]
     queued = enqueue(session, [
         {"run_id": task.run_id, "kind": TaskKind.REDNOTE_FETCH, "source": Source.REDNOTE,

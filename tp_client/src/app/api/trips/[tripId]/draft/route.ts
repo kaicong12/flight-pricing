@@ -1,4 +1,4 @@
-// Queues an itinerary draft. Fire-and-forget: the task's status arrives via GET /trips/{id}.
+// Queues an itinerary draft; its status arrives via GET /trips/{id}.
 
 import { proxy } from "@/lib/tp-api";
 

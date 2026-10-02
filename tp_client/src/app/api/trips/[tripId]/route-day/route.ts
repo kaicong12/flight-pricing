@@ -1,5 +1,4 @@
-// Route one day. Named route-day rather than nested under days/[n]/route so the file is not
-// route/route.ts.
+// Route one day.
 
 import { proxy } from "@/lib/tp-api";
 

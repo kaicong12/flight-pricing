@@ -52,7 +52,6 @@ CENTRED = {"#", "Start", "End", "Ref", "Source", "Mentions", "Used on", "Cur"}
 WRAPPED = {"Block", "Warning", "Details", "Why go", "Expense"}
 MONEY_FORMAT = "#,##0.00"
 
-# What an upload recognises: a very hidden sheet holding the trip and each row's identity.
 META_SHEET = "_trip_planner"
 MARKER = "trip-planner-export"
 VERSION = 1
@@ -117,7 +116,7 @@ def _link(ws: Worksheet, row: int, column: int, url: str | None, title: str | No
     if not url:
         return
     cell = ws.cell(row=row, column=column, value=LINK_ICON)
-    # Excel shows the hyperlink's own tooltip on hover, which is where the source title goes.
+    # Excel shows the hyperlink's tooltip on hover.
     cell.hyperlink = Hyperlink(ref=cell.coordinate, target=url, tooltip=title)
     cell.font = Font(color=BRAND)
     cell.alignment = Alignment(horizontal="center")
@@ -311,7 +310,6 @@ def expenses_sheet(ws: Worksheet, db: Session, trip: Trip) -> None:
         top = at
         for n, e in enumerate(items, start=1):
             share = {s.user_id: s.amount_cents for s in e.shares}
-            # The "$" on a block names the cost after the block, so the two are often one string.
             what = (f"{e.description} · {e.block_title}"
                     if e.block_title and e.block_title != e.description else e.description)
             _body_row(ws, at, columns,

@@ -86,13 +86,10 @@ class TripOut(BaseModel):
 
 
 class TripStatusOut(TripOut):
-    # What the caller may do with this trip, so the UI can hide what would only 403.
     your_role: str
     progress: list[TaskProgress] = []
     failures: list[TaskFailure] = []
-    # The route.plan task's status, or None if this trip was never drafted. The client polls on it.
     draft: str | None = None
-    # What the last draft wrote, or why it wrote nothing: route.plan's result, codes not English.
     draft_result: dict | None = None
 
 

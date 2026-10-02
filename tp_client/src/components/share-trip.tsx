@@ -1,7 +1,6 @@
 "use client";
 
-// Sharing one trip. Used from the trips list and from the plan screen, so the trigger has two
-// shapes but the dialog is the same.
+// Sharing one trip, from the trips list or the plan screen.
 
 import { Avatar } from "@base-ui/react/avatar";
 import { Check, Link2, LogOut, Users, X } from "lucide-react";
@@ -116,7 +115,6 @@ export function ShareTrip({
         });
         setFound({ q, items: r.ok ? ((await r.json()) as User[]) : [] });
       } catch {
-        // An aborted keystroke is not a failure; the next one owns the result.
       }
     }, DEBOUNCE_MS);
     return () => {
@@ -213,7 +211,7 @@ export function ShareTrip({
 
         {owns ? (
           <div>
-            {/* autoComplete off: Chrome offers to autofill an address over the dialog otherwise. */}
+            {/* autoComplete off: Chrome autofills an address over the dialog. */}
             <div className="flex flex-wrap items-center gap-2">
               <input
                 value={query}
