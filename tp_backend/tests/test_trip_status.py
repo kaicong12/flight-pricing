@@ -53,7 +53,6 @@ def test_failures_group_by_message_and_include_blocked(client, db):
 
     failures = client.get(f"/trips/{created['trip_id']}").json()["failures"]
 
-    # Two youtube.search tasks share one message, so they are one row of count 2, not two rows.
     assert [(f["kind"], f["status"], f["error_code"], f["count"]) for f in failures] == [
         (TaskKind.YOUTUBE_SEARCH, TaskStatus.FAILED, ErrorCode.PERMANENT, 2),
         (TaskKind.REDNOTE_SEARCH, TaskStatus.BLOCKED, None, 1),
@@ -160,7 +159,6 @@ def test_patch_renames_and_blank_clears_back_to_null(client):
     assert client.get(f"/trips/{trip_id}").json()["name"] == "Sauna week"
     assert client.get("/trips").json()[0]["name"] == "Sauna week"
 
-    # Blank restores the fallback rather than storing an empty string.
     assert client.patch(f"/trips/{trip_id}", json={"name": "   "}).json()["name"] is None
 
 

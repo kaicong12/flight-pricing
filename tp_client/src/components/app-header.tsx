@@ -1,7 +1,6 @@
 "use client";
 
-// The app bar: brand mark and the two-item nav. A trip is the only container, so there is no
-// second level.
+// The app bar: brand mark and the two-item nav.
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";

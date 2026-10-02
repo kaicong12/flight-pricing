@@ -1,7 +1,6 @@
 "use client";
 
-// Click-to-edit trip name, used by both the dashboard card and the plan header. Optimistic: the
-// name is display-only, so showing it immediately and rolling back on failure beats a spinner.
+// Click-to-edit trip name, optimistic.
 
 import { Pencil } from "lucide-react";
 import { useState } from "react";
@@ -23,14 +22,13 @@ export function TripName({
   className?: string;
   onRenamed?: (name: string | null) => void;
 }) {
-  // An override rather than a mirror of `name`: nothing to keep in sync, so no effect is needed.
   const [pending, setPending] = useState<string | null | undefined>(undefined);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
   const current = pending !== undefined ? pending : name;
 
   function open(e: React.MouseEvent) {
-    // The card is a Link, so editing must not navigate.
+    // The card is a Link; editing must not navigate.
     e.preventDefault();
     e.stopPropagation();
     setDraft(current ?? "");

@@ -1,9 +1,6 @@
 "use client";
 
 // The Expenses tab. One balance panel per currency, then every cost in date order.
-//
-// Writes are not optimistic: the server owns the split arithmetic and the settle-up, so a mutation
-// re-reads the tab rather than guessing at the new balances.
 
 import { Pencil, Plus, X } from "lucide-react";
 import { useCallback, useState } from "react";

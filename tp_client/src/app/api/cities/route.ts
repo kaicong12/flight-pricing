@@ -1,4 +1,4 @@
-// City typeahead, proxied so the browser never talks to tp_api directly.
+// City typeahead, proxied to tp_api.
 
 import { proxy } from "@/lib/tp-api";
 

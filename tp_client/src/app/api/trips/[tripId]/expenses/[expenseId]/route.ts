@@ -1,4 +1,4 @@
-// One cost. PUT restates it whole, including its shares — a correction is not a patch.
+// One cost. PUT restates it whole, including its shares.
 
 import { proxy } from "@/lib/tp-api";
 

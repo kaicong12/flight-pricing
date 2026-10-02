@@ -14,10 +14,8 @@ from dataclasses import dataclass
 
 from libs.routing.hours import CLOSED, Window, window_for
 
-# The drag and draft snap; a stored block is to the minute.
 SLOT_MIN = 30
 
-# Warning codes. The client owns the English.
 CLOSED_TODAY = "closed"
 OPENS_LATER = "opens_later"
 CLOSES_BEFORE_DONE = "closes_before_done"
@@ -92,8 +90,7 @@ def plan_day(stops: list[Stop], *, weekday: int) -> DayPlan:
                 warnings.append(PlanWarning(OPENS_LATER, stop.place_id, {
                     "name": stop.name, "start": hhmm(stop.start_min), "opens": hhmm(open_from),
                     "early_min": open_from - stop.start_min}, stop.block_id))
-            # Against the end, not the start: arriving at 15:43 for a 30-minute visit does not work
-            # if it closes at 16:00.
+            # Against the end: the visit must finish before closing.
             if end_min > open_to:
                 warnings.append(PlanWarning(CLOSES_BEFORE_DONE, stop.place_id, {
                     "name": stop.name, "start": hhmm(stop.start_min),

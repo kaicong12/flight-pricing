@@ -1,10 +1,6 @@
 "use client";
 
 // The middle column: one day, midnight to midnight, as a half-hour grid you pin places onto.
-//
-// Each half hour is its own droppable, so a drop reports a time rather than a pixel offset. Blocks
-// are absolutely positioned from their own start_min, and overlapping ones share the width in lanes.
-// A block that started on an earlier day draws its tail here too.
 
 import { useState } from "react";
 
@@ -79,7 +75,6 @@ export function DayColumn({
   onAddCustom: (item: ItineraryItem, cost: CostEntry | null) => void;
   onEditCustom: (key: string, draft: CustomDraft) => void;
 }) {
-  // Which half hour the "+" was clicked on, or the block being edited. One dialog serves both.
   const [adding, setAdding] = useState<number | null>(null);
   const [editing, setEditing] = useState<ItineraryItem | null>(null);
 
@@ -178,7 +173,6 @@ export function DayColumn({
               key={m}
               day={day.day_index}
               minute={m}
-              // A slot has to fit the shortest block there is, or dropping on it cannot work.
               blocked={m < available.from || m + MIN_DURATION > available.to}
               onAdd={readOnly ? undefined : () => setAdding(m)}
             />
@@ -278,8 +272,6 @@ function Slot({
       className={cn(
         "group/slot relative border-t",
         minute % 60 === 0 ? "border-border" : "border-hairline",
-        // Tinted gaps, not transparent ones: at 5% ink on paper the hatch was easy to miss, and
-        // an hour the flight has taken away has to read as unusable at a glance.
         blocked && "bg-[repeating-linear-gradient(135deg,rgba(37,43,32,0.04)_0_4px,rgba(37,43,32,0.11)_4px_6px)]",
         isOver && "bg-brand-bg",
       )}

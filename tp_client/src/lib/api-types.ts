@@ -1,7 +1,6 @@
 // Mirrors tp_backend/tp_api/schemas.py. Dates are YYYY-MM-DD, times HH:MM[:SS].
 
-// Mirrors tp_api's UserOut. name and picture are nullable because Google documents both as
-// "might be provided".
+// Google documents name and picture as "might be provided".
 export type User = {
   user_id: string;
   email: string;

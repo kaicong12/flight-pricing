@@ -1,4 +1,4 @@
-// Revoke the session row, then drop the cookie. Both, because the row is what actually ends it.
+// Revoke the session row, then drop the cookie.
 
 import { redirect } from "next/navigation";
 import { cookies } from "next/headers";

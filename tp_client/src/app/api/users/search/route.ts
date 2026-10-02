@@ -1,4 +1,4 @@
-// Who you could share a trip with, proxied so the browser never talks to tp_api directly.
+// Who you could share a trip with.
 
 import { proxy } from "@/lib/tp-api";
 

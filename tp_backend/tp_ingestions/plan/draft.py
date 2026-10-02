@@ -40,7 +40,7 @@ log = logging.getLogger("route.plan")
 LIMIT = 40
 CAP = 5
 ROUNDS = 3
-GRID = (8 * 60, 23 * 60)  # the waking day a draft schedules in; the client grid draws all 24h
+GRID = (8 * 60, 23 * 60)
 MUST_FIX = {CLOSED_TODAY, OPENS_LATER, CLOSES_BEFORE_DONE}
 
 
@@ -55,7 +55,7 @@ def snap(m) -> int:
 
 
 def clock(m: int) -> str:
-    # hhmm wraps modulo 24, which would print a midnight upper bound as 00:00.
+    # hhmm wraps modulo 24.
     return "24:00" if m >= 24 * 60 else hhmm(m)
 
 
@@ -120,7 +120,7 @@ def keep(trip: Trip, reply: dict, n: int, open_days, shut=()) -> dict:
         if day not in open_days:
             continue
         first, last = window(trip, day)
-        floor = -(-first // SLOT_MIN) * SLOT_MIN  # ceiling-divide: first grid minute after landing
+        floor = -(-first // SLOT_MIN) * SLOT_MIN  # ceiling-divide
 
         chosen = []
         for it in d.get("picks") or []:
@@ -195,7 +195,6 @@ def propose(session: Session, trip: Trip, places, open_days) -> tuple[dict, int,
     return best[0], ROUNDS, best[1]
 
 
-# Why a draft wrote nothing. The client owns the English.
 NO_TRIP = "no_trip"
 ALREADY_PLANNING = "already_planning"
 ALL_DAYS_FILLED = "all_days_filled"

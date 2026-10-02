@@ -32,7 +32,6 @@ from tp_api.route_planning.schemas import (
     VenueSuggestionOut,
 )
 
-# Every route here is under /trips/{trip_id}, so one router-wide gate covers all of them.
 router = APIRouter(dependencies=[Depends(require_trip_access)])
 
 Db = Annotated[Session, Depends(db_session)]
@@ -63,7 +62,6 @@ def get_itinerary(trip_id: str, db: Db) -> ItineraryOut:
 XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
 
-# A viewer may export: the file says no more than the plan screen already shows them.
 @router.get("/trips/{trip_id}/export.xlsx", response_class=Response)
 def get_export(trip_id: str, db: Db, fetch_hours: Hours) -> Response:
     trip = service.get_trip(db, trip_id)
@@ -79,7 +77,6 @@ def put_itinerary(trip_id: str, body: ItineraryIn, db: Db) -> ItineraryOut:
     return service.replace_days(db, trip_id, body)
 
 
-# Gated on edit because searching costs a Places call, and a viewer could only be 403'd by the POST.
 @router.get("/trips/{trip_id}/places/search", response_model=list[VenueSuggestionOut],
             dependencies=Edit)
 def search_places(

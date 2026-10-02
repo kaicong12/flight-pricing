@@ -11,8 +11,7 @@ from tp_ingestions.errors import TaskError
 
 API = "https://www.googleapis.com/youtube/v3"
 
-# search.list draws on its own 100-calls-a-day bucket, so one call per language per city is the
-# whole budget decision.
+# search.list has its own 100-calls-a-day quota.
 SEARCH_UNITS = 1
 
 
@@ -85,8 +84,7 @@ def hydrate(video_ids: list[str]) -> dict[str, dict]:
             content, stats, snip = item["contentDetails"], item.get("statistics", {}), item["snippet"]
             out[item["id"]] = {
                 "duration_s": iso_seconds(content.get("duration", "")),
-                # contentDetails.caption is true only when the uploader supplied subtitles, which is
-                # what distinguishes them from ASR.
+                # contentDetails.caption is true only for uploader subtitles, not ASR.
                 "captions": "MANUAL" if content.get("caption") == "true" else "AUTO",
                 "view_count": int(stats.get("viewCount", 0)),
                 "description": snip.get("description", ""),

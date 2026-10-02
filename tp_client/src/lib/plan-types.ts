@@ -1,7 +1,5 @@
-// Mirrors tp_api/route_planning/schemas.py by hand — there is no codegen step. Warnings arrive as codes; the
-// English for them lives here.
+// Mirrors tp_api/route_planning/schemas.py by hand. Warning English lives here.
 
-// The grid a block is dragged against. A typed time may be any minute; a drag snaps to this.
 export const SLOT_MIN = 30;
 export const MIN_DURATION = SLOT_MIN;
 export const DEFAULT_DURATION = 60;

@@ -1,7 +1,4 @@
-// Mirrors tp_backend/tp_api/expenses/schemas.py, plus the arithmetic the forms need before a save.
-//
-// Every amount is minor units of its own currency. Nothing here adds two currencies together: a
-// trip that spent in NOK and EUR has two balances, and neither needs a rate.
+// Mirrors tp_backend/tp_api/expenses/schemas.py. Amounts are minor units of their own currency.
 
 import type { Member } from "./api-types";
 

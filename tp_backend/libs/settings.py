@@ -23,28 +23,22 @@ class Settings(BaseSettings):
     db_max_overflow: int = 10
     google_api_key: str | None = None
     gemini_api_key: str | None = None
-    # Every prompt resolves its model through this, so swapping it when a model's free tier runs out
-    # needs no code change. It lands in extractions.model, which is part of the re-extraction key.
+    # Part of the re-extraction key via extractions.model.
     gemini_model: str = "gemini-3.5-flash-lite"
-    # Sign-in. The redirect URI is registered on the client in Cloud Console and must match
-    # byte-for-byte, trailing slash included. No default on purpose: a localhost one would let a
-    # deploy with the variable unset build a consent URL pointing at localhost and fail as a
-    # redirect_uri_mismatch, instead of saying it is not configured.
+    # Must match the Cloud Console registration byte-for-byte; no default on purpose.
     google_auth_client_id: str | None = None
     google_auth_client_secret: str | None = None
     google_auth_redirect_uri: str | None = None
     session_ttl_days: int = 30
 
     city_refresh_days: int = 30
-    # searchText's locationRestriction is a rectangle, not a circle, and this is its half-width.
+    # Half-width of searchText's rectangular locationRestriction.
     places_search_radius_m: int = 50000
-    # Hours move, and the Places terms only let place_id be kept indefinitely, so this is short.
+    # Places terms only allow keeping place_id indefinitely.
     place_hours_ttl_days: int = 7
-    # Nothing routes any more, so this only bounds one day's payload and its Place Details reads.
     max_stops_per_day: int = 25
 
-    # RedNote needs a cookie AND a signature, and the signature is bound to the URL path — hence
-    # one set of these per endpoint. Only the cookie expires, so rotation means editing xhs_cookie.
+    # The RedNote signature is bound to the URL path; only the cookie expires.
     xhs_cookie: str | None = None
     xhs_search_xs: str | None = None
     xhs_search_xt: str | None = None
@@ -59,13 +53,12 @@ class Settings(BaseSettings):
     rednote_max_fetch_per_search: int = 8
     rednote_ocr_max_images: int = 4
 
-    # Call budgets, one set per throttled domain. RedNote's gap stays conservative because the
-    # downside is a real logged-in account being restricted, not a slower run.
+    # RedNote's gap is conservative: a real logged-in account is at risk.
     rednote_min_gap_s: float = 45.0
     rednote_jitter_s: float = 15.0
     rednote_max_per_hour: int = 50
     rednote_max_per_day: int = 300
-    # The flash-lite free tier's shape. Settings so a paid key can loosen them without a code change.
+    # Gemini flash-lite free tier limits.
     gemini_min_gap_s: float = 4.0
     gemini_max_per_minute: int = 15
     gemini_max_per_day: int = 1000

@@ -12,7 +12,7 @@ def observations(route: str, method: str = "GET", status: str = "200") -> float:
 
 
 def test_metrics_serves_the_prometheus_exposition_format(client):
-    client.get("/health")  # a labelled histogram emits no series until something is observed
+    client.get("/health")  # a labelled histogram emits no series until observed
 
     r = client.get("/metrics")
 

@@ -35,7 +35,6 @@ def test_json_format_carries_a_traceback():
     payload = json.loads(line)
     assert payload["level"] == "ERROR"
     assert "ValueError: boom" in payload["exc"]
-    # A traceback is multi-line, and one log line must stay one log line.
     assert "\n" not in line
 
 

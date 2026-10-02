@@ -1,9 +1,6 @@
 "use client";
 
-// A block the shortlist could never hold: a flight, a hotel night, a booked activity. The title is
-// what the grid shows; the description is where the flight number or the check-in address goes.
-// The same dialog retimes any block to the minute, a place included, and may end it on a later day,
-// and is where a block's link and cost are entered.
+// A block the shortlist could never hold: a flight, a hotel night, a booked activity.
 
 import { useState } from "react";
 

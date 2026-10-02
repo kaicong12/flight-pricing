@@ -1,8 +1,4 @@
 // Step 1 of sign-in: send the browser to Google.
-//
-// tp_api builds the URL, because the redirect_uri has to match byte-for-byte in both the
-// authorization request and the token exchange, and tp_api owns the exchange. The state is ours: it
-// pairs with the cookie set here.
 
 import { redirect } from "next/navigation";
 import { cookies } from "next/headers";

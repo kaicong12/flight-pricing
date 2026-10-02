@@ -1,7 +1,6 @@
 "use client";
 
-// The API being down is not the same as a trip you cannot see, and it must not read as one.
-// getJson throws on an unreachable or 5xx tp_api; a 404 or 403 still goes to not-found.
+// tp_api unreachable or 5xx; a 404 or 403 goes to not-found instead.
 
 export default function AppError({ reset }: { error: Error; reset: () => void }) {
   return (

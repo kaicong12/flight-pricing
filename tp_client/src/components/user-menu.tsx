@@ -44,7 +44,6 @@ export function UserMenu({ user }: { user: User }) {
               <p className="truncate text-xs text-muted-foreground">{user.email}</p>
             </div>
             <div className="my-1 h-px bg-border" />
-            {/* A form, not fetch: sign-out is a mutation, and the handler redirects. */}
             <form action="/api/auth/signout" method="post">
               <Menu.Item
                 render={<button type="submit" />}

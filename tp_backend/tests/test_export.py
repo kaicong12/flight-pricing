@@ -46,7 +46,6 @@ def test_a_block_carries_its_times_and_category(client, db):
 
     assert visible(ws, 3) == ["Day", "Date", "#", "Start", "End", "Block", "Category",
                                         "Warning"]
-    # Row 4 is the day band, so the first block is row 5.
     assert [ws.cell(row=5, column=c).value for c in (1, 3, 4, 5, 6, 7)] == [
         1, 1, "15:00", "16:30", "Löyly", "see"]
 
@@ -74,7 +73,6 @@ def test_a_reference_must_be_a_link(client, db):
 
 def test_a_block_that_outlasts_the_opening_hours_is_amber(client, db, hours):
     trip = a_trip_with_one_block(client, db)
-    # A 15:00 block against 09:00-10:00 hours: shut long before the user gets there.
     hours["fn"] = lambda ids: {i: HoursHit(place_id=i, periods=OPEN_EARLY_ALL_WEEK,
                                            weekday_descriptions=[], utc_offset_minutes=180)
                                for i in ids}
@@ -166,7 +164,6 @@ def test_the_shortlist_sheet_keeps_the_places_no_day_uses(client, db):
 
     rows = {ws.cell(row=r, column=1).value: ws.cell(row=r, column=4).value for r in (4, 5)}
     assert rows == {"Löyly": "Day 1", "Not used": "not used"}
-    # The shortlist's own link is provenance, not the user's booking — hence a different heading.
     assert ws.cell(row=3, column=6).value == "Source"
     assert ws.cell(row=4, column=6).hyperlink.target == "https://www.youtube.com/watch?v=ref1"
 
@@ -196,7 +193,6 @@ def test_the_expenses_sheet_carries_a_column_per_person(client, db):
     assert ws.cell(row=5, column=5).value == 40.0
     assert [ws.cell(row=5, column=c).value for c in (7, 8)] == [20.0, 20.0]
 
-    # The balance block follows the costs: Paid, Share, then Net.
     net = next(r for r in range(6, 20) if ws.cell(row=r, column=3).value == "Net")
     assert [ws.cell(row=net, column=c).value for c in (7, 8)] == [20.0, -20.0]
     assert ws.cell(row=net + 1, column=3).value == "Bob pays A"

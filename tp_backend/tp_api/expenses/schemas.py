@@ -64,7 +64,6 @@ class ExpenseOut(BaseModel):
     payer_id: str
     block_id: str | None
     category: str | None
-    # What the block is called, when the expense still names one that is on the itinerary.
     block_title: str | None
     day_index: int | None
     shares: list[ShareOut]
@@ -99,8 +98,6 @@ class MemberBalance(BaseModel):
     user_id: str
     paid_cents: int
     share_cents: int
-    # Settlements already paid, signed the same way as the net: without it, paid minus share does
-    # not explain the net a settled-up trip reports.
     settled_cents: int
     net_cents: int
 

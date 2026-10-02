@@ -103,7 +103,6 @@ def test_a_seeded_run_drains_to_done(db, seeded, stubbed):
     ran = Worker(name="w1", poll_interval=0, reap_interval=1e9).drain()
 
     db.expire_all()
-    # 2 youtube.search (en, fi) + rednote.search + fan-out.
     assert ran >= 4
     statuses = set(db.scalars(select(IngestTask.status)).all())
     assert statuses == {TaskStatus.DONE}

@@ -1,8 +1,4 @@
-// Checks for the grid maths in plan-types.ts. There is no test runner in tp_client yet, so this is
-// runnable on its own: npx tsx src/lib/plan-types.check.ts
-//
-// It covers the parts that fail silently — lane packing, edge resizing against the 30-minute floor,
-// and snapping — because a wrong answer here just draws a block in the wrong place.
+// Checks for plan-types.ts: npx tsx src/lib/plan-types.check.ts
 
 import type { ItineraryItem } from "./plan-types";
 import {
@@ -105,8 +101,6 @@ eq(endOf(item("a", 600, 90)), 690, "endOf");
 eq(hhmm(1290), "21:30", "hhmm");
 eq(hhmm(1470), "00:30", "hhmm wraps past midnight");
 
-// A warning names the block it is about, and an unknown code degrades to the code itself rather
-// than to "undefined".
 eq(
   warningText({ code: "closes_before_done", place_id: "b", block_id: "b-b",
                 detail: { start: "16:00", need_min: 90, closes: "17:00" } }, "Polar Museum"),
@@ -115,7 +109,6 @@ eq(
 );
 eq(warningText({ code: "who_knows", place_id: null, block_id: null, detail: {} }), "who_knows", "unknown code");
 
-// The flight window. Day 0 cannot start before landing; the last day cannot run past departure.
 const trip = { arrive_time: "13:40:00", depart_time: "17:20:00" };
 eq(availableWindow(trip, 0, 4), { from: 820, to: 1440 }, "day 0 starts when the flight lands");
 eq(availableWindow(trip, 1, 4), { from: 0, to: 1440 }, "a middle day is unbounded");

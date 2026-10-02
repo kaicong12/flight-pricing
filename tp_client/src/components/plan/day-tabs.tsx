@@ -1,8 +1,6 @@
 "use client";
 
-// Day tabs. Deliberately not drop targets: a block belongs to the day it is on, and dragging it
-// only moves it in time. Moving one to another day is remove-then-add-back, so switching tabs
-// mid-drag cannot silently reschedule it.
+// Day tabs; not drop targets.
 
 import { useEffect, useRef } from "react";
 
@@ -24,8 +22,7 @@ export function DayTabs({
   onSelect: (day: number) => void;
 }) {
   return (
-    // One row that scrolls: a fortnight wrapped onto three rows pushed the day itself off screen.
-    // overflow-y stays hidden because a scrolling box turns the tabs' -mb-px into vertical overflow.
+    // overflow-y hidden: a scrolling box turns the tabs' -mb-px into vertical overflow.
     <div
       role="tablist"
       aria-label="Trip days"
@@ -63,8 +60,6 @@ function DayTab({
 }) {
   const node = useRef<HTMLButtonElement | null>(null);
 
-  // Landing on a trip whose active day is far along would otherwise leave the selected tab outside
-  // the scrolled row.
   useEffect(() => {
     if (active) node.current?.scrollIntoView({ inline: "nearest", block: "nearest" });
   }, [active]);

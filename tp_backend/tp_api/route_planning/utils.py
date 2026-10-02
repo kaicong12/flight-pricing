@@ -50,7 +50,7 @@ def source_url(source: str, ref: str, token: str | None) -> str | None:
     if source == Source.YOUTUBE:
         return f"https://www.youtube.com/watch?v={ref}"
     if source == Source.REDNOTE:
-        # The token expires, and RedNote then falls back to whatever the reader's own login can see.
+        # The token expires; RedNote then falls back to the reader's own login.
         return (f"https://www.xiaohongshu.com/explore/{ref}?xsec_token={token}" if token
                 else f"https://www.xiaohongshu.com/explore/{ref}")
     return None

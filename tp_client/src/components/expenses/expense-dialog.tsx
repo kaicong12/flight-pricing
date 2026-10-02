@@ -1,7 +1,6 @@
 "use client";
 
-// One cost: what it was, who paid, and who it splits between. Mounted only while open so the
-// caller's `key` resets it rather than an effect.
+// One cost: what it was, who paid, and who it splits between.
 
 import { useState } from "react";
 

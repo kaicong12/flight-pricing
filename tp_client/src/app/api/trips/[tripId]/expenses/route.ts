@@ -1,4 +1,4 @@
-// A trip's costs and the balances derived from them. One GET carries the whole tab.
+// A trip's costs and the balances derived from them.
 
 import { proxy } from "@/lib/tp-api";
 

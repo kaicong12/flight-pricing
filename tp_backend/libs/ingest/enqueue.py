@@ -24,8 +24,7 @@ from libs.settings import settings
 
 ACTIVE = (RunStatus.PENDING, RunStatus.RUNNING)
 
-# Corpora are fully disjoint per language, so each is worth its own search. Thai is omitted
-# deliberately — English already wins Bangkok.
+# Thai omitted: English already wins Bangkok.
 LOCAL_LANGUAGE = {
     "CN": "zh", "DE": "de", "DK": "da", "ES": "es", "FI": "fi", "FR": "fr", "HK": "zh",
     "ID": "id", "IT": "it", "JP": "ja", "KR": "ko", "NL": "nl", "NO": "no", "PL": "pl",
@@ -52,7 +51,6 @@ def ensure_city(session: Session, details: CityDetails) -> City:
         session.commit()
         city = session.get(City, details.place_id)
 
-    # Backfill only what a previous partial insert left empty; never overwrite good data.
     for field in ("country", "timezone", "lat", "lon"):
         if getattr(city, field) is None and getattr(details, field) is not None:
             setattr(city, field, getattr(details, field))
@@ -139,7 +137,7 @@ def latest_runs(session: Session, city_ids: Sequence[str]) -> dict[str, IngestRu
     for run in session.scalars(
         select(IngestRun)
         .where(IngestRun.city_id.in_(city_ids), IngestRun.kind == RunKind.CITY_INGEST)
-        # requested_at ties: now() is the transaction clock, so run_id breaks it.
+        # now() is the transaction clock, so run_id breaks requested_at ties.
         .order_by(IngestRun.status.in_(ACTIVE).desc(), IngestRun.requested_at.desc(),
                   IngestRun.run_id)
     ):

@@ -97,7 +97,6 @@ def test_an_unhandled_kind_is_blocked_not_failed(worker, db, run):
     row = db.get(IngestTask, task.task_id)
     assert row.status == TaskStatus.BLOCKED
     assert "no handler" in row.last_error
-    # Blocked work still lets the run settle, so a partial pipeline does not hang forever.
     assert db.get(IngestRun, run.run_id).status == RunStatus.DONE
 
 
@@ -116,7 +115,6 @@ def test_a_transient_failure_is_deferred_for_a_retry(worker, db, run):
     assert row.error_code == ErrorCode.TRANSIENT
     assert row.run_after > datetime.now(UTC)
     assert row.locked_by is None
-    # Still outstanding, so the run must not be settled.
     assert db.get(IngestRun, run.run_id).status == RunStatus.RUNNING
 
 
@@ -166,7 +164,6 @@ def test_attempts_are_exhausted_then_the_task_fails(worker, db, run):
 
     HANDLERS[TaskKind.YOUTUBE_SEARCH] = boom
     worker.run_once()
-    # Skip past the backoff rather than sleeping through it.
     db.execute(update(IngestTask).where(IngestTask.task_id == task.task_id)
                .values(run_after=datetime.now(UTC)))
     db.commit()
@@ -177,7 +174,6 @@ def test_attempts_are_exhausted_then_the_task_fails(worker, db, run):
     assert (row.status, row.attempts) == (TaskStatus.FAILED, 2)
     assert db.get(IngestRun, run.run_id).status == RunStatus.FAILED
     assert db.get(IngestRun, run.run_id).failed_task_count == 1
-    # A run with nothing to show for it must not mark the city as freshly ingested.
     assert db.get(City, HELSINKI).last_ingested_at is None
 
 

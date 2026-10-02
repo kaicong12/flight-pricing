@@ -13,7 +13,7 @@ AUTOCOMPLETE_URL = "https://places.googleapis.com/v1/places:autocomplete"
 SEARCH_URL = "https://places.googleapis.com/v1/places:searchText"
 FIELDS = "id,displayName,location,addressComponents,types,timeZone"
 
-# The mask sets the billing tier: rating or userRatingCount would make every call Enterprise.
+# The field mask sets the billing tier; rating fields make it Enterprise.
 VENUE_FIELDS = ("places.id,places.displayName,places.formattedAddress,places.location,"
                 "places.types,places.primaryTypeDisplayName")
 
@@ -21,8 +21,7 @@ VENUE_FIELDS = ("places.id,places.displayName,places.formattedAddress,places.loc
 VENUE_DETAIL_FIELDS = ("id,displayName,formattedAddress,location,types,primaryTypeDisplayName,"
                        "addressComponents")
 
-# 1 degree of latitude is ~111 km everywhere; longitude shrinks with the cosine of the latitude,
-# which matters at Tromsø's 69°N.
+# ~111 km per degree of latitude; longitude scales with cos(latitude).
 _KM_PER_DEG_LAT = 111.0
 
 # Autocomplete restricted to (cities) can still return a region or a district, but never a venue.
@@ -61,7 +60,7 @@ class VenueHit:
     lon: float | None
     primary_type: str | None
     types: list[str]
-    # Only the detail path asks for this; searchText's mask omits it to keep that tier cheap.
+    # searchText's mask omits this to stay in the cheaper tier.
     locality: str | None = None
 
 
@@ -173,8 +172,7 @@ def search_venue(query: str, lat: float, lon: float, radius_m: int,
     if not key:
         raise PlacesError("GOOGLE_API_KEY is not set")
 
-    # searchText's locationRestriction takes a rectangle only — a circle is a 400, and a 400 is
-    # terminal, so it kills the task rather than retrying.
+    # locationRestriction takes a rectangle only; a circle is a 400.
     d_lat = radius_m / 1000 / _KM_PER_DEG_LAT
     d_lon = d_lat / max(math.cos(math.radians(lat)), 0.01)
     body = {

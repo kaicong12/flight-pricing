@@ -1,7 +1,6 @@
 "use client";
 
-// Upload new trip: a workbook exported from here, edited in Excel or not, becomes a new trip you
-// own. The server refuses any other file, so this only previews what it read and creates it.
+// Upload new trip: an exported workbook becomes a new trip you own.
 
 import { Upload } from "lucide-react";
 import { useRouter } from "next/navigation";
@@ -120,7 +119,7 @@ function UploadDialog({ onClose }: { onClose: () => void }) {
         setBusy(false);
         return;
       }
-      // Stays busy: the button must not re-arm while the route transition is in flight.
+      // Stays busy while the route transition is in flight.
       router.push(tripHref(body as Trip));
     } catch {
       setError("Could not reach the server.");

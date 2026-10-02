@@ -1,5 +1,4 @@
-// One trip: its dates and the live ingestion checklist. The shortlist lands here once tp_api
-// exposes places.
+// One trip: its dates and the live ingestion checklist.
 
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
@@ -27,8 +26,7 @@ export async function generateMetadata({ params }: PageProps<"/trip/[tripId]">) 
 
 export default async function TripPage({ params }: PageProps<"/trip/[tripId]">) {
   const { tripId } = await params;
-  // Signed out is not the same as no access, and a shared link is the common way to arrive here
-  // without a session. currentUser is memoized, so the header below re-uses this call.
+  // currentUser is memoized; the header below re-uses this call.
   const user = await currentUser();
   if (!user) redirect("/login");
 

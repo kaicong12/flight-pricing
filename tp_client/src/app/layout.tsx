@@ -2,8 +2,7 @@ import type { Metadata } from "next";
 import { Karla, IBM_Plex_Mono } from "next/font/google";
 import "./globals.css";
 
-// shadcn's globals.css resolves font-sans through --font-sans, not create-next-app's
-// --font-geist-sans, so naming it here is what stops the page falling back to serif.
+// shadcn's globals.css reads --font-sans, not --font-geist-sans.
 const karla = Karla({
   variable: "--font-sans",
   subsets: ["latin"],
@@ -31,8 +30,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
     >
       <body className="min-h-full flex flex-col">
         {children}
-        {/* Below the z-50 overlay layer: the map has to sit above this grain (see day-map.tsx), so
-            anything above it would paint over every dialog and popover. */}
+        {/* z-30: must stay below the z-50 overlay layer and the map (see day-map.tsx). */}
         <div
           aria-hidden
           className="pointer-events-none fixed inset-0 z-30 opacity-40 mix-blend-multiply"

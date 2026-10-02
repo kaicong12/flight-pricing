@@ -11,10 +11,9 @@ MAX_BACKOFF = timedelta(minutes=5)
 def retry_after(code: ErrorCode, attempts: int) -> timedelta | None:
     """How long to wait before attempt number `attempts` + 1, or None to give up now."""
     if code in (ErrorCode.PERMANENT, ErrorCode.CREDENTIALS):
-        # Neither is fixed by waiting: one is a bad request, the other needs a human to rotate a key.
         return None
     if code == ErrorCode.QUOTA:
-        # Daily buckets (YouTube search.list) only reset on a clock, so back off in hours.
+        # YouTube's daily quota only resets on a clock.
         return timedelta(hours=6)
     if code == ErrorCode.RATE_LIMITED:
         return timedelta(minutes=5 * attempts)

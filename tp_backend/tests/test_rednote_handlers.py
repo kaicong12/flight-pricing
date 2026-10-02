@@ -150,7 +150,6 @@ def test_fetch_strips_zero_width_characters_from_the_body(db, run, post, monkeyp
     fetch.rednote_fetch(db, task(run))
     db.commit()
 
-    # The newline survives: Cc is left alone because it is the post's paragraph structure.
     assert db.get(RedNotePost, NOTE).description == "Tang's\nRe"
 
 
@@ -173,14 +172,13 @@ def test_a_gemini_failure_keeps_the_body_it_paid_a_rednote_call_for(db, run, pos
         raise TaskError(ErrorCode.TRANSIENT, "gemini 500")
 
     monkeypatch.setattr(extract.gemini, "generate", boom)
-    worker.run_once()  # rednote.fetch
-    worker.run_once()  # rednote.extract, which fails
+    worker.run_once()
+    worker.run_once()
 
     db.expire_all()
     assert db.get(RedNotePost, NOTE).description == "第一家 Tang's 很好吃"
     assert db.scalars(select(Extraction)).all() == []
 
-    # The retry must not go back to RedNote: the body is already there to read.
     def never(*a, **k):
         raise AssertionError("rednote was called again for a body we already have")
 
@@ -222,8 +220,8 @@ def test_the_fetch_then_extract_pair_produces_one_extraction(db, run, post, work
     monkeypatch.setattr(fetch.client, "fetch_note", lambda n, t: CARD)
     monkeypatch.setattr(extract.gemini, "generate", lambda *a, **k: result([place()]))
 
-    worker.run_once()  # rednote.fetch
-    worker.run_once()  # rednote.extract
+    worker.run_once()
+    worker.run_once()
 
     db.expire_all()
     assert db.get(RedNotePost, NOTE).description is not None
