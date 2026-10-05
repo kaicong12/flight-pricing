@@ -64,9 +64,9 @@ export function CustomBlockDialog({
   currency: string;
   tags: string[];
   onClose: () => void;
-  /** `draft` is null for a place block, whose name and type are Google's, not the user's. */
+  /** A place block's draft keeps Google's name; only its description is the user's. */
   onSubmit: (
-    draft: CustomDraft | null,
+    draft: CustomDraft,
     startMin: number,
     durationMin: number,
     extras: BlockExtras,
@@ -118,7 +118,7 @@ export function CustomBlockDialog({
         ? { amountCents: null, currency: picked, category: null }
         : null;
     onSubmit(
-      own ? { title: trimmed, description: description.trim() || null } : null,
+      { title: own || !editing ? trimmed : editing.name, description: description.trim() || null },
       startAt,
       duration,
       { url: link || null, cost: entry },
@@ -142,27 +142,29 @@ export function CustomBlockDialog({
 
         <div className="min-w-0 space-y-4">
           {own && (
-            <>
-              <Input
-                autoFocus
-                value={title}
-                maxLength={TITLE_MAX}
-                onChange={(e) => setTitle(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && save()}
-                placeholder="Flight SQ 3116 to Oslo"
-                aria-label="What is this block"
-              />
-
-              <Textarea
-                value={description}
-                maxLength={DESCRIPTION_MAX}
-                onChange={(e) => setDescription(e.target.value)}
-                placeholder="Booking reference, terminal, address, who to ask for"
-                aria-label="Details"
-                className="min-h-20 text-[13.5px]"
-              />
-            </>
+            <Input
+              autoFocus
+              value={title}
+              maxLength={TITLE_MAX}
+              onChange={(e) => setTitle(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && save()}
+              placeholder="Flight SQ 3116 to Oslo"
+              aria-label="What is this block"
+            />
           )}
+
+          <Textarea
+            value={description}
+            maxLength={DESCRIPTION_MAX}
+            onChange={(e) => setDescription(e.target.value)}
+            placeholder={
+              own
+                ? "Booking reference, terminal, address, who to ask for"
+                : "A note to yourself — why here, why at this time"
+            }
+            aria-label="Details"
+            className="min-h-20 text-[13.5px]"
+          />
 
           <fieldset className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3 gap-y-2">
             <legend className="sr-only">When</legend>

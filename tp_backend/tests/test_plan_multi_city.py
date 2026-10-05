@@ -113,34 +113,32 @@ def workbook(client, trip):
     return load_workbook(BytesIO(r.content))["Itinerary"]
 
 
-def a_two_city_day(client, db, lookup, hours, **kw):
+def a_two_city_day(client, db, lookup, **kw):
     trip = two_city_trip(client, lookup, days=1)
-    hours["fn"] = open_until(23)
     items = one_in_each_city(db, trip, hel_start=13 * 60, por_start=12 * 60)
     pin(client, trip, [items[0], items[1] | kw])
     return trip
 
 
-def test_the_export_bands_each_day(client, db, lookup, hours):
-    trip = a_two_city_day(client, db, lookup, hours)
+def test_the_export_bands_each_day(client, db, lookup):
+    trip = a_two_city_day(client, db, lookup)
 
     ws = workbook(client, trip)
 
-    assert ws.cell(row=4, column=1).value == \
-        f"Day 1 · {a_future_date():%a %d %b} · 2 blocks"
-    assert ws.cell(row=7, column=1).value.endswith("no blocks")
+    assert ws.cell(row=4, column=1).value == f"Day 1 · {a_future_date():%a %d %b}"
+    assert ws.cell(row=7, column=1).value.startswith("Day 2 · ")
 
 
-def test_the_ref_column_marks_only_the_block_that_carries_a_link(client, db, lookup, hours):
-    trip = a_two_city_day(client, db, lookup, hours,
+def test_the_ref_column_marks_only_the_block_that_carries_a_link(client, db, lookup):
+    trip = a_two_city_day(client, db, lookup,
                           reference_url="https://www.airbnb.com/rooms/12345")
 
     ws = workbook(client, trip)
 
     shown = [c.value for c in ws[3] if not ws.column_dimensions[c.column_letter].hidden]
     assert shown[-1] == "Ref"
-    assert ws.cell(row=5, column=9).value is None, "Porto has no link of its own"
-    assert ws.cell(row=6, column=9).hyperlink.target == "https://www.airbnb.com/rooms/12345"
+    assert ws.cell(row=5, column=8).value is None, "Porto has no link of its own"
+    assert ws.cell(row=6, column=8).hyperlink.target == "https://www.airbnb.com/rooms/12345"
 
 
 def drivable(client, db, lookup, monkeypatch, reply, hours_for):

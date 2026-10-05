@@ -1,7 +1,6 @@
 """The trip as one .xlsx: the ordered days, then the shortlist behind them.
 
-Colours are tp_client/docs/design-system.md, and the warning English lives here because a
-spreadsheet has no client to own it.
+Colours are tp_client/docs/design-system.md.
 """
 
 import json
@@ -12,36 +11,27 @@ from io import BytesIO
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
+from openpyxl.worksheet.datavalidation import DataValidation
 from openpyxl.worksheet.hyperlink import Hyperlink
 from openpyxl.worksheet.worksheet import Worksheet
 from sqlalchemy.orm import Session
 
 from libs.db import Trip, trip_cities
-from libs.routing import PlanWarning, Stop, hhmm, plan_day
-from tp_api.deps import HoursLookup
+from libs.db.enums import Category
+from libs.routing import hhmm
 from tp_api.expenses import service as expense_service
 from tp_api.route_planning import service
-from tp_api.route_planning.utils import day_count, google_weekday
+from tp_api.route_planning.utils import day_count
 
 INK, PAPER, SAND = "252B20", "FDFBF3", "F3F0E6"
 BRAND, BRAND_BG = "2C6B64", "E5EFEC"
-OK, OK_BG = "4E7A45", "E9F0E0"
-WARN, WARN_BG = "8A6524", "F6EBD4"
-ALERT, ALERT_BG = "8B4526", "F8E7DC"
+ALERT = "8B4526"
 FAINT, HAIRLINE = "98A08D", "E3DDCB"
 
 LINK_ICON = "🔗"
 
-WARNING_TEXT = {
-    "closed": "closed all day",
-    "opens_later": "opens {opens}, you arrive {start}",
-    "closes_before_done": "closes {closes} before you finish",
-    "no_hours": "opening hours unknown",
-}
-BLOCKING = {"closed"}
-
 ITINERARY_COLUMNS = [("Day", 6), ("Date", 10), ("#", 4), ("Start", 7), ("End", 7), ("Block", 32),
-                     ("Category", 10), ("Warning", 36)]
+                     ("Category", 10)]
 DETAILS_COLUMN = ("Details", 44)
 REFERENCE_COLUMN = ("Ref", 5)
 SHORTLIST_COLUMNS = [("Place", 32), ("Category", 10), ("Mentions", 10), ("Used on", 10),
@@ -49,7 +39,7 @@ SHORTLIST_COLUMNS = [("Place", 32), ("Category", 10), ("Mentions", 10), ("Used o
 EXPENSE_COLUMNS = [("Day", 6), ("Date", 10), ("Expense", 34), ("Paid by", 18), ("Amount", 12),
                    ("Cur", 5)]
 CENTRED = {"#", "Start", "End", "Ref", "Source", "Mentions", "Used on", "Cur"}
-WRAPPED = {"Block", "Warning", "Details", "Why go", "Expense"}
+WRAPPED = {"Block", "Details", "Why go", "Expense"}
 MONEY_FORMAT = "#,##0.00"
 
 META_SHEET = "_trip_planner"
@@ -128,11 +118,13 @@ def _tint(ws: Worksheet, row: int, column: int, fill: str, ink: str) -> None:
     cell.font = Font(color=ink)
 
 
-def _warning_cell(found: list[PlanWarning]) -> tuple[str, str, str]:
-    text = "; ".join(WARNING_TEXT[w.code].format(**w.detail) for w in found) or "ok"
-    if any(w.code in BLOCKING for w in found):
-        return text, ALERT_BG, ALERT
-    return (text, WARN_BG, WARN) if found else (text, OK_BG, OK)
+def _category_dropdown(ws: Worksheet, cells: list[str]) -> None:
+    """A list validation is what Sheets draws as a chip and Excel as a dropdown."""
+    if not cells:
+        return
+    dv = DataValidation(type="list", formula1=f'"{",".join(Category)}"', allow_blank=True,
+                        sqref=" ".join(cells))
+    ws.add_data_validation(dv)
 
 
 def until(day: int, end: int) -> str:
@@ -160,7 +152,7 @@ def meta_sheet(ws: Worksheet, db: Session, trip: Trip, rows: dict[str, dict]) ->
         ws.cell(row=2 + i // CHUNK, column=1, value=payload[i:i + CHUNK])
 
 
-def itinerary_sheet(ws: Worksheet, db: Session, trip: Trip, fetch: HoursLookup) -> dict[str, dict]:
+def itinerary_sheet(ws: Worksheet, db: Session, trip: Trip) -> dict[str, dict]:
     """Returns each written row's identity, keyed by the hidden `_row` cell an upload reads back."""
     city = trip.city
     rows = service.day_rows(db, trip.trip_id)
@@ -172,8 +164,7 @@ def itinerary_sheet(ws: Worksheet, db: Session, trip: Trip, fetch: HoursLookup) 
     ws.cell(row=1, column=1, value=f"{trip.name or city.name} · "
             f"{trip.arrive_date:%d %b}–{trip.depart_date:%d %b %Y}").font = Font(
                 bold=True, size=14, color=INK)
-    ws.cell(row=2, column=1, value=f"exported {datetime.now(UTC):%d %b %Y} · opening hours were "
-            "checked then, re-check nearer the date").font = Font(color=FAINT, size=10)
+    ws.cell(row=2, column=1, value=f"exported {datetime.now(UTC):%d %b %Y}").font = Font(color=FAINT, size=10)
     _header(ws, 3, columns)
     key_column = len(columns) + 1
     ws.cell(row=3, column=key_column, value=ROW_KEY)
@@ -182,8 +173,8 @@ def itinerary_sheet(ws: Worksheet, db: Session, trip: Trip, fetch: HoursLookup) 
 
     place_ids = [r.Place.place_id for r in rows if r.Place]
     facts = service.mention_facts(db, place_ids)
-    hours = service.load_hours(db, place_ids, fetch) if place_ids else {}
 
+    categories: list[str] = []
     by_day: dict[int, list] = {}
     for r in rows:
         by_day.setdefault(r.ItineraryItem.day_index, []).append(r)
@@ -192,40 +183,22 @@ def itinerary_sheet(ws: Worksheet, db: Session, trip: Trip, fetch: HoursLookup) 
     for day in range(day_count(trip)):
         day_date = trip.arrive_date + timedelta(days=day)
         items = by_day.get(day, [])
-        _band(ws, at, len(columns), f"Day {day + 1} · {day_date:%a %d %b} · "
-              f"{len(items) or 'no'} block{'' if len(items) == 1 else 's'}")
+        _band(ws, at, len(columns), f"Day {day + 1} · {day_date:%a %d %b}")
         at += 1
-
-        plan = plan_day(
-            [Stop(place_id=r.Place.place_id, name=r.Place.name,
-                  start_min=r.ItineraryItem.start_min, duration_min=r.ItineraryItem.duration_min,
-                  periods=hours[r.Place.place_id].periods if r.Place.place_id in hours else None,
-                  block_id=r.ItineraryItem.block_id)
-             for r in items if r.Place],
-            weekday=google_weekday(day_date))
-        routed = {b.block_id: b for b in plan.blocks}
-
-        found: dict[str, list[PlanWarning]] = {}
-        for w in plan.warnings:
-            found.setdefault(w.block_id or "", []).append(w)
 
         top = at
         for n, r in enumerate(items, start=1):
             item = r.ItineraryItem
-            block = routed.get(item.block_id) if r.Place else None
-            start, end = ((block.start_min, block.end_min) if block
-                          else (item.start_min, item.start_min + item.duration_min))
-            text, fill, ink = _warning_cell(found.get(item.block_id, []))
             _body_row(ws, at, columns,
-                      [day + 1, f"{day_date:%d %b}", n, hhmm(start), until(day, end),
+                      [day + 1, f"{day_date:%d %b}", n, hhmm(item.start_min),
+                       until(day, item.start_min + item.duration_min),
                        r.Place.name if r.Place else item.title,
-                       service.category_of(r.Place, facts) or "" if r.Place else "",
-                       text if block else None]
+                       service.category_of(r.Place, facts) or "" if r.Place else ""]
                       + ([item.description] if details else [])
                       + ([None] if refs else []),
                       stripe=SAND if n % 2 else PAPER, faint={4, 5})
-            if block:
-                _tint(ws, at, 8, fill, ink)
+            if r.Place:
+                categories.append(f"G{at}")
             if refs:
                 _link(ws, at, len(columns), item.reference_url, "Your link for this block")
             key = f"r{len(identities) + 1}"
@@ -236,6 +209,7 @@ def itinerary_sheet(ws: Worksheet, db: Session, trip: Trip, fetch: HoursLookup) 
                                "reference_url": item.reference_url}
             at += 1
         _merge_down(ws, top, at - 1, (1, 2))
+    _category_dropdown(ws, categories)
     return identities
 
 
@@ -258,6 +232,7 @@ def shortlist_sheet(ws: Worksheet, db: Session, trip: Trip) -> None:
         if used:
             _tint(ws, at, 4, BRAND_BG, BRAND)
         _link(ws, at, 6, src.url if src else None, src.title if src else None)
+    _category_dropdown(ws, [f"B4:B{3 + len(listing.places)}"] if listing.places else [])
 
 
 def _money(ws: Worksheet, row: int, column: int, cents: int | None, *, bold: bool = False,
@@ -353,9 +328,9 @@ def expenses_sheet(ws: Worksheet, db: Session, trip: Trip) -> None:
         ws.cell(row=5, column=1, value="Nothing spent yet.").font = Font(color=FAINT)
 
 
-def workbook_bytes(db: Session, trip: Trip, fetch: HoursLookup) -> bytes:
+def workbook_bytes(db: Session, trip: Trip) -> bytes:
     wb = Workbook()
-    identities = itinerary_sheet(wb.active, db, trip, fetch)
+    identities = itinerary_sheet(wb.active, db, trip)
     wb.active.title = "Itinerary"
     expenses_sheet(wb.create_sheet("Expenses"), db, trip)
     shortlist_sheet(wb.create_sheet("Shortlist"), db, trip)

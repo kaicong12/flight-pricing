@@ -52,7 +52,7 @@ export function DayColumn({
   onCost,
   onResize,
   onAddCustom,
-  onEditCustom,
+  onEditBlock,
 }: {
   day: ItineraryDay;
   days: ItineraryDay[];
@@ -73,7 +73,7 @@ export function DayColumn({
   onCost: (item: ItineraryItem, cost: CostEntry) => void;
   onResize: (key: string, startMin: number, durationMin: number) => void;
   onAddCustom: (item: ItineraryItem, cost: CostEntry | null) => void;
-  onEditCustom: (key: string, draft: CustomDraft) => void;
+  onEditBlock: (key: string, draft: CustomDraft) => void;
 }) {
   const [adding, setAdding] = useState<number | null>(null);
   const [editing, setEditing] = useState<ItineraryItem | null>(null);
@@ -230,12 +230,10 @@ export function DayColumn({
           }}
           onSubmit={(draft, startMin, durationMin, { url, cost }) => {
             if (!editing) {
-              if (draft) {
-                onAddCustom({ ...customItem(draft, startMin, durationMin), reference_url: url }, cost);
-              }
+              onAddCustom({ ...customItem(draft, startMin, durationMin), reference_url: url }, cost);
               return;
             }
-            if (draft) onEditCustom(keyOf(editing), draft);
+            onEditBlock(keyOf(editing), draft);
             onResize(keyOf(editing), startMin, durationMin);
             if (url !== editing.reference_url) onReference(keyOf(editing), url);
             if (cost) onCost(editing, cost);
