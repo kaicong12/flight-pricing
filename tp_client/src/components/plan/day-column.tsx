@@ -2,7 +2,7 @@
 
 // The middle column: one day, midnight to midnight, as a half-hour grid you pin places onto.
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { useDroppable } from "@dnd-kit/core";
 import { PlusIcon } from "lucide-react";
@@ -31,7 +31,8 @@ import { cn } from "@/lib/utils";
 import { ActivityBlock } from "./activity-block";
 import { type CostEntry, CustomBlockDialog } from "./custom-block";
 
-const SLOT_PX = 26;
+const SLOT_PX = 36;
+const VIEW_FROM_MIN = 8 * 60;
 const SLOTS = Math.round((DAY_END_MIN - DAY_START_MIN) / SLOT_MIN);
 
 export function DayColumn({
@@ -93,6 +94,15 @@ export function DayColumn({
     pieces.map((p) => ({ ...p.item, start_min: p.from, duration_min: p.to - p.from })),
   );
   const addNext = () => setAdding(firstFree(pieces, available));
+
+  const scroller = useRef<HTMLDivElement>(null);
+  const viewFrom = Math.min(VIEW_FROM_MIN, ...pieces.map((p) => p.from));
+  useEffect(() => {
+    if (scroller.current) {
+      scroller.current.scrollTop = ((viewFrom - DAY_START_MIN) / SLOT_MIN) * SLOT_PX;
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [day.day_index]);
   useShortcut("b", addNext, !readOnly);
 
   const editingOffset = editing ? (pieceOf.get(keyOf(editing))?.offset ?? 0) : 0;
@@ -152,49 +162,55 @@ export function DayColumn({
         </p>
       )}
 
-      <div className="mt-4 flex" style={{ height: SLOTS * SLOT_PX }}>
-        <div className="relative w-11 shrink-0">
-          {Array.from({ length: SLOTS }, (_, i) => DAY_START_MIN + i * SLOT_MIN)
-            .filter((m) => m % 60 === 0)
-            .map((m) => (
-              <span
+      <div
+        ref={scroller}
+        data-day-scroller
+        className="mt-4 max-h-[calc(100dvh-300px)] min-h-[360px] overflow-y-auto pt-1.5"
+      >
+        <div className="flex" style={{ height: SLOTS * SLOT_PX }}>
+          <div className="relative w-11 shrink-0">
+            {Array.from({ length: SLOTS }, (_, i) => DAY_START_MIN + i * SLOT_MIN)
+              .filter((m) => m % 60 === 0)
+              .map((m) => (
+                <span
+                  key={m}
+                  className="absolute font-mono text-[10.5px] text-faint"
+                  style={{ top: ((m - DAY_START_MIN) / SLOT_MIN) * SLOT_PX - 6 }}
+                >
+                  {hhmm(m)}
+                </span>
+              ))}
+          </div>
+
+          <div data-grid className="relative flex-1">
+            {Array.from({ length: SLOTS }, (_, i) => DAY_START_MIN + i * SLOT_MIN).map((m) => (
+              <Slot
                 key={m}
-                className="absolute font-mono text-[10.5px] text-faint"
-                style={{ top: ((m - DAY_START_MIN) / SLOT_MIN) * SLOT_PX - 6 }}
-              >
-                {hhmm(m)}
-              </span>
+                day={day.day_index}
+                minute={m}
+                blocked={m < available.from || m + MIN_DURATION > available.to}
+                onAdd={readOnly ? undefined : () => setAdding(m)}
+              />
             ))}
-        </div>
 
-        <div data-grid className="relative flex-1">
-          {Array.from({ length: SLOTS }, (_, i) => DAY_START_MIN + i * SLOT_MIN).map((m) => (
-            <Slot
-              key={m}
-              day={day.day_index}
-              minute={m}
-              blocked={m < available.from || m + MIN_DURATION > available.to}
-              onAdd={readOnly ? undefined : () => setAdding(m)}
-            />
-          ))}
-
-          {placed.map((p) => (
-            <ActivityBlock
-              key={keyOf(p.item)}
-              placed={p}
-              piece={pieceOf.get(keyOf(p.item))!}
-              block={byBlock.get(keyOf(p.item))}
-              warnings={perBlock.get(keyOf(p.item)) ?? []}
-              slotPx={SLOT_PX}
-              readOnly={readOnly}
-              cost={costs.get(keyOf(p.item)) ?? null}
-              onRemove={() => onRemove(keyOf(p.item))}
-              onEdit={() => setEditing(pieceOf.get(keyOf(p.item))!.item)}
-              onResize={(startMin, durationMin) =>
-                onResize(keyOf(p.item), startMin, durationMin)
-              }
-            />
-          ))}
+            {placed.map((p) => (
+              <ActivityBlock
+                key={keyOf(p.item)}
+                placed={p}
+                piece={pieceOf.get(keyOf(p.item))!}
+                block={byBlock.get(keyOf(p.item))}
+                warnings={perBlock.get(keyOf(p.item)) ?? []}
+                slotPx={SLOT_PX}
+                readOnly={readOnly}
+                cost={costs.get(keyOf(p.item)) ?? null}
+                onRemove={() => onRemove(keyOf(p.item))}
+                onEdit={() => setEditing(pieceOf.get(keyOf(p.item))!.item)}
+                onResize={(startMin, durationMin) =>
+                  onResize(keyOf(p.item), startMin, durationMin)
+                }
+              />
+            ))}
+          </div>
         </div>
       </div>
 

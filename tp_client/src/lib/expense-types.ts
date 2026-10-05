@@ -138,6 +138,16 @@ export function knownCategories(expenses: Expense[]): string[] {
   return [...counts.values()].sort((a, b) => b.n - a.n).map((c) => c.label);
 }
 
+export function filterExpenses(expenses: Expense[], query: string, category: string | null): Expense[] {
+  const q = query.trim().toLowerCase();
+  const tag = category?.toLowerCase();
+  return expenses.filter(
+    (e) =>
+      (!tag || e.category?.toLowerCase() === tag) &&
+      (!q || [e.description, e.block_title].some((s) => s?.toLowerCase().includes(q))),
+  );
+}
+
 const STARTER_TAGS = ["Food", "Transport", "Stay", "Activities", "Shopping"];
 
 export function tagChoices(expenses: Expense[]): string[] {

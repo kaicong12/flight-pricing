@@ -2,16 +2,19 @@
 
 // The Expenses tab. One balance panel per currency, then every cost in date order.
 
-import { Pencil, Plus, X } from "lucide-react";
+import { Pencil, Plus, Search, X } from "lucide-react";
 import { useCallback, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { useConfirm } from "@/components/ui/confirm-dialog";
+import { FilterChip } from "@/components/ui/filter-chip";
 import {
   type Expense,
   type ExpenseDraft,
   type ExpenseTab,
+  filterExpenses,
   firstName,
+  knownCategories,
   money,
   tagChoices,
 } from "@/lib/expense-types";
@@ -39,6 +42,10 @@ export function ExpensesView({
   const [error, setError] = useState<string | null>(null);
   const [dialog, setDialog] = useState<{ editing: Expense | null } | null>(null);
   const [confirm, confirmDialog] = useConfirm();
+  const [query, setQuery] = useState("");
+  const [category, setCategory] = useState<string | null>(null);
+  const categories = knownCategories(tab.expenses);
+  const shown = filterExpenses(tab.expenses, query, category);
 
   const base = `/api/trips/${encodeURIComponent(tripId)}`;
 
@@ -134,11 +141,48 @@ export function ExpensesView({
 
       {tab.expenses.length > 0 && (
         <section className="overflow-hidden rounded-card border border-border surface shadow-card">
-          <h2 className="border-b border-hairline px-5 py-3.5 font-mono text-[11px] tracking-[0.04em] text-faint uppercase">
-            {tab.expenses.length} {tab.expenses.length === 1 ? "cost" : "costs"}
-          </h2>
+          <div className="space-y-3 border-b border-hairline px-5 py-3.5">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <h2 className="font-mono text-[11px] tracking-[0.04em] text-faint uppercase">
+                {shown.length === tab.expenses.length
+                  ? `${tab.expenses.length} ${tab.expenses.length === 1 ? "cost" : "costs"}`
+                  : `${shown.length} of ${tab.expenses.length} costs`}
+              </h2>
+              <label className="flex h-8 w-full max-w-[260px] items-center gap-2 rounded-[13px] border border-input px-3 transition-colors focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50">
+                <Search className="size-3.5 shrink-0 text-faint" />
+                <input
+                  type="search"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  onKeyDown={(e) => e.key === "Escape" && setQuery("")}
+                  placeholder="Search costs"
+                  aria-label="Search costs"
+                  maxLength={120}
+                  className="min-w-0 flex-1 bg-transparent text-[13px] outline-none placeholder:text-muted-foreground [&::-webkit-search-cancel-button]:hidden"
+                />
+              </label>
+            </div>
+            {(categories.length > 0 || category !== null) && (
+              <div className="flex flex-wrap gap-1.5">
+                <FilterChip active={category === null} onClick={() => setCategory(null)}>
+                  All
+                </FilterChip>
+                {categories.map((c) => {
+                  const on = c.toLowerCase() === category?.toLowerCase();
+                  return (
+                    <FilterChip key={c} active={on} onClick={() => setCategory(on ? null : c)}>
+                      {c}
+                    </FilterChip>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+          {shown.length === 0 && (
+            <p className="px-5 py-6 text-[13px] text-muted-foreground">No cost matches.</p>
+          )}
           <ul className="divide-y divide-hairline">
-            {tab.expenses.map((e) => {
+            {shown.map((e) => {
               const mine = e.shares.find((s) => s.user_id === meId);
               return (
                 <li key={e.expense_id} className="group flex items-center gap-4 px-5 py-3.5">

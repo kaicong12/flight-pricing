@@ -91,7 +91,7 @@ rather than a row, it correlates instead of naming one trip, which is how that c
 A claim is written three ways, all `ON CONFLICT DO NOTHING`, and each of them runs once per city the
 trip covers: `/initiate-plan` claims every city's existing places, `places.resolve` claims each place
 it touches for every live trip *covering* that city — `covers_city` over `trip_cities`, never
-`trips.city_id` — and `plan_after_ingest` re-claims all of a trip's cities whenever any one of its
+`trips.city_id` — and `claim_after_ingest` re-claims all of a trip's cities whenever any one of its
 runs settles, which is what a trip created mid-run catches up on, since neither side can see the
 other's uncommitted rows. A city's places are whatever `places.city_id` **or** `place_queries` names,
 so a venue this city resolved but another city had already stored still reaches the trip.
@@ -162,21 +162,17 @@ preview. Costs, members, dismissals, day cities and an edited Category stay behi
 most used first and one spelling per tag whatever its case. The Expenses tab draws a d3 donut per
 currency — never summed — by tag, Trip or Mine, with the smallest past six folded into Other.
 
-**7. Draft.** `route.plan` fills a trip's *empty* days so the plan screen opens filled — **one Gemini
+**7. Draft.** `route.plan` fills a trip's *empty* days — **one Gemini
 call in a loop, not an agent**: the shortlist is already a closed ranked set and `plan_day` already
-judges hours, so the model only proposes an arrangement and never goes looking. A day with any block
-on it is the user's: the button drafts only the empty days, and the automatic draft stands down
-entirely once the user has started planning, since a trip is now plannable before its ingestion
-settles. The Gemini call takes seconds, so the write re-checks under `lock_itinerary`, the same trip
-row lock `replace_days` takes — a day filled meanwhile is skipped, never overwritten. Why a draft
-wrote nothing is `ingest_tasks.result`, which `GET /trips/{id}` returns as `draft_result`. The
-shortlist it arranges is the trip's, so one draft covers every city at once.
-It is queued automatically once — at `/initiate-plan` when every city was warm, otherwise by the
-last run to settle, and only when **every** city has settled and **at least one** reached DONE, so a
-half-ingested trip is never drafted and a trip with one failed city still is — and on demand by
-`POST /trips/{id}/draft`, which the plan screen's "Draft my
-days" button calls. `GET /trips/{id}` reports the task as `draft` plus a progress row, which is what
-the checklist polls — without it a draft in flight looks like a feature that does not exist.
+judges hours, so the model only proposes an arrangement and never goes looking. **Nothing drafts
+automatically**: the only way in is `POST /trips/{id}/draft`, the plan screen's "Draft my days"
+button, and it may be pressed before ingestion settles. A day with any block on it is the user's and
+is never drafted. The Gemini call takes seconds, so the write re-checks under `lock_itinerary`, the
+same trip row lock `replace_days` takes — a day filled meanwhile is skipped, never overwritten. Why a
+draft wrote nothing is `ingest_tasks.result`, which `GET /trips/{id}` returns as `draft_result`. The
+shortlist it arranges is the trip's, so one draft covers every city at once. `GET /trips/{id}`
+reports the task as `draft` plus a progress row, which is what the checklist polls — without it a
+draft in flight looks like a feature that does not exist.
 
 ## Budgets
 

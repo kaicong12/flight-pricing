@@ -5,7 +5,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 
-import { DRAFT_PENDING, FAILURE_TEXT, TERMINAL_STATUSES, type TripStatus } from "@/lib/api-types";
+import { FAILURE_TEXT, TERMINAL_STATUSES, type TripStatus } from "@/lib/api-types";
 
 const POLL_MS = 3000;
 
@@ -17,10 +17,8 @@ const STATUS_TEXT: Record<string, string> = {
   needs_credentials: "Needs credentials",
 };
 
-/** The draft is queued the instant the ingest settles, so the ingest alone is not the end of it. */
 function settled(status: TripStatus): boolean {
-  const ingested = !status.ingest || TERMINAL_STATUSES.includes(status.ingest.status);
-  return ingested && !DRAFT_PENDING.includes(status.draft ?? "");
+  return !status.ingest || TERMINAL_STATUSES.includes(status.ingest.status);
 }
 
 export function TripProgress({ initial }: { initial: TripStatus }) {
@@ -62,17 +60,16 @@ export function TripProgress({ initial }: { initial: TripStatus }) {
   const state = ingest?.status ?? "done";
   const done = state === "done";
   const broken = state === "failed" || state === "needs_credentials";
-  const drafting = DRAFT_PENDING.includes(status.draft ?? "");
 
   return (
     <section className="mt-8 rounded-card border border-border surface shadow-card">
       <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-border px-6 py-4.5">
         <div className="flex items-center gap-2.5">
-          {(drafting || (!done && !broken)) && (
+          {!done && !broken && (
             <span className="size-1.5 animate-[tp-pulse_1.4s_ease-in-out_infinite] motion-reduce:animate-none rounded-full bg-brand" />
           )}
           <h2 className="text-[15px] font-semibold tracking-[-0.01em]">
-            {drafting ? "Drafting your first days" : (STATUS_TEXT[state] ?? state)}
+            {STATUS_TEXT[state] ?? state}
           </h2>
         </div>
         <p className="font-mono text-[11px] text-faint">

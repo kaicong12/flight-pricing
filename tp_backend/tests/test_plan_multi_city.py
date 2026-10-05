@@ -205,11 +205,6 @@ def test_a_draft_with_nothing_shortlisted_spends_no_model_call(client, db, looku
     assert draft.run(db, task(trip)) == {"skipped": draft.NO_PLACES}
 
 
-def manual_task(trip):
-    return ClaimedTask(task_id=1, run_id="r-plan", kind=TaskKind.ROUTE_PLAN, source=None,
-                       payload={"trip_id": trip, "manual": True}, attempts=1, max_attempts=3)
-
-
 FLIGHT = {"kind": "custom", "block_id": "b-flight", "title": "Flight", "start_min": 600,
           "duration_min": 60}
 TWO_DAYS = {"days": [{"day": 0, "picks": [{"index": 0, "start_min": 900, "duration_min": 60}]},
@@ -222,22 +217,12 @@ def itinerary(db):
                                        ItineraryItem.title))}
 
 
-def test_the_automatic_draft_stands_down_once_any_day_has_a_block(client, db, lookup, monkeypatch):
-    trip, calls = drivable(client, db, lookup, monkeypatch, TWO_DAYS,
-                           hours_of(lambda i: periods(range(7))))
-    pin(client, trip, [FLIGHT], day=2)
-
-    assert draft.run(db, task(trip)) == {"skipped": draft.ALREADY_PLANNING}
-    assert calls == []
-    assert itinerary(db) == {(2, None, "Flight")}
-
-
-def test_a_manual_draft_leaves_a_flight_only_day_alone(client, db, lookup, monkeypatch):
+def test_a_draft_leaves_a_flight_only_day_alone(client, db, lookup, monkeypatch):
     trip, _ = drivable(client, db, lookup, monkeypatch, TWO_DAYS,
                        hours_of(lambda i: periods(range(7))))
     pin(client, trip, [FLIGHT], day=1)
 
-    assert draft.run(db, manual_task(trip))["days"] == 1
+    assert draft.run(db, task(trip))["days"] == 1
     assert itinerary(db) == {(0, "hel", None), (1, None, "Flight")}
 
 
@@ -247,21 +232,10 @@ def test_a_day_filled_while_the_model_thinks_is_left_alone(client, db, lookup, m
     monkeypatch.setattr(draft, "generate",
                         lambda prompt, text: pin(client, trip, [FLIGHT], day=1) and TWO_DAYS)
 
-    out = draft.run(db, manual_task(trip))
+    out = draft.run(db, task(trip))
 
     assert out["filled_meanwhile"] == [1]
     assert itinerary(db) == {(0, "hel", None), (1, None, "Flight")}
-
-
-def test_the_automatic_draft_stands_down_if_planning_starts_mid_draft(client, db, lookup,
-                                                                       monkeypatch):
-    trip, _ = drivable(client, db, lookup, monkeypatch, TWO_DAYS,
-                       hours_of(lambda i: periods(range(7))))
-    monkeypatch.setattr(draft, "generate",
-                        lambda prompt, text: pin(client, trip, [FLIGHT], day=3) and TWO_DAYS)
-
-    assert draft.run(db, task(trip)) == {"skipped": draft.ALREADY_PLANNING}
-    assert itinerary(db) == {(3, None, "Flight")}
 
 
 def test_a_day_keeps_the_city_it_was_put_in(client, db, lookup):

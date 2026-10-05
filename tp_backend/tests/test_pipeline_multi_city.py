@@ -1,4 +1,4 @@
-"""The whole pipeline for a trip covering two cities: one run each, one worker, one draft."""
+"""The whole pipeline for a trip covering two cities: one run each, one worker."""
 
 from datetime import UTC, datetime, timedelta
 
@@ -203,21 +203,21 @@ def test_both_cities_places_are_claimed_for_the_one_trip(client, db, lookup, stu
         == {"pid-kauppahalli": HELSINKI, "pid-bolhao": PORTO}
 
 
-def test_the_drain_drafts_once_and_only_after_the_last_city_settles(client, db, lookup, stubbed):
+def test_the_drain_queues_no_draft(client, db, lookup, stubbed):
     trip_id = client.post("/initiate-plan", json=two_cities(lookup)).json()["trip_id"]
 
     run_worker()
 
     db.expire_all()
-    assert len(drafts(db, trip_id)) == 1
-    plan = tasks(db, TaskKind.ROUTE_PLAN)[0]
-    assert plan.created_at >= max(r.finished_at for r in city_runs(db).values())
+    assert drafts(db, trip_id) == []
 
 
-def test_the_draft_the_drain_queues_sees_both_cities(client, db, lookup, stubbed, calls):
-    client.post("/initiate-plan", json=two_cities(lookup))
-
+def test_a_draft_asked_for_after_the_drain_sees_both_cities(client, db, lookup, stubbed, calls):
+    trip_id = client.post("/initiate-plan", json=two_cities(lookup)).json()["trip_id"]
     run_worker()
+
+    assert client.post(f"/trips/{trip_id}/draft").status_code == 202
+    run_worker("w2")
 
     prompt = calls.draft_prompts[0]
     assert "Helsinki, FI and Porto, PT" in prompt
@@ -271,7 +271,7 @@ def test_a_note_already_stored_is_extracted_for_this_city_without_a_fetch(client
         assert cities == {HELSINKI, PORTO}, kind
 
 
-def test_one_city_failing_still_leaves_the_trip_its_draft(client, db, lookup, stubbed, monkeypatch):
+def test_one_city_failing_still_leaves_the_trip_done(client, db, lookup, stubbed, monkeypatch):
     break_cities(monkeypatch, ["Porto"])
     trip_id = client.post("/initiate-plan", json=two_cities(lookup)).json()["trip_id"]
 
@@ -280,7 +280,6 @@ def test_one_city_failing_still_leaves_the_trip_its_draft(client, db, lookup, st
     db.expire_all()
     assert {c: r.status for c, r in city_runs(db).items()} \
         == {HELSINKI: RunStatus.DONE, PORTO: RunStatus.FAILED}
-    assert len(drafts(db, trip_id)) == 1
     assert claimed(db, trip_id) == {"pid-kauppahalli"}
     got = client.get(f"/trips/{trip_id}").json()
     assert got["ingest"]["status"] == RunStatus.DONE
@@ -288,8 +287,7 @@ def test_one_city_failing_still_leaves_the_trip_its_draft(client, db, lookup, st
                                                     TaskKind.REDNOTE_SEARCH}
 
 
-def test_no_city_producing_anything_is_terminal_and_undrafted(client, db, lookup, stubbed,
-                                                              monkeypatch):
+def test_no_city_producing_anything_is_terminal(client, db, lookup, stubbed, monkeypatch):
     break_cities(monkeypatch, ["Helsinki", "Porto"])
     trip_id = client.post("/initiate-plan", json=two_cities(lookup)).json()["trip_id"]
 
@@ -297,7 +295,6 @@ def test_no_city_producing_anything_is_terminal_and_undrafted(client, db, lookup
 
     db.expire_all()
     assert {r.status for r in city_runs(db).values()} == {RunStatus.FAILED}
-    assert drafts(db, trip_id) == [], "nothing was ingested, so there is nothing to arrange"
     assert client.get(f"/trips/{trip_id}").json()["ingest"]["status"] == RunStatus.FAILED
 
 
@@ -312,13 +309,12 @@ def test_a_city_wanting_credentials_outranks_its_finished_sibling(client, db, lo
     assert city_runs(db)[PORTO].status == RunStatus.NEEDS_CREDENTIALS
     assert client.get(f"/trips/{trip_id}").json()["ingest"]["status"] \
         == RunStatus.NEEDS_CREDENTIALS
-    assert len(drafts(db, trip_id)) == 1
 
 
 def test_a_task_that_exhausts_its_attempts_does_not_take_its_city_down(client, db, lookup, stubbed,
                                                                       monkeypatch):
     break_cities(monkeypatch, ["Porto 美食"], code=ErrorCode.TRANSIENT)
-    trip_id = client.post("/initiate-plan", json=two_cities(lookup)).json()["trip_id"]
+    client.post("/initiate-plan", json=two_cities(lookup))
     db.execute(update(IngestTask)
                .where(IngestTask.kind == TaskKind.REDNOTE_SEARCH,
                       IngestTask.payload["city_id"].astext == PORTO)
@@ -334,7 +330,6 @@ def test_a_task_that_exhausts_its_attempts_does_not_take_its_city_down(client, d
     assert dead[0].status == TaskStatus.FAILED
     assert (city_runs(db)[PORTO].status, city_runs(db)[PORTO].failed_task_count) \
         == (RunStatus.DONE, 1)
-    assert len(drafts(db, trip_id)) == 1
 
 
 def test_a_throttled_task_goes_back_to_the_queue_without_starving_the_other_city(
@@ -352,7 +347,7 @@ def test_a_throttled_task_goes_back_to_the_queue_without_starving_the_other_city
 
     monkeypatch.setattr("tp_ingestions.limits.rednote",
                         lambda: Once("rednote", min_gap=0.0, jitter=0.0, limits=[]))
-    trip_id = client.post("/initiate-plan", json=two_cities(lookup)).json()["trip_id"]
+    client.post("/initiate-plan", json=two_cities(lookup))
 
     run_worker()
 
@@ -363,7 +358,6 @@ def test_a_throttled_task_goes_back_to_the_queue_without_starving_the_other_city
     assert waiting[0].run_after > datetime.now(UTC)
     assert city_runs(db)[HELSINKI].status == RunStatus.RUNNING
     assert city_runs(db)[PORTO].status == RunStatus.DONE, "Porto drained while Helsinki waited"
-    assert drafts(db, trip_id) == []
 
     db.execute(update(IngestTask).values(run_after=datetime.now(UTC)))
     db.commit()
@@ -371,7 +365,6 @@ def test_a_throttled_task_goes_back_to_the_queue_without_starving_the_other_city
 
     db.expire_all()
     assert set(db.scalars(select(IngestTask.status))) == {TaskStatus.DONE}
-    assert len(drafts(db, trip_id)) == 1
 
 
 def test_a_place_filed_under_a_city_the_trip_does_not_cover_is_still_claimed(client, db, lookup,
@@ -389,7 +382,7 @@ def test_a_place_filed_under_a_city_the_trip_does_not_cover_is_still_claimed(cli
     assert "pid-bolhao" in claimed(db, trip_id)
 
 
-def test_two_trips_share_one_run_per_city_and_each_gets_its_own_draft(client, db, lookup, stubbed):
+def test_two_trips_share_one_run_per_city_and_each_claims_its_own(client, db, lookup, stubbed):
     both = client.post("/initiate-plan", json=two_cities(lookup)).json()["trip_id"]
     solo = client.post("/initiate-plan", json=two_cities(lookup, [PORTO])).json()["trip_id"]
     assert len(db.scalars(select(IngestRun.run_id)).all()) == 2
@@ -399,4 +392,3 @@ def test_two_trips_share_one_run_per_city_and_each_gets_its_own_draft(client, db
     db.expire_all()
     assert claimed(db, both) == {"pid-kauppahalli", "pid-bolhao"}
     assert claimed(db, solo) == {"pid-bolhao"}
-    assert (len(drafts(db, both)), len(drafts(db, solo))) == (1, 1)

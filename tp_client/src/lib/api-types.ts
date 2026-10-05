@@ -82,7 +82,6 @@ export const ALL_DAYS_FILLED = "Every day already has something in it. Clear a d
 
 export const DRAFT_SKIPPED: Record<string, string> = {
   all_days_filled: ALL_DAYS_FILLED,
-  already_planning: "You had already started planning, so the draft left your days alone.",
   no_places: "Nothing is on the shortlist yet, so there was nothing to draft from.",
   nothing_fit: "No shortlisted place fitted the open hours of your empty days.",
 };
