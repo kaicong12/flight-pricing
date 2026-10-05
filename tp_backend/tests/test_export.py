@@ -1,6 +1,5 @@
-"""The .xlsx export: real cells, the warning colours, and a link back to the source."""
+"""The .xlsx export: real cells, a category dropdown, and a link back to the source."""
 
-from datetime import timedelta
 from io import BytesIO
 
 from conftest import make_mention, make_place, make_video, plan_body
@@ -8,13 +7,7 @@ from openpyxl import load_workbook
 
 from libs.db import User, UserTrip
 from libs.db.enums import TripRole
-from libs.routing import HoursHit
-from tp_api.route_planning.export import ALERT_BG, WARN_BG
-from tp_api.route_planning.utils import google_weekday
 from tp_api.schemas import today_utc
-
-OPEN_EARLY_ALL_WEEK = [{"open": {"day": d, "hour": 9, "minute": 0},
-                        "close": {"day": d, "hour": 10, "minute": 0}} for d in range(7)]
 
 
 def visible(ws, row):
@@ -44,15 +37,23 @@ def test_a_block_carries_its_times_and_category(client, db):
 
     ws = export(client, trip)["Itinerary"]
 
-    assert visible(ws, 3) == ["Day", "Date", "#", "Start", "End", "Block", "Category",
-                                        "Warning"]
+    assert visible(ws, 3) == ["Day", "Date", "#", "Start", "End", "Block", "Category"]
     assert [ws.cell(row=5, column=c).value for c in (1, 3, 4, 5, 6, 7)] == [
         1, 1, "15:00", "16:30", "Löyly", "see"]
 
 
+def test_a_category_is_a_dropdown_of_every_category(client, db):
+    wb = export(client, a_trip_with_one_block(client, db))
+
+    for sheet, cell in (("Itinerary", "G5"), ("Shortlist", "B4")):
+        [dv] = wb[sheet].data_validations.dataValidation
+        assert dv.type == "list" and cell in dv.sqref
+        assert dv.formula1 == '"see,do,eat,drink,buy,sleep,other"'
+
+
 def test_the_ref_column_exists_only_when_a_block_has_a_link(client, db):
     trip = a_trip_with_one_block(client, db)
-    assert visible(export(client, trip)["Itinerary"], 3)[-1] == "Warning"
+    assert visible(export(client, trip)["Itinerary"], 3)[-1] == "Category"
 
     client.put(f"/trips/{trip}/itinerary", json={"days": [{"day_index": 0, "items": [
         {"place_id": "p1", "start_min": 900, "duration_min": 90,
@@ -60,7 +61,7 @@ def test_the_ref_column_exists_only_when_a_block_has_a_link(client, db):
 
     ws = export(client, trip)["Itinerary"]
     assert visible(ws, 3)[-1] == "Ref"
-    assert ws.cell(row=5, column=9).hyperlink.target == "https://www.airbnb.com/rooms/12345"
+    assert ws.cell(row=5, column=8).hyperlink.target == "https://www.airbnb.com/rooms/12345"
 
 
 def test_a_reference_must_be_a_link(client, db):
@@ -69,33 +70,6 @@ def test_a_reference_must_be_a_link(client, db):
         {"place_id": "p1", "start_min": 900, "duration_min": 90,
          "reference_url": "my booking email"}]}]})
     assert r.status_code == 422
-
-
-def test_a_block_that_outlasts_the_opening_hours_is_amber(client, db, hours):
-    trip = a_trip_with_one_block(client, db)
-    hours["fn"] = lambda ids: {i: HoursHit(place_id=i, periods=OPEN_EARLY_ALL_WEEK,
-                                           weekday_descriptions=[], utc_offset_minutes=180)
-                               for i in ids}
-
-    warning = export(client, trip)["Itinerary"].cell(row=5, column=8)
-
-    assert warning.value == "closes 10:00 before you finish"
-    assert warning.fill.fgColor.rgb.endswith(WARN_BG)
-
-
-def test_a_place_closed_that_day_is_clay_not_amber(client, db, hours):
-    """The severity split: a closed door is broken, a tight closing time is only a warning."""
-    trip = a_trip_with_one_block(client, db)
-    shut = (google_weekday(today_utc() + timedelta(days=30)) + 1) % 7
-    hours["fn"] = lambda ids: {i: HoursHit(place_id=i, periods=[
-        {"open": {"day": shut, "hour": 9, "minute": 0},
-         "close": {"day": shut, "hour": 18, "minute": 0}}],
-        weekday_descriptions=[], utc_offset_minutes=180) for i in ids}
-
-    warning = export(client, trip)["Itinerary"].cell(row=5, column=8)
-
-    assert warning.value == "closed all day"
-    assert warning.fill.fgColor.rgb.endswith(ALERT_BG)
 
 
 def test_a_days_day_and_date_are_one_tall_cell_each(client, db):
@@ -118,7 +92,7 @@ def test_a_lone_block_is_not_merged(client, db):
     assert all(r.min_row != 5 for r in export(client, trip)["Itinerary"].merged_cells.ranges)
 
 
-def test_a_custom_block_brings_its_details_and_no_warning(client, db):
+def test_a_custom_block_brings_its_details_and_no_category(client, db):
     trip = a_trip_with_one_block(client, db)
     client.put(f"/trips/{trip}/itinerary", json={"days": [{"day_index": 0, "items": [
         {"kind": "custom", "block_id": "b1", "title": "Hotel Bristol",
@@ -129,9 +103,11 @@ def test_a_custom_block_brings_its_details_and_no_warning(client, db):
     ws = export(client, trip)["Itinerary"]
 
     assert visible(ws, 3) == ["Day", "Date", "#", "Start", "End", "Block", "Category",
-                                        "Warning", "Details"]
-    assert [ws.cell(row=6, column=c).value for c in (4, 6, 7, 8, 9)] == [
-        "21:00", "Hotel Bristol", None, None, "Kristian IVs gate 7, check in from 15:00"]
+                              "Details"]
+    assert [ws.cell(row=6, column=c).value for c in (4, 6, 7, 8)] == [
+        "21:00", "Hotel Bristol", None, "Kristian IVs gate 7, check in from 15:00"]
+    [dv] = ws.data_validations.dataValidation
+    assert "G5" in dv.sqref and "G6" not in dv.sqref
     assert ws.cell(row=5, column=6).value == "Löyly"
 
 
@@ -146,7 +122,7 @@ def test_a_long_description_wraps_and_the_row_grows_to_hold_it(client, db):
 
     ws = export(client, trip)["Itinerary"]
 
-    assert ws.cell(row=5, column=9).alignment.wrap_text
+    assert ws.cell(row=5, column=8).alignment.wrap_text
     assert ws.row_dimensions[5].height > 15
 
 

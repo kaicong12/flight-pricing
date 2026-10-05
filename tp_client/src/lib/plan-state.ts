@@ -35,7 +35,7 @@ export type CustomDraft = { title: string; description: string | null };
 export type PlanAction =
   | { type: "add"; place: ShortlistPlace; day: number; startMin: number; durationMin: number }
   | { type: "addCustom"; day: number; item: ItineraryItem }
-  | { type: "editCustom"; day: number; key: string; draft: CustomDraft }
+  | { type: "editBlock"; day: number; key: string; draft: CustomDraft }
   | { type: "remove"; day: number; key: string }
   | { type: "pin"; key: string; fromDay: number; toDay: number; startMin: number }
   | { type: "duration"; day: number; key: string; minutes: number }
@@ -48,7 +48,19 @@ export type PlanAction =
   | { type: "invalidate"; day: number }
   | { type: "saved"; days: number[]; itinerary: Itinerary; revision: number }
   | { type: "shortlistLoaded"; shortlist: Shortlist; append: boolean; unfiltered?: boolean }
-  | { type: "placeAdded"; place: ShortlistPlace };
+  | { type: "placeAdded"; place: ShortlistPlace; filter?: ShortlistFilter };
+
+export type ShortlistFilter = { category: string | null; source: string | null; q: string };
+
+/** The server's filter, for a place it ranks last and so would page out of sight. */
+export function fits(place: ShortlistPlace, filter: ShortlistFilter): boolean {
+  const q = filter.q.toLowerCase();
+  return (
+    !filter.source &&
+    (!filter.category || place.category === filter.category) &&
+    (!q || [place.name, place.address, place.why_go].some((s) => s?.toLowerCase().includes(q)))
+  );
+}
 
 const without = (xs: number[], y: number) => xs.filter((x) => x !== y);
 const with_ = (xs: number[], y: number) => (xs.includes(y) ? xs : [...xs, y]);
@@ -138,7 +150,7 @@ export function planReducer(state: PlanState, action: PlanAction): PlanState {
       return { ...state, days: setDay(state, action.day, items), ...touched(state, [action.day]) };
     }
 
-    case "editCustom": {
+    case "editBlock": {
       const items = itemsOf(state, action.day).map((i) =>
         keyOf(i) === action.key
           ? { ...i, name: action.draft.title, description: action.draft.description }
@@ -267,11 +279,14 @@ export function planReducer(state: PlanState, action: PlanAction): PlanState {
 
     case "placeAdded": {
       const known = state.shortlist.some((p) => p.place_id === action.place.place_id);
+      const shown = !action.filter || fits(action.place, action.filter);
       return {
         ...state,
-        shortlist: dedupe([action.place, ...state.shortlist]),
+        shortlist: shown
+          ? dedupe([action.place, ...state.shortlist])
+          : state.shortlist.filter((p) => p.place_id !== action.place.place_id),
         dismissed: state.dismissed.filter((id) => id !== action.place.place_id),
-        total: known ? state.total : state.total + 1,
+        total: shown && !known ? state.total + 1 : state.total,
         found: known ? state.found : state.found + 1,
       };
     }

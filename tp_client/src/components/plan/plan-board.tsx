@@ -302,13 +302,13 @@ export function PlanBoard({
   );
 
   const addPlace = useCallback(
-    async (placeId: string, category: string): Promise<string | null> => {
+    async (placeId: string, placeCategory: string): Promise<string | null> => {
       let r: Response;
       try {
         r = await fetch(`/api/trips/${trip.trip_id}/places`, {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ place_id: placeId, category }),
+          body: JSON.stringify({ place_id: placeId, category: placeCategory }),
         });
       } catch {
         return "Could not reach the planner.";
@@ -317,10 +317,14 @@ export function PlanBoard({
         const body = await r.json().catch(() => null);
         return typeof body?.detail === "string" ? body.detail : "That place could not be added.";
       }
-      dispatch({ type: "placeAdded", place: (await r.json()) as ShortlistPlace });
+      dispatch({
+        type: "placeAdded",
+        place: (await r.json()) as ShortlistPlace,
+        filter: { category, source, q },
+      });
       return null;
     },
-    [trip.trip_id],
+    [category, source, q, trip.trip_id],
   );
 
   function onDragStart(event: DragStartEvent) {
@@ -440,8 +444,8 @@ export function PlanBoard({
               const date = state.days.find((d) => d.day_index === state.activeDay)?.date;
               if (cost) saveCost(item, cost, date);
             }}
-            onEditCustom={(key, draft) =>
-              dispatch({ type: "editCustom", day: homeOf(key), key, draft })
+            onEditBlock={(key, draft) =>
+              dispatch({ type: "editBlock", day: homeOf(key), key, draft })
             }
             onResize={(key, startMin, durationMin) => {
               const home = homeOf(key);

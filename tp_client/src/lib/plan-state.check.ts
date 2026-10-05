@@ -52,6 +52,27 @@ const again = planReducer(added, { type: "placeAdded", place: place("p1", "Menti
 eq(names(again), ["Mentioned twice", "Added by hand", "Mentioned once"], "no duplicate row");
 eq(again.total, 3, "re-adding does not raise the denominator");
 
+const unfiltered = { category: null, source: null, q: "" };
+const hidden = planReducer(base, {
+  type: "placeAdded",
+  place: place("p3", "Added by hand"),
+  filter: { ...unfiltered, q: "sauna" },
+});
+eq(names(hidden), ["Mentioned twice", "Mentioned once"], "a place the search misses stays out");
+eq(hidden.total, 2, "and does not raise the denominator");
+const matched = planReducer(base, {
+  type: "placeAdded",
+  place: place("p3", "Added by hand"),
+  filter: { ...unfiltered, q: "BY HAND" },
+});
+eq(names(matched)[0], "Added by hand", "a place the search matches goes first");
+const bySource = planReducer(base, {
+  type: "placeAdded",
+  place: place("p3", "Added by hand"),
+  filter: { ...unfiltered, source: "youtube" },
+});
+eq(bySource.shortlist.length, 2, "no source names a hand-added place");
+
 const struck = planReducer(base, { type: "dismiss", placeId: "p2" });
 eq(names(struck), ["Mentioned twice"], "dismiss hides the row");
 eq(struck.total, 1, "dismiss lowers the denominator");
@@ -145,7 +166,7 @@ eq(keyOf(early) !== keyOf(late), true, "each gets its own id");
 eq([early.place_id, early.kind], [null, "custom"], "a custom block claims no place");
 
 const renamed = planReducer(checked(twice), {
-  type: "editCustom",
+  type: "editBlock",
   day: 0,
   key: keyOf(late),
   draft: { title: "Hotel Bristol · night 2", description: null },

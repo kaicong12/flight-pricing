@@ -63,10 +63,10 @@ XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
 
 @router.get("/trips/{trip_id}/export.xlsx", response_class=Response)
-def get_export(trip_id: str, db: Db, fetch_hours: Hours) -> Response:
+def get_export(trip_id: str, db: Db) -> Response:
     trip = service.get_trip(db, trip_id)
     return Response(
-        content=export.workbook_bytes(db, trip, fetch_hours),
+        content=export.workbook_bytes(db, trip),
         media_type=XLSX,
         headers={"Content-Disposition": f'attachment; filename="{export.filename(trip)}"'},
     )

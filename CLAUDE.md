@@ -142,12 +142,13 @@ The plan grid reveals a **"+" on hover** over
 any free slot, CSS-only via `group/slot`, and the dialog is mounted only while open so its `key` resets
 it rather than an effect.
 
-`GET /trips/{id}/export.xlsx` is those same days as a workbook: Itinerary, a band per day and the
-warning in the app's own amber and clay, with a `Ref` column **only when some block has a link** and a
+`GET /trips/{id}/export.xlsx` is those same days as a workbook: Itinerary, a band per day in the
+app's own colours and a Category column that is a list validation — a chip in Sheets, a dropdown in
+Excel — with a `Ref` column **only when some block has a link** and a
 `Details` column only when one has a description, plus Shortlist, whose `Source` column is the video
 or note that named the place. Day and Date are **merged down each day's rows**, so the number is
-written once rather than repeated beside every block. It re-reads hours, and the warning English lives
-in `export.py` because a spreadsheet has no client to own it.
+written once rather than repeated beside every block. It carries no warnings and fetches no hours —
+the plan screen is where a day is checked.
 
 **Upload new trip** (`tp_api/uploads.py`) reads that workbook back as a *new* trip the uploader owns —
 never into an existing one. The export carries a very hidden `_trip_planner` sheet — a marker, a format
@@ -155,7 +156,7 @@ version, the trip and each row's identity — and a hidden `_row` column; a file
 refused. It is not signed, so the sheet is untrusted input: every id in it is re-checked, and damaged
 data refuses the file or skips the row. The visible cells are what is read, so Excel edits come through: a renamed
 place or a typed-in row becomes a custom block, and an unreadable row is skipped and named in the
-preview. Costs, members, dismissals and day cities stay behind.
+preview. Costs, members, dismissals, day cities and an edited Category stay behind.
 
 **Costs** carry a free-text `expenses.category`: the dialog offers the trip's own tags as one-tap chips,
 most used first and one spelling per tag whatever its case. The Expenses tab draws a d3 donut per

@@ -178,7 +178,7 @@ export function ActivityBlock({
               type="button"
               onPointerDown={(e) => e.stopPropagation()}
               onClick={onEdit}
-              aria-label={`Edit ${item.name}: time, link and cost`}
+              aria-label={`Edit ${item.name}: time, details, link and cost`}
               className="absolute top-0.5 right-5.5 grid size-5 place-items-center rounded text-faint opacity-0 transition-opacity group-hover/block:opacity-100 hover:text-ink focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring/50"
             >
               <Pencil className="size-3" />
