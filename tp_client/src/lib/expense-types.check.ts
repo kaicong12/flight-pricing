@@ -7,6 +7,7 @@ import {
   blockCost,
   colorSlots,
   costsByBlock,
+  filterExpenses,
   forReading,
   knownCategories,
   money,
@@ -166,5 +167,20 @@ eq(
   "a starter the trip already uses in another case is not offered twice",
 );
 eq(tagChoices(many).length, 8, "at most eight chips");
+
+{
+  const base = { shares: [], payer_id: "u0", amount_cents: 100, currency: "EUR" };
+  const costs = [
+    { ...base, expense_id: "a", description: "Ramen at Ichiran", block_title: null, category: "Food" },
+    { ...base, expense_id: "b", description: "Taxi", block_title: "Airport run", category: "transport" },
+    { ...base, expense_id: "c", description: "Snacks", block_title: null, category: null },
+  ] as unknown as Expense[];
+  const ids = (q: string, c: string | null) => filterExpenses(costs, q, c).map((e) => e.expense_id);
+  eq(ids("", null), ["a", "b", "c"], "no filter keeps every cost");
+  eq(ids("RAMEN", null), ["a"], "search ignores case");
+  eq(ids("airport", null), ["b"], "search reaches the block title");
+  eq(ids("", "Transport"), ["b"], "a category matches whatever its case");
+  eq(ids("taxi", "Food"), [], "search and category both have to hold");
+}
 
 console.log("expense-types.check.ts ok");

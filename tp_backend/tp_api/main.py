@@ -56,7 +56,13 @@ from tp_api.expenses import router as expenses_router
 from tp_api.route_planning import router as planning_router
 from tp_api.route_planning.export import until
 from tp_api.route_planning.schemas import DayIn, ItineraryIn
-from tp_api.route_planning.service import claim_place, filled_days, in_shortlist, replace_days
+from tp_api.route_planning.service import (
+    claim_place,
+    filled_days,
+    in_shortlist,
+    lock_itinerary,
+    replace_days,
+)
 from tp_api.route_planning.utils import day_count
 from tp_api.schemas import (
     CityOut,
@@ -135,8 +141,6 @@ def initiate_plan(body: InitiatePlanRequest, db: Db, lookup: Lookup, user: Me) -
 
 def create_trip(db: Session, lookup: CityLookup, user: User, body: InitiatePlanRequest,
                 seed: Callable[[Trip], None] | None = None) -> TripOut:
-    """`seed` writes the trip's first days before anything is queued, so the automatic draft stands
-    down."""
     resolved: dict[str, City] = {}
     for place_id in body.city_place_ids:
         try:
@@ -173,13 +177,11 @@ def create_trip(db: Session, lookup: CityLookup, user: User, body: InitiatePlanR
         seed(trip)
 
     runs = [r for r in (ensure_city_ingest(db, c) for c in cities) if r is not None]
-    if not runs:
-        ensure_trip_plan(db, trip)
     log.info("initiate-plan trip=%s cities=%s ingest=%s", trip.trip_id[:8],
              " ".join(f"{c.name}:{c.city_id}" for c in cities),
              f"run:{runs[0].run_id} {runs[0].status}"
              + (f" +{len(runs) - 1} more" if len(runs) > 1 else "") if runs
-             else "warm, draft queued")
+             else "warm")
     return TripOut(
         trip_id=trip.trip_id,
         name=trip.name,
@@ -434,18 +436,16 @@ def draft_trip(trip_id: str, db: Db) -> dict[str, str | None]:
     if trip is None or trip.deleted:
         raise HTTPException(404, "no such trip")
 
+    lock_itinerary(db, trip_id)
     if len(filled_days(db, trip_id)) >= day_count(trip):
         raise HTTPException(409, "Every day already has something in it. Clear a day to draft it.")
 
     pending = draft_task(db, trip_id)
     if pending is not None and pending.status in (TaskStatus.PENDING, TaskStatus.RUNNING):
         log.info("draft trip=%s not queued, one is already %s", trip_id[:8], pending.status)
-        if not pending.payload.get("manual"):
-            pending.payload = pending.payload | {"manual": True}
-            db.commit()
         return {"status": pending.status}
 
-    ensure_trip_plan(db, trip, force=True)
+    ensure_trip_plan(db, trip)
     log.info("draft trip=%s queued", trip_id[:8])
     return {"status": TaskStatus.PENDING}
 

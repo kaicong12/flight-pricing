@@ -69,12 +69,13 @@ export function ActivityBlock({
   const startResize = (edge: "top" | "bottom") => (e: React.PointerEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    const grid = (e.currentTarget as HTMLElement).closest("[data-grid]")?.getBoundingClientRect();
+    const grid = (e.currentTarget as HTMLElement).closest("[data-grid]");
     if (!grid) return;
 
     let next = { start_min: item.start_min, duration_min: item.duration_min };
     const move = (ev: PointerEvent) => {
-      next = resize(item, edge, slotAt(ev.clientY - grid.top, slotPx), offset);
+      const top = grid.getBoundingClientRect().top;
+      next = resize(item, edge, slotAt(ev.clientY - top, slotPx), offset);
     };
     const up = () => {
       window.removeEventListener("pointermove", move);

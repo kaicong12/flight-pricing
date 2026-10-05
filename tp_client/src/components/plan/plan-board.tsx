@@ -480,20 +480,21 @@ export function PlanBoard({
  * stays as the fallback for a pointer outside every slot, e.g. over a day tab.
  */
 const collisionDetection: typeof pointerWithin = (args) => {
-  const hit = pointerWithin(args);
+  const pointer = args.pointerCoordinates;
+  const within = (selector: string) => {
+    const r = document.querySelector(selector)?.getBoundingClientRect();
+    return (
+      !!pointer && !!r &&
+      pointer.x >= r.left && pointer.x <= r.right && pointer.y >= r.top && pointer.y <= r.bottom
+    );
+  };
+  const inView = within("[data-day-scroller]");
+  const hit = pointerWithin(args).filter((c) => inView || !String(c.id).startsWith("slot:"));
   if (hit.length > 0) return hit;
 
   // Off the grid a pointer drag drops nothing; a keyboard drag keeps closestCenter.
-  const pointer = args.pointerCoordinates;
   if (!pointer) return closestCenter(args);
-  const grid = document.querySelector("[data-grid]")?.getBoundingClientRect();
-  const onGrid =
-    grid !== undefined &&
-    pointer.x >= grid.left &&
-    pointer.x <= grid.right &&
-    pointer.y >= grid.top &&
-    pointer.y <= grid.bottom;
-  return onGrid ? closestCenter(args) : [];
+  return inView && within("[data-grid]") ? closestCenter(args) : [];
 };
 
 /** The date of the day a block sits on, which is when its cost was spent. */

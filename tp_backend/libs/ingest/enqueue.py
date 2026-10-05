@@ -98,23 +98,7 @@ def ensure_city_ingest(session: Session, city: City) -> IngestRun | None:
     return run
 
 
-def ensure_trip_plan(session: Session, trip: Trip, force: bool = False) -> IngestRun | None:
-    """Queue one route.plan for a trip, or None if it already has one.
-
-    Once only, ever, when automatic: the draft seeds empty days and a day the user has touched is
-    theirs, so a second pass has nothing to add. Keyed on the task's payload because runs are per
-    city, not per trip. `force` is the user asking again from the plan screen — the handler still
-    fills only empty days, so asking twice cannot overwrite anything.
-    """
-    if not force and session.scalars(
-        select(IngestTask.task_id).where(
-            IngestTask.kind == TaskKind.ROUTE_PLAN,
-            IngestTask.payload["trip_id"].astext == trip.trip_id,
-            IngestTask.payload["manual"].astext.is_(None),
-        )
-    ).first():
-        return None
-
+def ensure_trip_plan(session: Session, trip: Trip) -> IngestRun:
     run = IngestRun(run_id=str(uuid4()), city_id=trip.city_id, kind=RunKind.TRIP_PLANNING,
                     status=RunStatus.PENDING)
     session.add(run)
@@ -123,7 +107,7 @@ def ensure_trip_plan(session: Session, trip: Trip, force: bool = False) -> Inges
         "run_id": run.run_id,
         "kind": TaskKind.ROUTE_PLAN,
         "source": Source.GEMINI,
-        "payload": {"trip_id": trip.trip_id} | ({"manual": True} if force else {}),
+        "payload": {"trip_id": trip.trip_id},
         "dedupe_key": f"{TaskKind.ROUTE_PLAN}:{trip.trip_id}",
     }])
     session.commit()
@@ -146,14 +130,6 @@ def latest_runs(session: Session, city_ids: Sequence[str]) -> dict[str, IngestRu
     return out
 
 
-def all_settled(runs: dict[str, IngestRun], city_ids: Sequence[str]) -> bool:
-    return not any(runs[c].status in ACTIVE for c in city_ids if c in runs)
-
-
-def drew_something(runs: dict[str, IngestRun], city_ids: Sequence[str]) -> bool:
-    return any(c not in runs or runs[c].status == RunStatus.DONE for c in city_ids)
-
-
 def trip_ingest(runs: dict[str, IngestRun], city_ids: Sequence[str]) -> IngestRun | None:
     mine = [runs[c] for c in city_ids if c in runs]
     for wanted in (ACTIVE, (RunStatus.NEEDS_CREDENTIALS,), (RunStatus.DONE,)):
@@ -163,22 +139,17 @@ def trip_ingest(runs: dict[str, IngestRun], city_ids: Sequence[str]) -> IngestRu
     return mine[0] if mine else None
 
 
-def plan_after_ingest(session: Session, run_id: str) -> int:
+def claim_after_ingest(session: Session, run_id: str) -> None:
     run = session.get(IngestRun, run_id)
     if run is None or run.kind != RunKind.CITY_INGEST or run.status in ACTIVE:
-        return 0
+        return
     trips = session.scalars(
         select(Trip).where(covers_city(run.city_id), Trip.deleted.is_(False))
     ).all()
-    drafted = 0
     for t in trips:
         city_ids = cities_by_trip(session, [t.trip_id]).get(t.trip_id) or [run.city_id]
         for city_id in city_ids:
             claim_city_places(session, t.trip_id, city_id)
-        runs = latest_runs(session, city_ids)
-        if all_settled(runs, city_ids) and drew_something(runs, city_ids):
-            drafted += ensure_trip_plan(session, t) is not None
-    return drafted
 
 
 def seed_search_tasks(session: Session, run: IngestRun, city: City) -> None:

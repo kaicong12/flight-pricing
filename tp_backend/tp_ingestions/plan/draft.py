@@ -1,4 +1,4 @@
-"""route.plan — draft a first itinerary into a trip's empty days, so the plan screen opens filled.
+"""route.plan — draft an itinerary into a trip's empty days.
 
 The model picks the places and owns the clock. plan_day then judges the result against real opening
 hours and the named violations go back for one more attempt; nothing here reflows a block itself.
@@ -196,7 +196,6 @@ def propose(session: Session, trip: Trip, places, open_days) -> tuple[dict, int,
 
 
 NO_TRIP = "no_trip"
-ALREADY_PLANNING = "already_planning"
 ALL_DAYS_FILLED = "all_days_filled"
 NO_PLACES = "no_places"
 NOTHING_FIT = "nothing_fit"
@@ -209,23 +208,14 @@ def run(session: Session, task: ClaimedTask) -> dict:
     return out
 
 
-def by_hand(session: Session, task: ClaimedTask) -> bool:
-    """The button may promote a queued automatic draft while it runs."""
-    return bool(task.payload.get("manual") or session.scalar(
-        select(IngestTask.payload["manual"].astext).where(IngestTask.task_id == task.task_id)))
-
-
 def draft(session: Session, task: ClaimedTask) -> dict:
-    """Fill a trip's empty days. A day with anything on it is the user's, and the automatic draft
-    stands down entirely once the user has started planning."""
+    """Fill a trip's empty days. A day with anything on it is the user's."""
     trip_id = task.payload["trip_id"]
     trip = session.get(Trip, trip_id)
     if trip is None or trip.deleted:
         return {"skipped": NO_TRIP}
 
     filled = filled_days(session, trip_id)
-    if filled and not by_hand(session, task):
-        return {"skipped": ALREADY_PLANNING}
     open_days = [i for i in range(day_count(trip)) if i not in filled]
     if not open_days:
         return {"skipped": ALL_DAYS_FILLED}
@@ -239,8 +229,6 @@ def draft(session: Session, task: ClaimedTask) -> dict:
 
     lock_itinerary(session, trip_id)
     now_filled = filled_days(session, trip_id)
-    if now_filled and not by_hand(session, task):
-        return {"skipped": ALREADY_PLANNING}
     planned = set(session.scalars(
         select(ItineraryItem.place_id).where(ItineraryItem.trip_id == trip_id,
                                              ItineraryItem.place_id.is_not(None))).all())

@@ -71,15 +71,14 @@ def test_a_cold_city_logs_the_run_it_queued(client, caplog):
     assert HELSINKI in caplog.text
 
 
-def test_a_warm_city_logs_that_it_queued_a_draft_instead(client, db, caplog):
-    """The branch a response cannot show: whether anything is coming, or the draft is all there is."""
+def test_a_warm_city_logs_that_nothing_is_coming(client, db, caplog):
     make_city(db, last_ingested_at=datetime.now(UTC))
 
     with caplog.at_level(logging.INFO, logger="tp_api"):
         r = client.post("/initiate-plan", json=plan_body())
 
     assert r.json()["ingest"] is None, "the city was meant to be warm"
-    assert "ingest=warm, draft queued" in caplog.text
+    assert "ingest=warm" in caplog.text
 
 
 def test_a_failed_places_lookup_is_logged_at_warning(client, lookup, caplog):

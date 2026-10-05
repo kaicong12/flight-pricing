@@ -1,4 +1,4 @@
-"""A trip covering several cities: one run per city, one shortlist, one draft at the end."""
+"""A trip covering several cities: one run per city, one shortlist."""
 
 from datetime import UTC, date, datetime, timedelta
 
@@ -19,7 +19,7 @@ from libs.db import (
     claim_for_city_trips,
 )
 from libs.db.enums import Confidence, RunKind, RunStatus, Source, TaskKind, TripRole
-from libs.ingest import latest_runs, plan_after_ingest
+from libs.ingest import claim_after_ingest, latest_runs
 from libs.places import CityDetails, VenueHit
 from tp_api.deps import venue_lookup
 from tp_api.main import app
@@ -52,7 +52,7 @@ def settle(db, city_id, status=RunStatus.DONE):
     )
     db.execute(update(IngestRun).where(IngestRun.run_id == run_id).values(status=status))
     db.commit()
-    plan_after_ingest(db, run_id)
+    claim_after_ingest(db, run_id)
     db.commit()
     return run_id
 
@@ -124,19 +124,17 @@ def test_a_trip_lists_even_if_it_does_not_cover_its_own_anchor(client, db):
     assert [t["city"]["city_id"] for t in rows] == [HELSINKI]
 
 
-def test_every_city_warm_ingests_nothing_and_drafts_once(client, db, lookup):
+def test_every_city_warm_queues_nothing_at_all(client, db, lookup):
     make_city(db, last_ingested_at=datetime.now(UTC))
     make_city(db, city_id=PORTO, name="Porto", last_ingested_at=datetime.now(UTC))
 
     body = client.post("/initiate-plan", json=two_cities(lookup)).json()
 
     assert body["ingest"] is None
-    assert db.scalars(select(IngestRun.kind)).all() == [RunKind.TRIP_PLANNING]
-    assert len(drafts(db, body["trip_id"])) == 1
+    assert db.scalars(select(IngestRun.kind)).all() == []
     got = client.get(f"/trips/{body['trip_id']}").json()
     assert got["ingest"] is None
-    assert [(p["kind"], p["status"]) for p in got["progress"]] \
-        == [(TaskKind.ROUTE_PLAN, "pending")]
+    assert got["progress"] == []
 
 
 def test_two_cities_sharing_a_language_still_get_distinct_seed_tasks(client, db, lookup):
@@ -204,41 +202,27 @@ def test_a_warm_city_is_nothing_to_wait_for(client, db, lookup):
     trip_id = client.post("/initiate-plan", json=two_cities(lookup)).json()["trip_id"]
 
     assert set(db.scalars(select(IngestRun.city_id))) == {HELSINKI}, "only the cold city runs"
-    assert drafts(db, trip_id) == [], "one city is still cold, so nothing to draft from yet"
 
     settle(db, HELSINKI)
 
     assert client.get(f"/trips/{trip_id}").json()["ingest"]["status"] == RunStatus.DONE
-    assert len(drafts(db, trip_id)) == 1
 
 
-def test_the_draft_waits_for_the_last_city_and_happens_once(client, db, lookup):
-    trip_id = client.post("/initiate-plan", json=two_cities(lookup)).json()["trip_id"]
-
-    settle(db, HELSINKI)
-    assert drafts(db, trip_id) == [], "Porto's places would have been missing from this draft"
-
-    settle(db, PORTO)
-    assert len(drafts(db, trip_id)) == 1
-
-
-def test_one_failed_city_does_not_cost_the_trip_its_draft(client, db, lookup):
+def test_one_failed_city_still_leaves_the_trip_done(client, db, lookup):
     trip_id = client.post("/initiate-plan", json=two_cities(lookup)).json()["trip_id"]
 
     settle(db, HELSINKI, status=RunStatus.FAILED)
     settle(db, PORTO)
 
-    assert len(drafts(db, trip_id)) == 1, "Porto succeeded, so there is a shortlist to draft"
     assert client.get(f"/trips/{trip_id}").json()["ingest"]["status"] == RunStatus.DONE
 
 
-def test_every_city_failing_is_terminal_with_no_draft(client, db, lookup):
+def test_every_city_failing_is_terminal(client, db, lookup):
     trip_id = client.post("/initiate-plan", json=two_cities(lookup)).json()["trip_id"]
 
     settle(db, HELSINKI, status=RunStatus.FAILED)
     settle(db, PORTO, status=RunStatus.FAILED)
 
-    assert drafts(db, trip_id) == [], "nothing was ingested, so there is nothing to arrange"
     status = client.get(f"/trips/{trip_id}").json()["ingest"]["status"]
     assert status == RunStatus.FAILED, "terminal, so the client stops polling"
 
@@ -278,16 +262,6 @@ def test_a_trip_with_no_trip_cities_rows_reads_as_its_anchor(client, db):
     assert [t["trip_id"] for t in client.get("/trips").json()] == [trip_id]
 
 
-def test_the_draft_still_fires_when_the_last_city_is_the_one_that_failed(client, db, lookup):
-    trip_id = client.post("/initiate-plan", json=two_cities(lookup)).json()["trip_id"]
-
-    settle(db, HELSINKI)
-    settle(db, PORTO, status=RunStatus.FAILED)
-
-    assert len(drafts(db, trip_id)) == 1
-    assert client.get(f"/trips/{trip_id}").json()["ingest"]["status"] == RunStatus.DONE
-
-
 def test_a_city_wanting_credentials_is_not_hidden_behind_one_that_worked(client, db, lookup):
     trip_id = client.post("/initiate-plan", json=two_cities(lookup)).json()["trip_id"]
 
@@ -296,19 +270,16 @@ def test_a_city_wanting_credentials_is_not_hidden_behind_one_that_worked(client,
 
     assert client.get(f"/trips/{trip_id}").json()["ingest"]["status"] \
         == RunStatus.NEEDS_CREDENTIALS
-    assert len(drafts(db, trip_id)) == 1, "Helsinki still gave the trip something to arrange"
 
 
-def test_drafting_by_hand_mid_ingestion_does_not_consume_the_automatic_draft(client, db, lookup):
+def test_drafting_by_hand_mid_ingestion_is_the_only_draft(client, db, lookup):
     trip_id = client.post("/initiate-plan", json=two_cities(lookup)).json()["trip_id"]
     settle(db, HELSINKI)
 
     assert client.post(f"/trips/{trip_id}/draft").status_code == 202
-    assert len(drafts(db, trip_id)) == 1, "the user's own draft, off a half-built shortlist"
-
     settle(db, PORTO)
 
-    assert len(drafts(db, trip_id)) == 2, "Porto's places still get a draft of their own"
+    assert len(drafts(db, trip_id)) == 1
 
 
 def test_settling_one_city_claims_places_filed_under_another(client, db, lookup):

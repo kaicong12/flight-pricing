@@ -7,7 +7,7 @@ from sqlalchemy import func, select, update
 
 from libs.db import City, IngestRun, IngestTask, Place, Trip, TripPlace
 from libs.db.enums import Confidence, RunStatus, TaskKind
-from libs.ingest import plan_after_ingest
+from libs.ingest import claim_after_ingest
 from libs.places import NotACity, PlacesError
 from tp_api.schemas import today_utc
 
@@ -54,9 +54,7 @@ def test_warm_city_returns_no_ingest(client, db):
 
     assert body["ingest"] is None
     assert db.get(Trip, body["trip_id"]) is not None
-    kinds = db.scalars(select(IngestTask.kind)).all()
-    assert kinds == [TaskKind.ROUTE_PLAN]
-    assert db.scalar(select(IngestTask.payload)) == {"trip_id": body["trip_id"]}
+    assert db.scalars(select(IngestTask.kind)).all() == []
 
 
 def test_a_new_trip_claims_the_city_places_that_already_exist(client, db):
@@ -72,7 +70,7 @@ def test_a_new_trip_claims_the_city_places_that_already_exist(client, db):
 
 
 def test_a_trip_created_mid_run_catches_up_when_the_run_settles(client, db):
-    """Neither the trip nor a resolve task sees the other's uncommitted rows, so plan_after_ingest
+    """Neither the trip nor a resolve task sees the other's uncommitted rows, so claim_after_ingest
     reconciles rather than anything locking."""
     run_id = client.post("/initiate-plan", json=plan_body()).json()["ingest"]["run_id"]
     trip_id = db.scalar(select(Trip.trip_id))
@@ -80,21 +78,11 @@ def test_a_trip_created_mid_run_catches_up_when_the_run_settles(client, db):
     db.execute(update(IngestRun).values(status=RunStatus.DONE))
     db.commit()
 
-    plan_after_ingest(db, run_id)
+    claim_after_ingest(db, run_id)
     db.commit()
 
     assert set(db.scalars(select(TripPlace.place_id).where(TripPlace.trip_id == trip_id))) \
         == {"missed"}
-
-
-def test_a_second_trip_on_a_warm_city_gets_its_own_draft(client, db):
-    make_city(db, last_ingested_at=datetime.now(UTC) - timedelta(days=2))
-
-    first = client.post("/initiate-plan", json=plan_body()).json()
-    second = client.post("/initiate-plan", json=plan_body()).json()
-
-    drafted = {r["trip_id"] for r in db.scalars(select(IngestTask.payload)).all()}
-    assert drafted == {first["trip_id"], second["trip_id"]}
 
 
 def test_a_place_that_is_not_a_city_is_rejected(client, lookup):

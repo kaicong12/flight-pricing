@@ -1,11 +1,17 @@
 """GET /trips/{trip_id}: what the loading screen polls."""
 
+import threading
+import time
+
 from conftest import plan_body
 from sqlalchemy import select, update
+from sqlalchemy.orm import sessionmaker
 
 from libs.db import IngestTask, Trip
 from libs.db.enums import ErrorCode, TaskKind, TaskStatus
-from libs.ingest.enqueue import ensure_trip_plan
+from libs.ingest import ensure_trip_plan
+from tp_api.main import draft_trip
+from tp_api.route_planning.service import lock_itinerary
 from tp_ingestions.plan import draft
 
 
@@ -118,8 +124,22 @@ def test_drafting_twice_does_not_queue_a_second_pending_task(client):
     assert [(r["status"], r["count"]) for r in rows] == [(TaskStatus.PENDING, 1)]
 
 
+def test_two_drafts_asked_for_at_once_queue_one(client, db, engine):
+    trip_id = client.post("/initiate-plan", json=plan_body()).json()["trip_id"]
+    other = sessionmaker(bind=engine, expire_on_commit=False, future=True)()
+    second = threading.Thread(target=lambda: (draft_trip(trip_id, other), other.close()))
+
+    lock_itinerary(db, trip_id)
+    second.start()
+    time.sleep(0.3)
+    ensure_trip_plan(db, db.get(Trip, trip_id))
+    second.join(10)
+
+    queued = db.scalars(select(IngestTask).where(IngestTask.kind == TaskKind.ROUTE_PLAN)).all()
+    assert len(queued) == 1
+
+
 def test_a_finished_draft_can_be_asked_for_again(client, db):
-    """`force` exists for exactly this: the automatic path is once-ever, the button is not."""
     trip_id = client.post("/initiate-plan", json=plan_body()).json()["trip_id"]
     client.post(f"/trips/{trip_id}/draft")
     db.execute(update(IngestTask)
@@ -190,14 +210,3 @@ def test_drafting_a_trip_with_every_day_filled_is_a_409(client):
 
     assert r.status_code == 409
     assert "already has something in it" in r.json()["detail"]
-
-
-def test_asking_while_the_automatic_draft_is_queued_makes_it_a_manual_one(client, db):
-    trip_id = client.post("/initiate-plan", json=plan_body()).json()["trip_id"]
-    ensure_trip_plan(db, db.get(Trip, trip_id))
-    queued = db.scalars(select(IngestTask).where(IngestTask.kind == TaskKind.ROUTE_PLAN)).one()
-
-    assert client.post(f"/trips/{trip_id}/draft").json()["status"] == TaskStatus.PENDING
-
-    db.refresh(queued)
-    assert queued.payload["manual"] is True
