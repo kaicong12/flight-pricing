@@ -31,6 +31,7 @@ export function ActivityBlock({
   cost,
   onRemove,
   onResize,
+  onPreview,
   onEdit,
 }: {
   /** Positioned by this day's share of the block, which `piece` describes. */
@@ -44,6 +45,7 @@ export function ActivityBlock({
   cost: string | null;
   onRemove: () => void;
   onResize: (startMin: number, durationMin: number) => void;
+  onPreview: (next: { start_min: number; duration_min: number } | null) => void;
   onEdit: () => void;
 }) {
   const { lane, lanes } = placed;
@@ -75,17 +77,28 @@ export function ActivityBlock({
     let next = { start_min: item.start_min, duration_min: item.duration_min };
     const move = (ev: PointerEvent) => {
       const top = grid.getBoundingClientRect().top;
-      next = resize(item, edge, slotAt(ev.clientY - top, slotPx), offset);
+      const to = resize(item, edge, slotAt(ev.clientY - top, slotPx), offset);
+      if (to.start_min === next.start_min && to.duration_min === next.duration_min) return;
+      next = to;
+      onPreview(next);
     };
-    const up = () => {
+    const end = (commit: boolean) => () => {
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
-      if (next.start_min !== item.start_min || next.duration_min !== item.duration_min) {
+      window.removeEventListener("pointercancel", cancel);
+      onPreview(null);
+      if (
+        commit &&
+        (next.start_min !== item.start_min || next.duration_min !== item.duration_min)
+      ) {
         onResize(next.start_min, next.duration_min);
       }
     };
+    const up = end(true);
+    const cancel = end(false);
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", up);
+    window.addEventListener("pointercancel", cancel);
   };
 
   return (
@@ -121,7 +134,7 @@ export function ActivityBlock({
           ref={setNodeRef}
           {...attributes}
           {...listeners}
-          onClick={continued && !readOnly ? onEdit : undefined}
+          onClick={readOnly ? undefined : onEdit}
           className={cn(
             "min-h-0 flex-1 touch-none outline-none focus-visible:ring-3 focus-visible:ring-ring/50",
             continued ? "cursor-pointer" : "cursor-grab active:cursor-grabbing",
