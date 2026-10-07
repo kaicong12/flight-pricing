@@ -114,7 +114,9 @@ every filter chip. A person's answer beats the videos'. The user drags
 them into days; `PUT /trips/{id}/itinerary` replaces whole days, because a drag is a statement about a
 sequence and positions are dense and derived. A drag snaps to the half hour; the block dialog types any
 minute, and may end a block on a later day. That block stays **one row on the day it starts** — one
-`block_id`, so one cost — and the grid draws its tail on each day it reaches (`piecesOn`). `POST
+`block_id`, so one cost — and the grid draws its tail on each day it reaches (`piecesOn`). A click on
+any block opens that dialog. A resize is a preview `DayColumn` lays out until release — it never
+enters the plan state, so nothing saves or re-checks mid-drag. `POST
 /trips/{id}/days/{n}/route` then checks that exact order against Place Details hours and returns
 structured warning codes — the client owns the English. **Travel between blocks is not modelled at
 all** — not the time, not the distance, not whether a route exists. A day may name two places on

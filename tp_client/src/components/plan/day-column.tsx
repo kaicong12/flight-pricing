@@ -78,6 +78,11 @@ export function DayColumn({
 }) {
   const [adding, setAdding] = useState<number | null>(null);
   const [editing, setEditing] = useState<ItineraryItem | null>(null);
+  const [preview, setPreview] = useState<{
+    key: string;
+    start_min: number;
+    duration_min: number;
+  } | null>(null);
 
   const byBlock = new Map((route?.blocks ?? []).map((b) => [keyOf(b), b]));
   const perBlock = new Map<string, PlanWarning[]>();
@@ -88,7 +93,7 @@ export function DayColumn({
   }
 
   const warningCount = stale ? 0 : (route?.warnings.length ?? 0);
-  const pieces = piecesOn(days, day.day_index);
+  const pieces = piecesOn(preview ? withPreview(days, preview) : days, day.day_index);
   const pieceOf = new Map(pieces.map((p) => [keyOf(p.item), p]));
   const placed = layout(
     pieces.map((p) => ({ ...p.item, start_min: p.from, duration_min: p.to - p.from })),
@@ -208,6 +213,7 @@ export function DayColumn({
                 onResize={(startMin, durationMin) =>
                   onResize(keyOf(p.item), startMin, durationMin)
                 }
+                onPreview={(next) => setPreview(next && { key: keyOf(p.item), ...next })}
               />
             ))}
           </div>
@@ -258,6 +264,16 @@ export function DayColumn({
       )}
     </div>
   );
+}
+
+function withPreview(
+  days: ItineraryDay[],
+  { key, start_min, duration_min }: { key: string; start_min: number; duration_min: number },
+): ItineraryDay[] {
+  return days.map((d) => ({
+    ...d,
+    items: d.items.map((i) => (keyOf(i) === key ? { ...i, start_min, duration_min } : i)),
+  }));
 }
 
 /** One half hour. Being a droppable is what makes a drop report a time rather than a pixel, and a

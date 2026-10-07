@@ -29,8 +29,9 @@ signs in once in the Playwright browser; the session cookie then lasts the run.
    forever, and the title reads "Tromsø + …".
 2. **Shortlist.** Places load; each category chip filters; the source filter (YouTube / RedNote) narrows
    with a chip still applied; "Show more" pages.
-3. **Plan.** Drag a place onto a slot; drag it later; resize both edges (30-minute snap). The grid runs
-   00:00–24:00 and the flight hours are hatched.
+3. **Plan.** Drag a place onto a slot; drag it later; resize both edges (30-minute snap) — the block and
+   its neighbours' lanes redraw while held, and the day saves and re-checks only on release. A click on
+   any block opens its dialog; a drag never does. The grid runs 00:00–24:00 and the flight hours are hatched.
 4. **Custom block.** "+" on a slot, type exact minutes (e.g. 07:13–07:20); it keeps them after a reload.
    Add an overnight one ending on the next day: it draws on both days, its tail opens the dialog, the last
    day's bottom edge resizes it, and a time past the departure is refused.
