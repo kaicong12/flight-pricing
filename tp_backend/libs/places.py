@@ -22,7 +22,7 @@ VENUE_DETAIL_FIELDS = ("id,displayName,formattedAddress,location,types,primaryTy
                        "addressComponents")
 
 # ~111 km per degree of latitude; longitude scales with cos(latitude).
-_KM_PER_DEG_LAT = 111.0
+KM_PER_DEG_LAT = 111.0
 
 # Autocomplete restricted to (cities) can still return a region or a district, but never a venue.
 CITY_TYPES = {"locality", "administrative_area_level_1", "administrative_area_level_2",
@@ -77,8 +77,8 @@ class CityDetails:
 def distance_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     """Equirectangular, which is accurate enough over a city and cheap."""
     mean = math.radians((lat1 + lat2) / 2)
-    dx = (lon2 - lon1) * _KM_PER_DEG_LAT * math.cos(mean)
-    dy = (lat2 - lat1) * _KM_PER_DEG_LAT
+    dx = (lon2 - lon1) * KM_PER_DEG_LAT * math.cos(mean)
+    dy = (lat2 - lat1) * KM_PER_DEG_LAT
     return math.hypot(dx, dy)
 
 
@@ -173,7 +173,7 @@ def search_venue(query: str, lat: float, lon: float, radius_m: int,
         raise PlacesError("GOOGLE_API_KEY is not set")
 
     # locationRestriction takes a rectangle only; a circle is a 400.
-    d_lat = radius_m / 1000 / _KM_PER_DEG_LAT
+    d_lat = radius_m / 1000 / KM_PER_DEG_LAT
     d_lon = d_lat / max(math.cos(math.radians(lat)), 0.01)
     body = {
         "textQuery": query,

@@ -81,6 +81,7 @@ export function PlanBoard({
   );
   const [category, setCategory] = useState<string | null>(null);
   const [source, setSource] = useState<ShortlistSource | null>(null);
+  const [city, setCity] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [q, setQ] = useState("");
   const [dragging, setDragging] = useState<string | null>(null);
@@ -88,6 +89,7 @@ export function PlanBoard({
   const [loaded, setLoaded] = useState({
     category: null as string | null,
     source: null as ShortlistSource | null,
+    city: null as string | null,
     q: "",
   });
   const [expenses, setExpenses] = useState(initialExpenses);
@@ -230,7 +232,8 @@ export function PlanBoard({
     return () => clearTimeout(timer);
   }, [search]);
 
-  const settled = loaded.category === category && loaded.source === source && loaded.q === q;
+  const settled =
+    loaded.category === category && loaded.source === source && loaded.city === city && loaded.q === q;
   useEffect(() => {
     if (settled) return;
     const controller = new AbortController();
@@ -238,6 +241,7 @@ export function PlanBoard({
       const query = new URLSearchParams({ limit: String(PAGE) });
       if (category) query.set("category", category);
       if (source) query.set("source", source);
+      if (city) query.set("city", city);
       if (q) query.set("q", q);
       try {
         const r = await fetch(`/api/trips/${trip.trip_id}/shortlist?${query}`, {
@@ -248,25 +252,26 @@ export function PlanBoard({
             type: "shortlistLoaded",
             shortlist: await r.json(),
             append: false,
-            unfiltered: !category && !source && !q,
+            unfiltered: !category && !source && !city && !q,
           });
-          setLoaded({ category, source, q });
+          setLoaded({ category, source, city, q });
         }
       } catch {
       }
     })();
     return () => controller.abort();
-  }, [settled, category, source, q, trip.trip_id]);
+  }, [settled, category, source, city, q, trip.trip_id]);
 
   const loadMore = useCallback(async () => {
     const offset = state.shortlist.length;
     const query = new URLSearchParams({ limit: String(PAGE), offset: String(offset) });
     if (category) query.set("category", category);
     if (source) query.set("source", source);
+    if (city) query.set("city", city);
     if (q) query.set("q", q);
     const r = await fetch(`/api/trips/${trip.trip_id}/shortlist?${query}`);
     if (r.ok) dispatch({ type: "shortlistLoaded", shortlist: await r.json(), append: true });
-  }, [category, source, q, state.shortlist.length, trip.trip_id]);
+  }, [category, source, city, q, state.shortlist.length, trip.trip_id]);
 
   const dismiss = useCallback(
     async (place: ShortlistPlace) => {
@@ -320,11 +325,16 @@ export function PlanBoard({
       dispatch({
         type: "placeAdded",
         place: (await r.json()) as ShortlistPlace,
-        filter: { category, source, q },
+        filter: {
+          category,
+          source,
+          q,
+          cityName: trip.cities.find((c) => c.city_id === city)?.name ?? null,
+        },
       });
       return null;
     },
-    [category, source, q, trip.trip_id],
+    [category, source, city, q, trip.cities, trip.trip_id],
   );
 
   function onDragStart(event: DragStartEvent) {
@@ -407,6 +417,9 @@ export function PlanBoard({
           onCategory={setCategory}
           source={source}
           onSource={setSource}
+          cities={trip.cities}
+          city={city}
+          onCity={setCity}
           search={search}
           searched={q}
           onSearch={setSearch}

@@ -205,6 +205,19 @@ class TestShortlist:
         places = client.get(f"/trips/{trip}/shortlist?category=eat").json()["places"]
         assert [p["name"] for p in places] == ["Restaurant"]
 
+    def test_a_category_filter_reaches_past_the_first_page(self, client, db):
+        trip = make_trip(client)
+        for i in range(3):
+            make_place(db, place_id=f"s{i}", name=f"Sight {i}")
+            make_mention(db, f"s{i}", category="see", source_ref=f"a{i}")
+            make_mention(db, f"s{i}", category="see", source_ref=f"b{i}")
+        make_place(db, place_id="e", name="Restaurant")
+        make_mention(db, "e", category="eat", source_ref="c")
+
+        body = client.get(f"/trips/{trip}/shortlist?category=eat&limit=2").json()
+        assert [p["name"] for p in body["places"]] == ["Restaurant"]
+        assert body["total"] == 1
+
     def test_a_place_on_a_day_is_flagged_with_that_day(self, client, db):
         trip = make_trip(client)
         seed(db, ("p1", "Added", 1), ("p2", "Not added", 1))

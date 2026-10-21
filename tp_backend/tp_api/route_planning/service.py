@@ -12,7 +12,7 @@ from collections.abc import Sequence
 from datetime import UTC, date, datetime, time, timedelta
 
 from fastapi import HTTPException
-from sqlalchemy import Row, delete, func, or_, select
+from sqlalchemy import Row, delete, false, func, or_, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
@@ -32,7 +32,7 @@ from libs.db import (
     upsert_place,
 )
 from libs.db.enums import Confidence, Sentiment, Source
-from libs.places import PlacesError, distance_km
+from libs.places import KM_PER_DEG_LAT, PlacesError, distance_km
 from libs.routing import Block, Stop, hhmm, plan_day
 from libs.settings import settings
 from tp_api.deps import HoursLookup, VenueLookup, VenueSearch
@@ -109,7 +109,8 @@ def mention_facts(db: Session, place_ids: Sequence[str]) -> dict[str, tuple[str 
                 and len(r.why_go) > len(blurbs.get(r.place_id, ""))):
             blurbs[r.place_id] = r.why_go
 
-    return {pid: (categories[pid].most_common(1)[0][0] if pid in categories else None,
+    return {pid: (max(sorted(categories[pid]), key=categories[pid].get)
+                  if pid in categories else None,
                   blurbs.get(pid))
             for pid in set(place_ids)}
 
@@ -167,12 +168,13 @@ def in_shortlist(trip: Trip | type[Trip]):
 
 def shortlist(db: Session, trip_id: str, limit: int, offset: int,
               category: str | None, source: Source | None = None,
-              q: str | None = None) -> ShortlistOut:
+              q: str | None = None, city_id: str | None = None) -> ShortlistOut:
     """The trip's places, ranked by how many independent sources mentioned each one.
 
     `source` keeps a place any one of whose mentions came from it, so a hand-added place drops out.
     """
     trip = get_trip(db, trip_id)
+    cities = trip_cities(db, trip)
 
     mentions = (
         select(PlaceMention.place_id.label("place_id"), func.count().label("mention_count"))
@@ -188,12 +190,22 @@ def shortlist(db: Session, trip_id: str, limit: int, offset: int,
         .subquery()
     )
 
+    modal = (
+        select(PlaceMention.place_id.label("place_id"),
+               func.mode().within_group(PlaceMention.category).label("category"))
+        .where(PlaceMention.category.is_not(None))
+        .group_by(PlaceMention.place_id)
+        .subquery()
+    )
+    cat = func.coalesce(Place.category, modal.c.category)
+
     stmt = (
         select(Place, rank.label("mention_count"),
-               placed.c.day_index,
+               placed.c.day_index, cat.label("category"),
                func.count().over().label("total"))
         .outerjoin(mentions, mentions.c.place_id == Place.place_id)
         .outerjoin(placed, placed.c.place_id == Place.place_id)
+        .outerjoin(modal, modal.c.place_id == Place.place_id)
         .where(in_shortlist(trip),
                ~select(TripDismissal.place_id)
                .where(TripDismissal.trip_id == trip_id,
@@ -203,6 +215,13 @@ def shortlist(db: Session, trip_id: str, limit: int, offset: int,
         .limit(limit)
         .offset(offset)
     )
+    if category:
+        stmt = stmt.where(cat == category)
+    if city_id:
+        city = next((c for c in cities if c.city_id == city_id), None)
+        if city is None:
+            raise HTTPException(422, "that city is not on this trip")
+        stmt = stmt.where(inside_sql(city))
     if source:
         stmt = stmt.where(select(PlaceMention.place_id)
                           .where(PlaceMention.place_id == Place.place_id,
@@ -221,16 +240,12 @@ def shortlist(db: Session, trip_id: str, limit: int, offset: int,
     place_ids = [r.Place.place_id for r in rows]
     facts = mention_facts(db, place_ids)
     srcs = mention_sources(db, place_ids)
-    if category:
-        rows = [r for r in rows if category_of(r.Place, facts) == category]
 
-    cities = trip_cities(db, trip)
     filed = {c.city_id: c for c in db.scalars(
         select(City).where(City.city_id.in_({r.Place.city_id for r in rows})))}
     places = []
     for r in rows:
         _, why_go = facts.get(r.Place.place_id, (None, None))
-        cat = category_of(r.Place, facts)
         p = r.Place
         places.append(ShortlistPlaceOut(
             place_id=p.place_id, city_id=p.city_id,
@@ -238,7 +253,7 @@ def shortlist(db: Session, trip_id: str, limit: int, offset: int,
             name=p.name, address=p.address,
             lat=p.lat, lon=p.lon,
             primary_type=p.primary_type,
-            category=cat, why_go=why_go, sources=srcs.get(p.place_id, []),
+            category=r.category, why_go=why_go, sources=srcs.get(p.place_id, []),
             mention_count=r.mention_count, in_itinerary=r.day_index is not None,
             day_index=r.day_index,
         ))
@@ -406,6 +421,15 @@ def _inside(city: City, place: Place) -> bool:
         return False
     km = distance_km(city.lat, city.lon, place.lat, place.lon)
     return km * 1000 <= settings().places_search_radius_m
+
+
+def inside_sql(city: City):
+    """`_inside` as a predicate, so a city filter pages like any other."""
+    if city.lat is None or city.lon is None:
+        return false()
+    dx = (Place.lon - city.lon) * KM_PER_DEG_LAT * func.cos(func.radians((Place.lat + city.lat) / 2))
+    dy = (Place.lat - city.lat) * KM_PER_DEG_LAT
+    return dx * dx + dy * dy <= (settings().places_search_radius_m / 1000) ** 2
 
 
 def city_label(place: Place, cities: Sequence[City], filed: City | None) -> str | None:
