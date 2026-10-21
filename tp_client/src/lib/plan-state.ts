@@ -50,7 +50,12 @@ export type PlanAction =
   | { type: "shortlistLoaded"; shortlist: Shortlist; append: boolean; unfiltered?: boolean }
   | { type: "placeAdded"; place: ShortlistPlace; filter?: ShortlistFilter };
 
-export type ShortlistFilter = { category: string | null; source: string | null; q: string };
+export type ShortlistFilter = {
+  category: string | null;
+  source: string | null;
+  q: string;
+  cityName: string | null;
+};
 
 /** The server's filter, for a place it ranks last and so would page out of sight. */
 export function fits(place: ShortlistPlace, filter: ShortlistFilter): boolean {
@@ -58,6 +63,7 @@ export function fits(place: ShortlistPlace, filter: ShortlistFilter): boolean {
   return (
     !filter.source &&
     (!filter.category || place.category === filter.category) &&
+    (!filter.cityName || place.city_name === filter.cityName) &&
     (!q || [place.name, place.address, place.why_go].some((s) => s?.toLowerCase().includes(q)))
   );
 }

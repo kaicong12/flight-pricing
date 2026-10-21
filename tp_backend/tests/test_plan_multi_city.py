@@ -289,3 +289,22 @@ def test_the_shortlist_search_matches_name_address_and_why_go(client, db, lookup
     assert names("100%_") == ["Bolhão"]
     assert names("B%o") == []
     assert sorted(names("  ")) == ["Bolhão", "Löyly"]
+
+
+def test_the_shortlist_filters_to_one_city(client, db, lookup):
+    trip = two_city_trip(client, lookup)
+    make_place(db, city_id=HELSINKI, place_id="hel", name="Suomenlinna")
+    make_mention(db, "hel")
+    make_place(db, city_id=PORTO, place_id="por", name="Jardim do Morro")
+    make_mention(db, "por", source_ref="r2")
+    make_place(db, city_id=PORTO, place_id="far", name="Filed in Porto, in Helsinki",
+               lat=60.17, lon=24.94)
+    make_mention(db, "far", source_ref="r3")
+
+    def names(city):
+        r = client.get(f"/trips/{trip}/shortlist", params={"city": city})
+        return sorted(p["name"] for p in r.json()["places"])
+
+    assert names(HELSINKI) == ["Filed in Porto, in Helsinki", "Suomenlinna"]
+    assert names(PORTO) == ["Jardim do Morro"]
+    assert client.get(f"/trips/{trip}/shortlist", params={"city": SINGAPORE}).status_code == 422

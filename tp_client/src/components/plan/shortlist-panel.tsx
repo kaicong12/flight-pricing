@@ -8,7 +8,9 @@ import { useRef } from "react";
 import { FilterChip } from "@/components/ui/filter-chip";
 import { Kbd } from "@/components/ui/kbd";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import type { City } from "@/lib/api-types";
 import type { ShortlistPlace, ShortlistSource } from "@/lib/plan-types";
+import { cityColor } from "@/lib/trips";
 import { useShortcut } from "@/lib/use-shortcut";
 import { cn } from "@/lib/utils";
 
@@ -32,6 +34,9 @@ export function ShortlistPanel({
   onCategory,
   source,
   onSource,
+  cities,
+  city,
+  onCity,
   search,
   searched,
   onSearch,
@@ -50,6 +55,9 @@ export function ShortlistPanel({
   /** Null is every source, which is also the only filter that keeps a place added by hand. */
   source: ShortlistSource | null;
   onSource: (source: ShortlistSource | null) => void;
+  cities: City[];
+  city: string | null;
+  onCity: (city: string | null) => void;
   search: string;
   /** The search the list on screen answers, which trails `search` by a debounce. */
   searched: string;
@@ -111,6 +119,23 @@ export function ShortlistPanel({
           <SourceFilter source={source} onSource={onSource} />
         </div>
 
+        {cities.length > 1 && (
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            <FilterChip active={city === null} onClick={() => onCity(null)}>
+              All cities
+            </FilterChip>
+            {cities.map((c) => (
+              <FilterChip key={c.city_id} active={city === c.city_id} onClick={() => onCity(c.city_id)}>
+                <span
+                  className="mr-1.5 size-1.5 rounded-full"
+                  style={{ background: cityColor(cities, c.city_id) ?? undefined }}
+                />
+                {c.name}
+              </FilterChip>
+            ))}
+          </div>
+        )}
+
         {!readOnly && (
           <PlaceSearch tripId={tripId} categories={CATEGORIES} onAdd={onAdd} />
         )}
@@ -122,10 +147,10 @@ export function ShortlistPanel({
             ? "Loading the shortlist…"
             : searched
               ? `Nothing on the shortlist matches “${searched}”.`
-              : category || source
+              : category || source || city
               ? `Nothing ${category ? `tagged ${category} ` : ""}${
                   source ? `from ${SOURCES.find((x) => x.id === source)?.label} ` : ""
-                }yet.`
+                }${city ? `in ${cities.find((c) => c.city_id === city)?.name} ` : ""}yet.`
               : "No places yet. The ingestion may still be running."}
         </p>
       ) : (
@@ -143,7 +168,7 @@ export function ShortlistPanel({
         </ul>
       )}
 
-      {places.length < total && !category && (
+      {places.length < total && (
         <button
           type="button"
           onClick={onMore}
