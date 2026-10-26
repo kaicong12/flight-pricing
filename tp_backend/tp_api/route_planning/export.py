@@ -9,6 +9,7 @@ from datetime import UTC, date, datetime, timedelta
 from io import BytesIO
 
 from openpyxl import Workbook
+from openpyxl.comments import Comment
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.datavalidation import DataValidation
@@ -27,6 +28,7 @@ INK, PAPER, SAND = "252B20", "FDFBF3", "F3F0E6"
 BRAND, BRAND_BG = "2C6B64", "E5EFEC"
 ALERT = "8B4526"
 FAINT, HAIRLINE = "98A08D", "E3DDCB"
+OK, OK_BG, PART_BG = "4E7A45", "E9F0E0", "F6E7C8"
 
 LINK_ICON = "🔗"
 
@@ -41,6 +43,7 @@ EXPENSE_COLUMNS = [("Day", 6), ("Date", 10), ("Expense", 34), ("Paid by", 18), (
 CENTRED = {"#", "Start", "End", "Ref", "Source", "Mentions", "Used on", "Cur"}
 WRAPPED = {"Block", "Details", "Why go", "Expense"}
 MONEY_FORMAT = "#,##0.00"
+PAID_FORMAT = '"✓ "' + MONEY_FORMAT
 
 META_SHEET = "_trip_planner"
 MARKER = "trip-planner-export"
@@ -245,6 +248,21 @@ def _money(ws: Worksheet, row: int, column: int, cents: int | None, *, bold: boo
     cell.font = Font(color=ink, bold=bold)
 
 
+def _paid_share(ws: Worksheet, row: int, column: int, owed: int, paid: int) -> None:
+    if not paid:
+        return
+    cell = ws.cell(row=row, column=column)
+    if paid >= owed:
+        cell.number_format = PAID_FORMAT
+        cell.font = Font(color=OK)
+        cell.fill = PatternFill("solid", fgColor=OK_BG)
+    else:
+        cell.fill = PatternFill("solid", fgColor=PART_BG)
+    if paid != owed:
+        rest = f"{abs(owed - paid) / 100:,.2f} {'left' if paid < owed else 'over'}"
+        cell.comment = Comment(f"{paid / 100:,.2f} paid · {rest}", "Trip Planner")
+
+
 def _who(member) -> str:
     return (member.name or member.email).split()[0].split("@")[0]
 
@@ -265,8 +283,10 @@ def expenses_sheet(ws: Worksheet, db: Session, trip: Trip) -> None:
 
     ws.cell(row=1, column=1, value="Expenses · who paid, and what each person owes of it").font = (
         Font(bold=True, size=14, color=INK))
+    paid_any = any(s.paid_cents for e in tab.expenses for s in e.shares)
     ws.cell(row=2, column=1, value="every amount is in the expense's own currency — nothing here "
-            "is converted").font = Font(color=FAINT, size=10)
+            "is converted" + (" · ✓ share paid" if paid_any else "")).font = Font(color=FAINT,
+                                                                                   size=10)
     _header(ws, 3, columns)
 
     by_date: dict[date, list] = {}
@@ -285,6 +305,7 @@ def expenses_sheet(ws: Worksheet, db: Session, trip: Trip) -> None:
         top = at
         for n, e in enumerate(items, start=1):
             share = {s.user_id: s.amount_cents for s in e.shares}
+            paid = {s.user_id: s.paid_cents for s in e.shares}
             what = (f"{e.description} · {e.block_title}"
                     if e.block_title and e.block_title != e.description else e.description)
             _body_row(ws, at, columns,
@@ -296,6 +317,9 @@ def expenses_sheet(ws: Worksheet, db: Session, trip: Trip) -> None:
             for i, m in enumerate(people):
                 _money(ws, at, len(EXPENSE_COLUMNS) + 1 + i, share.get(m.user_id),
                        ink=FAINT if m.user_id != e.payer_id else INK)
+                if m.user_id in share:
+                    _paid_share(ws, at, len(EXPENSE_COLUMNS) + 1 + i, share[m.user_id],
+                                paid[m.user_id])
             at += 1
         _merge_down(ws, top, at - 1, (1, 2))
 

@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/dialog";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import type { Member, TripRole, User } from "@/lib/api-types";
+import { type Expense, money } from "@/lib/expense-types";
 import { cn } from "@/lib/utils";
 
 const DEBOUNCE_MS = 250;
@@ -78,13 +79,16 @@ export function ShareTrip({
   const owns = yourRole === "owner";
 
   const [open, setOpen] = useState(false);
-  const [members, setMembers] = useState<Member[]>([]);
+  const [members, setMembers] = useState<Member[] | null>(null);
   const [query, setQuery] = useState("");
   const [found, setFound] = useState<{ q: string; items: User[] }>({ q: "", items: [] });
   const [role, setRole] = useState<TripRole>("editor");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [backfill, setBackfill] = useState<{ user: User; costs: Expense[]; chosen: string[] } | null>(
+    null,
+  );
   const [confirm, confirmDialog] = useConfirm();
 
   const q = query.trim();
@@ -98,6 +102,8 @@ export function ShareTrip({
   function toggle(next: boolean) {
     setOpen(next);
     setError(null);
+    setBackfill(null);
+    setMembers(null);
     if (next) void loadMembers();
   }
 
@@ -139,6 +145,7 @@ export function ShareTrip({
   }
 
   async function share(user: User, as: TripRole) {
+    const joining = !alreadyIn.has(user.user_id);
     const ok = await send(`/api/trips/${tripId}/members`, {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -148,6 +155,22 @@ export function ShareTrip({
     setQuery("");
     setFound({ q: "", items: [] });
     await loadMembers();
+    router.refresh();
+    if (!joining) return;
+    const r = await fetch(`/api/trips/${tripId}/expenses/include/${user.user_id}`);
+    const costs = r.ok ? ((await r.json()) as Expense[]) : [];
+    if (costs.length) setBackfill({ user, costs, chosen: [] });
+  }
+
+  async function include() {
+    if (!backfill) return;
+    const ok = await send(`/api/trips/${tripId}/expenses/include/${backfill.user.user_id}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ expense_ids: backfill.chosen }),
+    });
+    if (!ok) return;
+    setBackfill(null);
     router.refresh();
   }
 
@@ -162,7 +185,7 @@ export function ShareTrip({
         : {
             title: `Remove ${email}?`,
             description:
-              "They lose access to this trip. What they paid or owe stays in the balances, and you can share it with them again.",
+              "They lose access to this trip, and you can share it with them again. Anyone who still owes or is owed money has to settle up first.",
             action: "Remove",
           },
     );
@@ -183,8 +206,9 @@ export function ShareTrip({
     window.setTimeout(() => setCopied(false), 1600);
   }
 
-  const alreadyIn = new Set(members.map((m) => m.user_id));
-  const suggestions = found.q === q ? found.items.filter((u) => !alreadyIn.has(u.user_id)) : [];
+  const alreadyIn = new Set((members ?? []).map((m) => m.user_id));
+  const suggestions =
+    members && found.q === q ? found.items.filter((u) => !alreadyIn.has(u.user_id)) : [];
 
   return (
     <Dialog open={open} onOpenChange={toggle}>
@@ -270,6 +294,62 @@ export function ShareTrip({
           </div>
         ) : null}
 
+        {backfill ? (
+          <div className="rounded-lg border border-border p-3">
+            <p className="text-[13.5px] font-semibold text-ink">
+              Split earlier costs with {backfill.user.name?.trim() || backfill.user.email}?
+            </p>
+            <p className="mt-0.5 text-[12px] text-muted-foreground">
+              These were split evenly between everyone before they joined. Tick the ones they were
+              there for.
+            </p>
+            <div className="mt-2 max-h-44 overflow-y-auto">
+              {backfill.costs.map((c) => (
+                <label
+                  key={c.expense_id}
+                  className="flex items-center gap-2.5 border-b border-hairline py-2 text-[13px] last:border-b-0"
+                >
+                  <input
+                    type="checkbox"
+                    checked={backfill.chosen.includes(c.expense_id)}
+                    onChange={(e) =>
+                      setBackfill({
+                        ...backfill,
+                        chosen: e.target.checked
+                          ? [...backfill.chosen, c.expense_id]
+                          : backfill.chosen.filter((id) => id !== c.expense_id),
+                      })
+                    }
+                    className="size-4 accent-ink"
+                  />
+                  <span className="min-w-0 flex-1 truncate">{c.description}</span>
+                  <span className="shrink-0 font-mono text-[11.5px] text-faint tabular-nums">
+                    {c.spent_on} · {money(c.amount_cents, c.currency)}
+                  </span>
+                </label>
+              ))}
+            </div>
+            <div className="mt-2.5 flex justify-end gap-2">
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => setBackfill(null)}
+                className="flex h-8 items-center rounded-full px-3 text-[12.5px] font-medium text-muted-foreground transition-colors hover:text-ink disabled:opacity-60 outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+              >
+                Skip
+              </button>
+              <button
+                type="button"
+                disabled={busy || backfill.chosen.length === 0}
+                onClick={() => void include()}
+                className="flex h-8 items-center rounded-full bg-ink px-3 text-[12.5px] font-medium text-primary-foreground transition-colors disabled:opacity-40 outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+              >
+                {backfill.chosen.length ? `Split ${backfill.chosen.length} with them` : "Split with them"}
+              </button>
+            </div>
+          </div>
+        ) : null}
+
         {error ? (
           <p role="alert" className="text-[13px] text-alert">
             {error}
@@ -281,7 +361,7 @@ export function ShareTrip({
             On this trip
           </p>
           <div className="mt-1.5">
-            {members.map((m) => (
+            {(members ?? []).map((m) => (
               <div key={m.user_id} className="flex items-center gap-2.5 border-b border-hairline py-2.5 last:border-b-0">
                 <Face user={m} />
                 <Who user={m} />

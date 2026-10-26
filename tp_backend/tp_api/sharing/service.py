@@ -52,8 +52,7 @@ def add_member(db: Session, trip_id: str, body: MemberIn) -> MemberOut:
         raise HTTPException(404, "no such user")
 
     row = db.get(UserTrip, (body.user_id, trip_id))
-    joined = row is None
-    if joined:
+    if row is None:
         db.add(UserTrip(user_id=body.user_id, trip_id=trip_id, role=body.role))
     elif row.role == TripRole.OWNER:
         raise HTTPException(409, "that is the trip's owner")
@@ -61,12 +60,6 @@ def add_member(db: Session, trip_id: str, body: MemberIn) -> MemberOut:
         row.role = body.role
     db.commit()
     log.info("shared trip=%s with=%s as=%s", trip_id[:8], user.email, body.role)
-
-    if joined:
-        # Circular import: tp_api.expenses.service imports this module.
-        from tp_api.expenses.service import include_member
-
-        include_member(db, trip_id, body.user_id)
     return _member(user, body.role)
 
 
@@ -80,6 +73,12 @@ def remove_member(db: Session, trip_id: str, user_id: str, me: User, role: str) 
         raise HTTPException(404, "not a member of this trip")
     if row.role == TripRole.OWNER:
         raise HTTPException(409, "the owner cannot be removed — delete the trip instead")
+
+    # Circular import: tp_api.expenses.service imports this module.
+    from tp_api.expenses.service import has_balance
+
+    if has_balance(db, trip_id, user_id):
+        raise HTTPException(409, "they still owe or are owed money on this trip — settle up first")
     db.delete(row)
     db.commit()
     log.info("unshared trip=%s from=%s", trip_id[:8], user_id[:8])

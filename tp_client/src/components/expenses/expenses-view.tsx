@@ -2,7 +2,7 @@
 
 // The Expenses tab. One balance panel per currency, then every cost in date order.
 
-import { Pencil, Plus, Search, X } from "lucide-react";
+import { Check, Circle, Pencil, Plus, Search, X } from "lucide-react";
 import { useCallback, useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -16,6 +16,8 @@ import {
   firstName,
   knownCategories,
   money,
+  type ShareStatus,
+  shareStatuses,
   tagChoices,
 } from "@/lib/expense-types";
 import { cn } from "@/lib/utils";
@@ -50,7 +52,7 @@ export function ExpensesView({
   const base = `/api/trips/${encodeURIComponent(tripId)}`;
 
   const send = useCallback(
-    async (path: string, init: RequestInit) => {
+    async (path: string, init: RequestInit): Promise<boolean> => {
       setBusy(true);
       setError(null);
       try {
@@ -58,12 +60,14 @@ export function ExpensesView({
         if (!r.ok) {
           const body = await r.json().catch(() => null);
           setError(typeof body?.detail === "string" ? body.detail : "That did not save.");
-          return;
+          return false;
         }
         const fresh = await fetch(`${base}/expenses`);
         if (fresh.ok) setTab((await fresh.json()) as ExpenseTab);
+        return true;
       } catch {
         setError("Could not reach the planner.");
+        return false;
       } finally {
         setBusy(false);
       }
@@ -77,10 +81,17 @@ export function ExpensesView({
     body: JSON.stringify(body),
   });
 
+  const onTrip = (userId: string) => tab.members.some((m) => m.user_id === userId);
+
+  const forCost = (expenseId: string) =>
+    tab.expenses.find((e) => e.expense_id === expenseId)?.description;
+
   const who = (userId: string) => {
     const member = tab.members.find((m) => m.user_id === userId);
     return member ? (userId === meId ? "You" : firstName(member)) : "Someone";
   };
+
+  const whose = (userId: string) => (userId === meId ? "your" : `${who(userId)}'s`);
 
   return (
     <div className="space-y-6">
@@ -194,6 +205,49 @@ export function ExpensesView({
                       {e.block_title && ` · ${e.block_title}`}
                       {e.category && ` · ${e.category}`}
                     </p>
+                    {shareStatuses(e).length > 0 && (
+                      <div className="mt-1.5 flex flex-wrap gap-1">
+                        {shareStatuses(e).map((st) => (
+                          <ShareChip
+                            key={st.userId}
+                            name={who(st.userId)}
+                            whose={whose(st.userId)}
+                            status={st}
+                            currency={e.currency}
+                            canEdit={canEdit && onTrip(st.userId) && onTrip(e.payer_id)}
+                            disabled={busy}
+                            onPay={() =>
+                              send(
+                                "/settlements",
+                                json({
+                                  from_user_id: st.userId,
+                                  to_user_id: e.payer_id,
+                                  expense_id: e.expense_id,
+                                  amount_cents: st.left,
+                                  currency: e.currency,
+                                  paid_on: defaultDate,
+                                }),
+                              )
+                            }
+                            onUndo={async () => {
+                              const ok = await confirm({
+                                title: `Undo ${whose(st.userId)} payment?`,
+                                description: `What was paid towards “${e.description}” is forgotten, and the share is owed again.`,
+                                action: "Undo payment",
+                              });
+                              if (!ok) return;
+                              const linked = tab.settlements.filter(
+                                (s) => s.expense_id === e.expense_id && s.from_user_id === st.userId,
+                              );
+                              for (const s of linked) {
+                                if (!(await send(`/settlements/${s.settlement_id}`, { method: "DELETE" })))
+                                  break;
+                              }
+                            }}
+                          />
+                        ))}
+                      </div>
+                    )}
                   </div>
 
                   <div className="shrink-0 text-right">
@@ -256,6 +310,7 @@ export function ExpensesView({
                     {money(s.amount_cents, s.currency)}
                   </span>{" "}
                   on {s.paid_on}
+                  {s.expense_id && forCost(s.expense_id) && ` for ${forCost(s.expense_id)}`}
                 </span>
                 {canEdit && (
                   <IconButton
@@ -301,6 +356,62 @@ export function ExpensesView({
       )}
       {confirmDialog}
     </div>
+  );
+}
+
+function ShareChip({
+  name,
+  whose,
+  status,
+  currency,
+  canEdit,
+  disabled,
+  onPay,
+  onUndo,
+}: {
+  name: string;
+  whose: string;
+  status: ShareStatus;
+  currency: string;
+  canEdit: boolean;
+  disabled: boolean;
+  onPay: () => void;
+  onUndo: () => void;
+}) {
+  const settled = status.left <= 0;
+  const label =
+    status.left < 0
+      ? `${name} · overpaid ${money(-status.left, currency)}`
+      : settled
+        ? `${name} · paid`
+        : status.left < status.owed
+          ? `${name} · ${money(status.left, currency)} left`
+          : `${name} · ${money(status.left, currency)}`;
+  const className = cn(
+    "flex h-6 items-center gap-1 rounded-full px-2 text-[11.5px] font-medium transition-colors outline-none focus-visible:ring-3 focus-visible:ring-ring/50",
+    settled ? "bg-ok-bg text-ok" : "bg-page text-muted-foreground",
+  );
+  const icon = settled ? <Check className="size-3" /> : <Circle className="size-3" />;
+  if (!canEdit) {
+    return (
+      <span className={className}>
+        {icon}
+        {label}
+      </span>
+    );
+  }
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={settled ? onUndo : onPay}
+      aria-label={settled ? `Undo ${whose} payment` : `Mark ${whose} share paid`}
+      title={settled ? "Undo this payment" : "Mark this share paid"}
+      className={cn(className, "hover:text-ink", disabled && "pointer-events-none opacity-40")}
+    >
+      {icon}
+      {label}
+    </button>
   );
 }
 
