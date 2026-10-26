@@ -10,7 +10,15 @@ from sqlalchemy.orm import Session
 
 from tp_api.deps import db_session, require_edit, require_trip_access
 from tp_api.expenses import service
-from tp_api.expenses.schemas import ExpenseIn, ExpenseOut, ExpensesOut, SettlementIn, SettlementOut
+from tp_api.expenses.schemas import (
+    ExpenseIn,
+    ExpenseOut,
+    ExpensesOut,
+    IncludeIn,
+    IncludeOut,
+    SettlementIn,
+    SettlementOut,
+)
 
 router = APIRouter(dependencies=[Depends(require_trip_access)], tags=["expenses"])
 Edit = [Depends(require_edit)]
@@ -36,6 +44,17 @@ def edit_expense(trip_id: str, expense_id: str, body: ExpenseIn, db: Db) -> Expe
 @router.delete("/trips/{trip_id}/expenses/{expense_id}", status_code=204, dependencies=Edit)
 def remove_expense(trip_id: str, expense_id: str, db: Db) -> None:
     service.remove_expense(db, trip_id, expense_id)
+
+
+@router.get("/trips/{trip_id}/expenses/include/{user_id}", response_model=list[ExpenseOut])
+def includable(trip_id: str, user_id: str, db: Db) -> list[ExpenseOut]:
+    return service.includable(db, trip_id, user_id)
+
+
+@router.post("/trips/{trip_id}/expenses/include/{user_id}", response_model=IncludeOut,
+             dependencies=Edit)
+def include_member(trip_id: str, user_id: str, body: IncludeIn, db: Db) -> IncludeOut:
+    return IncludeOut(included=service.include_member(db, trip_id, user_id, body))
 
 
 @router.post("/trips/{trip_id}/settlements", response_model=SettlementOut, dependencies=Edit)

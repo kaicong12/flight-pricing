@@ -27,8 +27,8 @@ signs in once in the Playwright browser; the session cookie then lasts the run.
 
 1. **Create.** A trip on a warm city (Tromsø) with a second city. `/trip/{id}` settles without polling
    forever, and the title reads "Tromsø + …".
-2. **Shortlist.** Places load; each category chip filters; the source filter (YouTube / RedNote) narrows
-   with a chip still applied; "Show more" pages.
+2. **Shortlist.** Places load; each category chip filters; the filter popover's city and source (YouTube /
+   RedNote) narrow with a chip still applied, badge the button and clear from the summary line; "Show more" pages.
 3. **Plan.** Drag a place onto a slot; drag it later; resize both edges (30-minute snap) — the block and
    its neighbours' lanes redraw while held, and the day saves and re-checks only on release. A click on
    any block opens its dialog; a drag never does. The grid runs 00:00–24:00 and the flight hours are hatched.
@@ -38,8 +38,10 @@ signs in once in the Playwright browser; the session cookie then lasts the run.
 5. **Check.** The day re-routes and warnings render; a place past its closing time warns.
 6. **Costs.** The pencil on the overnight block, a cost and a tag, then the Expenses tab: the cost
    appears once, the donut has the tag, and the currency total moves by exactly that amount.
+   Mark another member's share of it paid and undo it; the balance moves both ways.
 7. **Export.** `export.xlsx` opens; the overnight block's End reads "Day N HH:MM".
 8. **Upload.** Upload that export from `/trips`: the preview lists the days, a new start date shifts
    them, and the new trip opens with the same blocks. A file edited in Excel keeps the edits; any other
    .xlsx is refused.
-9. **Share.** Add a viewer; as the viewer, nothing that would 403 is offered.
+9. **Share.** Add a viewer; as the viewer, nothing that would 403 is offered. Sharing after a cost
+   exists offers it in a split checklist; removing someone with an open balance is refused.

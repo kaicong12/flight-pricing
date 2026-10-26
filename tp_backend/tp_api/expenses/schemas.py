@@ -51,8 +51,11 @@ class ExpenseIn(BaseModel):
 
 
 class ShareOut(BaseModel):
+    """`paid_cents` counts only the payments that name this expense."""
+
     user_id: str
     amount_cents: int
+    paid_cents: int = 0
 
 
 class ExpenseOut(BaseModel):
@@ -72,6 +75,7 @@ class ExpenseOut(BaseModel):
 class SettlementIn(BaseModel):
     from_user_id: str = Field(min_length=1, max_length=36)
     to_user_id: str = Field(min_length=1, max_length=36)
+    expense_id: str | None = Field(default=None, max_length=36)
     amount_cents: int = Money
     currency: str = Field(pattern=CURRENCY)
     paid_on: date
@@ -87,6 +91,7 @@ class SettlementOut(BaseModel):
     settlement_id: str
     from_user_id: str
     to_user_id: str
+    expense_id: str | None
     amount_cents: int
     currency: str
     paid_on: date
@@ -123,3 +128,11 @@ class ExpensesOut(BaseModel):
     expenses: list[ExpenseOut]
     settlements: list[SettlementOut]
     balances: list[CurrencyBalance]
+
+
+class IncludeIn(BaseModel):
+    expense_ids: list[str] = Field(max_length=1000)
+
+
+class IncludeOut(BaseModel):
+    included: int

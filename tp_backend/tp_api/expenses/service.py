@@ -12,7 +12,7 @@ import uuid
 from collections import defaultdict
 
 from fastapi import HTTPException
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from libs.db import Expense, ExpenseShare, ItineraryItem, Settlement, Trip, UserTrip
@@ -21,6 +21,7 @@ from tp_api.expenses.schemas import (
     ExpenseIn,
     ExpenseOut,
     ExpensesOut,
+    IncludeIn,
     MemberBalance,
     SettlementIn,
     SettlementOut,
@@ -51,8 +52,9 @@ def _member_ids(db: Session, trip_id: str) -> set[str]:
     return set(db.scalars(select(UserTrip.user_id).where(UserTrip.trip_id == trip_id)))
 
 
-def _check_people(db: Session, trip_id: str, user_ids: list[str]) -> None:
-    outsiders = set(user_ids) - _member_ids(db, trip_id)
+def _check_people(db: Session, trip_id: str, user_ids: list[str],
+                  already: frozenset[str] = frozenset()) -> None:
+    outsiders = set(user_ids) - _member_ids(db, trip_id) - already
     if outsiders:
         raise HTTPException(422, "that person is not on this trip")
 
@@ -117,13 +119,23 @@ def _balances(expenses: list[Expense], shares: list[tuple[ExpenseShare, str]],
     return out
 
 
-def _out(e: Expense, blocks: dict[str, tuple[str, int]]) -> ExpenseOut:
+def _paid(settlements) -> dict[tuple[str, str], int]:
+    out: dict[tuple[str, str], int] = defaultdict(int)
+    for s in settlements:
+        if s.expense_id:
+            out[(s.expense_id, s.from_user_id)] += s.amount_cents
+    return out
+
+
+def _out(e: Expense, blocks: dict[str, tuple[str, int]],
+         paid: dict[tuple[str, str], int]) -> ExpenseOut:
     title, day = blocks.get(e.block_id or "", (None, None))
     return ExpenseOut(
         expense_id=e.expense_id, description=e.description, amount_cents=e.amount_cents,
         currency=e.currency, spent_on=e.spent_on, payer_id=e.payer_id,
         block_id=e.block_id, category=e.category, block_title=title, day_index=day,
-        shares=[ShareOut(user_id=s.user_id, amount_cents=s.amount_cents)
+        shares=[ShareOut(user_id=s.user_id, amount_cents=s.amount_cents,
+                         paid_cents=paid.get((e.expense_id, s.user_id), 0))
                 for s in sorted(e.shares, key=lambda s: s.user_id)],
     )
 
@@ -136,31 +148,41 @@ def _blocks(db: Session, trip_id: str) -> dict[str, tuple[str | None, int]]:
             for item in items}
 
 
+def _ledger(db: Session, trip_id: str):
+    expenses = db.scalars(
+        _live(trip_id).order_by(Expense.spent_on, Expense.created_at)
+    ).unique().all()
+    shares = db.execute(
+        select(ExpenseShare, Expense.currency)
+        .join(Expense, Expense.expense_id == ExpenseShare.expense_id)
+        .where(Expense.trip_id == trip_id, Expense.deleted.is_(False))
+    ).all()
+    settlements = db.scalars(
+        select(Settlement).where(Settlement.trip_id == trip_id).order_by(Settlement.paid_on)
+    ).all()
+    return list(expenses), shares, list(settlements)
+
+
 def overview(db: Session, trip_id: str) -> ExpensesOut:
     """The whole tab. Takes a trip_id rather than a Trip so nothing here imports route_planning."""
     trip = db.get(Trip, trip_id)
     if trip is None:
         raise HTTPException(404, "no such trip")
-    expenses = db.scalars(
-        _live(trip.trip_id).order_by(Expense.spent_on, Expense.created_at)
-    ).unique().all()
-    shares = db.execute(
-        select(ExpenseShare, Expense.currency)
-        .join(Expense, Expense.expense_id == ExpenseShare.expense_id)
-        .where(Expense.trip_id == trip.trip_id, Expense.deleted.is_(False))
-    ).all()
-    settlements = db.scalars(
-        select(Settlement).where(Settlement.trip_id == trip.trip_id).order_by(Settlement.paid_on)
-    ).all()
+    expenses, shares, settlements = _ledger(db, trip.trip_id)
 
-    blocks = _blocks(db, trip.trip_id)
+    blocks, paid = _blocks(db, trip.trip_id), _paid(settlements)
     return ExpensesOut(
         currency=default_currency(db, trip),
         members=trip_members(db, trip.trip_id),
-        expenses=[_out(e, blocks) for e in expenses],
+        expenses=[_out(e, blocks, paid) for e in expenses],
         settlements=[SettlementOut.model_validate(s, from_attributes=True) for s in settlements],
-        balances=_balances(list(expenses), shares, list(settlements)),
+        balances=_balances(expenses, shares, settlements),
     )
+
+
+def has_balance(db: Session, trip_id: str, user_id: str) -> bool:
+    return any(m.user_id == user_id and m.net_cents
+               for pile in _balances(*_ledger(db, trip_id)) for m in pile.members)
 
 
 def default_currency(db: Session, trip: Trip) -> str:
@@ -187,25 +209,41 @@ def add_expense(db: Session, trip_id: str, body: ExpenseIn) -> ExpenseOut:
     db.commit()
     log.info("expense trip=%s %s %d by=%s over=%d",
              trip_id[:8], body.currency, body.amount_cents, body.payer_id[:8], len(amounts))
-    return _out(expense, _blocks(db, trip_id))
+    return _out(expense, _blocks(db, trip_id), {})
 
 
-def include_member(db: Session, trip_id: str, user_id: str) -> int:
-    """Extend to a member shared with later every cost that split across everyone at the time.
+def _includable(db: Session, trip_id: str, user_id: str) -> tuple[list[Expense], set[str]]:
+    """Costs split evenly across everyone but this member, with no share of them paid yet."""
+    members = _member_ids(db, trip_id)
+    if user_id not in members:
+        raise HTTPException(404, "not a member of this trip")
+    others = members - {user_id}
+    linked = set(db.scalars(select(Settlement.expense_id).where(
+        Settlement.trip_id == trip_id, Settlement.expense_id.is_not(None))))
+    out = []
+    for expense in db.scalars(
+            _live(trip_id).order_by(Expense.spent_on, Expense.created_at)).unique():
+        was = {s.user_id: s.amount_cents for s in expense.shares}
+        if expense.expense_id in linked or set(was) != others \
+                or was != split_evenly(expense.amount_cents, sorted(was)):
+            continue
+        out.append(expense)
+    return out, others
 
-    "Whoever was there" is what the form means by its default, so a cost entered while the trip was
-    solo named one person only because one person was on it. A deliberate subset or an uneven split
-    is somebody's own arithmetic and is left alone.
-    """
-    others = _member_ids(db, trip_id) - {user_id}
-    if not others:
-        return 0
 
+def includable(db: Session, trip_id: str, user_id: str) -> list[ExpenseOut]:
+    blocks = _blocks(db, trip_id)
+    return [_out(e, blocks, {}) for e in _includable(db, trip_id, user_id)[0]]
+
+
+def include_member(db: Session, trip_id: str, user_id: str, body: IncludeIn) -> int:
+    chosen = set(body.expense_ids)
+    _lock(db, Expense.trip_id == trip_id)
+    candidates, others = _includable(db, trip_id, user_id)
     people = sorted(others | {user_id})
     touched = 0
-    for expense in db.scalars(_live(trip_id)).unique():
-        was = {s.user_id: s.amount_cents for s in expense.shares}
-        if set(was) != others or was != split_evenly(expense.amount_cents, sorted(was)):
+    for expense in candidates:
+        if expense.expense_id not in chosen:
             continue
         expense.shares = [ExpenseShare(user_id=u, amount_cents=a)
                           for u, a in split_evenly(expense.amount_cents, people).items()]
@@ -217,6 +255,15 @@ def include_member(db: Session, trip_id: str, user_id: str) -> int:
     return touched
 
 
+def _lock(db: Session, *where) -> None:
+    db.execute(select(Expense.expense_id).where(*where).with_for_update())
+
+
+def _has_payments(db: Session, expense_id: str) -> bool:
+    return db.scalar(select(Settlement.settlement_id)
+                     .where(Settlement.expense_id == expense_id).limit(1)) is not None
+
+
 def _get(db: Session, trip_id: str, expense_id: str) -> Expense:
     expense = db.get(Expense, expense_id)
     if expense is None or expense.trip_id != trip_id or expense.deleted:
@@ -226,12 +273,18 @@ def _get(db: Session, trip_id: str, expense_id: str) -> Expense:
 
 def edit_expense(db: Session, trip_id: str, expense_id: str, body: ExpenseIn) -> ExpenseOut:
     """Replaces the whole expense including its shares — a correction restates the cost."""
+    _lock(db, Expense.expense_id == expense_id)
     expense = _get(db, trip_id, expense_id)
+    if (body.payer_id, body.currency) != (expense.payer_id, expense.currency) \
+            and _has_payments(db, expense_id):
+        raise HTTPException(409, "shares of this cost are paid — undo them before changing who "
+                                 "paid it or its currency")
     if body.shares:
         amounts = {s.user_id: s.amount_cents for s in body.shares}
     else:
         amounts = split_evenly(body.amount_cents, sorted(body.participants))
-    _check_people(db, trip_id, [body.payer_id, *amounts])
+    _check_people(db, trip_id, [body.payer_id, *amounts],
+                  frozenset({expense.payer_id, *(s.user_id for s in expense.shares)}))
 
     expense.payer_id = body.payer_id
     expense.description = body.description.strip()
@@ -242,20 +295,41 @@ def edit_expense(db: Session, trip_id: str, expense_id: str, body: ExpenseIn) ->
     expense.category = body.category
     expense.shares = [ExpenseShare(user_id=u, amount_cents=a) for u, a in amounts.items()]
     db.commit()
-    return _out(expense, _blocks(db, trip_id))
+    paid = _paid(db.scalars(select(Settlement).where(Settlement.expense_id == expense_id)))
+    return _out(expense, _blocks(db, trip_id), paid)
 
 
 def remove_expense(db: Session, trip_id: str, expense_id: str) -> None:
     """Soft, so a balance someone already settled against can still be explained."""
-    _get(db, trip_id, expense_id).deleted = True
+    _lock(db, Expense.expense_id == expense_id)
+    expense = _get(db, trip_id, expense_id)
+    if _has_payments(db, expense_id):
+        raise HTTPException(409, "shares of this cost are paid — undo them before deleting it")
+    expense.deleted = True
     db.commit()
+
+
+def _check_share(db: Session, trip_id: str, body: SettlementIn) -> None:
+    _lock(db, Expense.expense_id == body.expense_id)
+    expense = _get(db, trip_id, body.expense_id)
+    if body.to_user_id != expense.payer_id or body.currency != expense.currency:
+        raise HTTPException(422, "a share is paid to whoever paid the cost, in its currency")
+    share = next((s.amount_cents for s in expense.shares if s.user_id == body.from_user_id), 0)
+    paid = db.scalar(select(func.coalesce(func.sum(Settlement.amount_cents), 0)).where(
+        Settlement.expense_id == expense.expense_id,
+        Settlement.from_user_id == body.from_user_id))
+    if body.amount_cents > share - paid:
+        raise HTTPException(409, "that is more than is left of their share")
 
 
 def add_settlement(db: Session, trip_id: str, body: SettlementIn) -> SettlementOut:
     _check_people(db, trip_id, [body.from_user_id, body.to_user_id])
+    if body.expense_id:
+        _check_share(db, trip_id, body)
     row = Settlement(settlement_id=str(uuid.uuid4()), trip_id=trip_id,
                      from_user_id=body.from_user_id, to_user_id=body.to_user_id,
-                     amount_cents=body.amount_cents, currency=body.currency, paid_on=body.paid_on)
+                     expense_id=body.expense_id, amount_cents=body.amount_cents,
+                     currency=body.currency, paid_on=body.paid_on)
     db.add(row)
     db.commit()
     log.info("settled trip=%s %s %d", trip_id[:8], body.currency, body.amount_cents)

@@ -4,6 +4,8 @@ import type { Member } from "./api-types";
 
 export type ExpenseShare = { user_id: string; amount_cents: number };
 
+export type PaidShare = ExpenseShare & { paid_cents: number };
+
 export type Expense = {
   expense_id: string;
   description: string;
@@ -15,13 +17,14 @@ export type Expense = {
   category: string | null;
   block_title: string | null;
   day_index: number | null;
-  shares: ExpenseShare[];
+  shares: PaidShare[];
 };
 
 export type Settlement = {
   settlement_id: string;
   from_user_id: string;
   to_user_id: string;
+  expense_id: string | null;
   amount_cents: number;
   currency: string;
   paid_on: string;
@@ -90,6 +93,15 @@ export function money(cents: number, currency: string): string {
     maximumFractionDigits: 2,
   });
   return `${cents < 0 ? "−" : ""}${figure} ${currency}`;
+}
+
+export type ShareStatus = { userId: string; owed: number; left: number };
+
+/** `left` below zero is an overpayment. */
+export function shareStatuses(expense: Expense): ShareStatus[] {
+  return expense.shares
+    .filter((s) => s.user_id !== expense.payer_id && (s.amount_cents > 0 || s.paid_cents > 0))
+    .map((s) => ({ userId: s.user_id, owed: s.amount_cents, left: s.amount_cents - s.paid_cents }));
 }
 
 /** First name, which is what fits in a bar label and a column head. */

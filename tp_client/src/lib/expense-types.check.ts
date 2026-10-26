@@ -12,6 +12,7 @@ import {
   knownCategories,
   money,
   parseAmount,
+  shareStatuses,
   spendByCategory,
   splitEvenly,
   tagChoices,
@@ -112,10 +113,10 @@ eq(
 );
 
 const tagged = [
-  expense({ category: "Food", amount_cents: 3000, shares: [{ user_id: "me", amount_cents: 1000 }] }),
+  expense({ category: "Food", amount_cents: 3000, shares: [{ user_id: "me", amount_cents: 1000, paid_cents: 0 }] }),
   expense({ expense_id: "e2", category: "food", amount_cents: 1000 }),
   expense({ expense_id: "e3", category: "Stay", amount_cents: 9000,
-            shares: [{ user_id: "me", amount_cents: 4500 }] }),
+            shares: [{ user_id: "me", amount_cents: 4500, paid_cents: 0 }] }),
   expense({ expense_id: "e4", amount_cents: 500 }),
   expense({ expense_id: "e5", category: "Food", currency: "NOK", amount_cents: 99900 }),
 ];
@@ -181,6 +182,24 @@ eq(tagChoices(many).length, 8, "at most eight chips");
   eq(ids("airport", null), ["b"], "search reaches the block title");
   eq(ids("", "Transport"), ["b"], "a category matches whatever its case");
   eq(ids("taxi", "Food"), [], "search and category both have to hold");
+}
+
+{
+  const cost = {
+    payer_id: "u0",
+    shares: [
+      { user_id: "u0", amount_cents: 300, paid_cents: 0 },
+      { user_id: "u1", amount_cents: 300, paid_cents: 300 },
+      { user_id: "u2", amount_cents: 300, paid_cents: 100 },
+      { user_id: "u3", amount_cents: 0, paid_cents: 50 },
+      { user_id: "u4", amount_cents: 0, paid_cents: 0 },
+    ],
+  } as unknown as Expense;
+  eq(
+    shareStatuses(cost).map((s) => [s.userId, s.left]),
+    [["u1", 0], ["u2", 200], ["u3", -50]],
+    "the payer and an empty share owe nothing, an overpayment shows below zero",
+  );
 }
 
 console.log("expense-types.check.ts ok");

@@ -323,8 +323,7 @@ class ExpenseShare(Base):
 class Settlement(Base):
     """A payment one member made another, recorded not moved.
 
-    It is folded into the same derivation the balances come from, which is what makes a partial
-    payment work without any notion of settling a particular expense.
+    One that names an `expense_id` pays a share of that cost to its payer.
     """
 
     __tablename__ = "settlements"
@@ -333,6 +332,7 @@ class Settlement(Base):
         CheckConstraint("currency ~ '^[A-Z]{3}$'", name="ck_settlement_currency"),
         CheckConstraint("from_user_id <> to_user_id", name="ck_settlement_parties"),
         Index("ix_settlements_trip", "trip_id"),
+        Index("ix_settlements_expense", "expense_id"),
     )
 
     settlement_id: Mapped[str] = mapped_column(String(36), primary_key=True)
@@ -340,6 +340,8 @@ class Settlement(Base):
                                          nullable=False)
     from_user_id: Mapped[str] = mapped_column(ForeignKey("users.user_id"), nullable=False)
     to_user_id: Mapped[str] = mapped_column(ForeignKey("users.user_id"), nullable=False)
+    expense_id: Mapped[str | None] = mapped_column(
+        ForeignKey("expenses.expense_id", ondelete="CASCADE"))
     amount_cents: Mapped[int] = mapped_column(BigInteger, nullable=False)
     currency: Mapped[str] = mapped_column(String(3), nullable=False)
     paid_on: Mapped[date] = mapped_column(Date, nullable=False)

@@ -175,6 +175,35 @@ def test_the_expenses_sheet_carries_a_column_per_person(client, db):
     assert ws.cell(row=net + 1, column=5).value == 20.0
 
 
+def test_a_paid_share_is_marked_in_its_cell(client, db):
+    trip = a_trip_with_one_block(client, db)
+    for uid in ("u-bob", "u-cara"):
+        db.add(User(user_id=uid, google_sub=f"sub-{uid}", email=f"{uid}@example.com",
+                    name=uid[2:].title()))
+        db.add(UserTrip(user_id=uid, trip_id=trip, role=TripRole.EDITOR))
+    db.commit()
+    eid = client.post(f"/trips/{trip}/expenses", json={
+        "description": "Sauna", "amount_cents": 6000, "currency": "EUR",
+        "spent_on": today_utc().isoformat(), "payer_id": "u-test",
+        "participants": ["u-test", "u-bob", "u-cara"]}).json()["expense_id"]
+    for who, cents in (("u-bob", 2000), ("u-cara", 500)):
+        client.post(f"/trips/{trip}/settlements", json={
+            "from_user_id": who, "to_user_id": "u-test", "amount_cents": cents,
+            "currency": "EUR", "paid_on": today_utc().isoformat(), "expense_id": eid})
+
+    ws = export(client, trip)["Expenses"]
+    payer, bob, cara = (ws.cell(row=5, column=c) for c in (7, 8, 9))
+
+    assert [c.value for c in (payer, bob, cara)] == [20.0, 20.0, 20.0]
+    assert bob.number_format.startswith('"✓ "')
+    assert bob.fill.fgColor.rgb.endswith("E9F0E0")
+    assert bob.comment is None
+    assert not cara.number_format.startswith('"✓ "')
+    assert cara.comment.text == "5.00 paid · 15.00 left"
+    assert not payer.fill.fgColor.rgb.endswith(("E9F0E0", "F6E7C8"))
+    assert "✓ share paid" in ws.cell(row=2, column=1).value
+
+
 def test_the_expenses_sheet_is_there_when_nothing_was_spent(client, db):
     ws = export(client, a_trip_with_one_block(client, db))["Expenses"]
     assert ws.cell(row=5, column=1).value == "Nothing spent yet."

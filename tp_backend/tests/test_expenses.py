@@ -256,46 +256,188 @@ class TestTheTab:
         assert {m["name"] for m in members} == {"A Friend", "Bob"}
 
 
+def pay(client, trip, frm, to="u-test", amount=500, **kw):
+    return client.post(f"/trips/{trip}/settlements", json={
+        "from_user_id": frm, "to_user_id": to, "amount_cents": amount, "currency": "EUR",
+        "paid_on": today_utc().isoformat()} | kw)
+
+
+class TestPayingAShare:
+    @pytest.fixture
+    def dinner(self, client, trip, db):
+        bob = friend(db, trip, "Bob")
+        r = client.post(f"/trips/{trip}/expenses",
+                        json=cost(amount_cents=1000, participants=["u-test", bob]))
+        return bob, r.json()["expense_id"]
+
+    def paid(self, client, trip):
+        [expense] = client.get(f"/trips/{trip}/expenses").json()["expenses"]
+        return {s["user_id"]: s["paid_cents"] for s in expense["shares"]}
+
+    def test_a_paid_share_shows_on_the_cost_and_clears_the_balance(self, client, trip, dinner):
+        bob, eid = dinner
+        r = pay(client, trip, bob, expense_id=eid)
+        assert r.status_code == 200, r.text
+        assert r.json()["expense_id"] == eid
+        assert self.paid(client, trip) == {"u-test": 0, bob: 500}
+        pile = client.get(f"/trips/{trip}/expenses").json()["balances"][0]
+        assert all(m["net_cents"] == 0 for m in pile["members"])
+
+    def test_a_share_cannot_be_paid_twice(self, client, trip, dinner):
+        bob, eid = dinner
+        assert pay(client, trip, bob, expense_id=eid).status_code == 200
+        assert pay(client, trip, bob, expense_id=eid).status_code == 409
+
+    def test_the_rest_of_a_share_can_be_paid_later(self, client, trip, dinner):
+        bob, eid = dinner
+        assert pay(client, trip, bob, amount=200, expense_id=eid).status_code == 200
+        assert pay(client, trip, bob, amount=300, expense_id=eid).status_code == 200
+        assert self.paid(client, trip)[bob] == 500
+
+    def test_a_share_is_paid_to_whoever_paid_the_cost(self, client, trip, db, dinner):
+        bob, eid = dinner
+        cara = friend(db, trip, "Cara")
+        assert pay(client, trip, bob, to=cara, expense_id=eid).status_code == 422
+
+    def test_a_share_is_paid_in_the_costs_currency(self, client, trip, dinner):
+        bob, eid = dinner
+        assert pay(client, trip, bob, expense_id=eid, currency="NOK").status_code == 422
+
+    def test_someone_with_no_share_has_nothing_to_pay(self, client, trip, db, dinner):
+        _, eid = dinner
+        cara = friend(db, trip, "Cara")
+        assert pay(client, trip, cara, expense_id=eid).status_code == 409
+
+    def test_a_cost_on_another_trip_is_not_found(self, client, trip, dinner):
+        bob, _ = dinner
+        assert pay(client, trip, bob, expense_id="no-such-cost").status_code == 404
+
+    def test_a_cheaper_cost_leaves_the_payment_standing(self, client, trip, dinner):
+        bob, eid = dinner
+        pay(client, trip, bob, expense_id=eid)
+        r = client.put(f"/trips/{trip}/expenses/{eid}",
+                       json=cost(amount_cents=600, participants=["u-test", bob]))
+        assert {s["user_id"]: (s["amount_cents"], s["paid_cents"]) for s in r.json()["shares"]} \
+            == {"u-test": (300, 0), bob: (300, 500)}
+        pile = client.get(f"/trips/{trip}/expenses").json()["balances"][0]
+        assert {m["user_id"]: m["net_cents"] for m in pile["members"]} == {"u-test": -200, bob: 200}
+
+    def test_a_paid_cost_keeps_its_payer_and_currency(self, client, trip, db, dinner):
+        bob, eid = dinner
+        pay(client, trip, bob, expense_id=eid)
+        both = ["u-test", bob]
+        assert client.put(f"/trips/{trip}/expenses/{eid}", json=cost(
+            amount_cents=1000, participants=both, currency="NOK")).status_code == 409
+        assert client.put(f"/trips/{trip}/expenses/{eid}", json=cost(
+            amount_cents=1000, participants=both, payer_id=bob)).status_code == 409
+
+    def test_a_paid_cost_cannot_be_deleted(self, client, trip, dinner):
+        bob, eid = dinner
+        sid = pay(client, trip, bob, expense_id=eid).json()["settlement_id"]
+        assert client.delete(f"/trips/{trip}/expenses/{eid}").status_code == 409
+        client.delete(f"/trips/{trip}/settlements/{sid}")
+        assert client.delete(f"/trips/{trip}/expenses/{eid}").status_code == 204
+
+    def test_undoing_it_owes_the_share_again(self, client, trip, dinner):
+        bob, eid = dinner
+        sid = pay(client, trip, bob, expense_id=eid).json()["settlement_id"]
+        assert client.delete(f"/trips/{trip}/settlements/{sid}").status_code == 204
+        assert self.paid(client, trip)[bob] == 0
+
+
 class TestSharingAfterTheFact:
-    def newcomer(self, db, name="Bob"):
+    def newcomer(self, client, db, trip, name="Bob"):
         db.add(User(user_id=f"u-{name.lower()}", google_sub=f"sub-{name}",
                     email=f"{name.lower()}@example.com", name=name))
         db.commit()
-        return f"u-{name.lower()}"
+        uid = f"u-{name.lower()}"
+        r = client.post(f"/trips/{trip}/members", json={"user_id": uid, "role": TripRole.EDITOR})
+        assert r.status_code == 200, r.text
+        return uid
 
     def shares(self, client, trip):
         [expense] = client.get(f"/trips/{trip}/expenses").json()["expenses"]
         return {s["user_id"]: s["amount_cents"] for s in expense["shares"]}
 
-    def test_a_cost_from_before_the_share_splits_with_the_new_member(self, client, trip, db):
-        client.post(f"/trips/{trip}/expenses", json=cost(amount_cents=1000))
-        bob = self.newcomer(db)
-        r = client.post(f"/trips/{trip}/members", json={"user_id": bob, "role": TripRole.EDITOR})
+    def offered(self, client, trip, uid):
+        r = client.get(f"/trips/{trip}/expenses/include/{uid}")
         assert r.status_code == 200, r.text
-        assert self.shares(client, trip) == {"u-test": 500, bob: 500}
+        return [e["expense_id"] for e in r.json()]
 
-    def test_a_deliberate_subset_is_left_alone(self, client, trip, db):
-        bob = friend(db, trip, "Bob")
+    def test_sharing_re_splits_nothing_on_its_own(self, client, trip, db):
+        client.post(f"/trips/{trip}/expenses", json=cost(amount_cents=1000))
+        self.newcomer(client, db, trip)
+        assert self.shares(client, trip) == {"u-test": 1000}
+
+    def test_a_cost_from_before_the_share_is_offered_and_re_splits_once_chosen(
+            self, client, trip, db):
+        eid = client.post(f"/trips/{trip}/expenses",
+                          json=cost(amount_cents=1000)).json()["expense_id"]
+        bob = self.newcomer(client, db, trip)
+        assert self.offered(client, trip, bob) == [eid]
+        r = client.post(f"/trips/{trip}/expenses/include/{bob}", json={"expense_ids": [eid]})
+        assert r.json() == {"included": 1}
+        assert self.shares(client, trip) == {"u-test": 500, bob: 500}
+        assert self.offered(client, trip, bob) == []
+
+    def test_an_unchosen_cost_is_left_alone(self, client, trip, db):
+        client.post(f"/trips/{trip}/expenses", json=cost(amount_cents=1000))
+        bob = self.newcomer(client, db, trip)
+        r = client.post(f"/trips/{trip}/expenses/include/{bob}", json={"expense_ids": []})
+        assert r.json() == {"included": 0}
+        assert self.shares(client, trip) == {"u-test": 1000}
+
+    def test_a_deliberate_subset_is_not_offered(self, client, trip, db):
+        friend(db, trip, "Bob")
         client.post(f"/trips/{trip}/expenses", json=cost(amount_cents=1000,
                                                          participants=["u-test"]))
-        cara = self.newcomer(db, "Cara")
-        assert client.post(f"/trips/{trip}/members", json={"user_id": cara}).status_code == 200
-        assert self.shares(client, trip) == {"u-test": 1000}
-        assert bob not in self.shares(client, trip)
+        cara = self.newcomer(client, db, trip, "Cara")
+        assert self.offered(client, trip, cara) == []
 
-    def test_an_uneven_split_is_left_alone(self, client, trip, db):
+    def test_an_uneven_split_is_not_offered(self, client, trip, db):
         bob = friend(db, trip, "Bob")
         client.post(f"/trips/{trip}/expenses", json=cost(
             amount_cents=1000, participants=[],
             shares=[{"user_id": "u-test", "amount_cents": 250}, {"user_id": bob, "amount_cents": 750}]))
-        cara = self.newcomer(db, "Cara")
-        assert client.post(f"/trips/{trip}/members", json={"user_id": cara}).status_code == 200
-        assert self.shares(client, trip) == {"u-test": 250, bob: 750}
+        cara = self.newcomer(client, db, trip, "Cara")
+        assert self.offered(client, trip, cara) == []
 
-    def test_a_role_change_re_splits_nothing(self, client, trip, db):
-        bob = friend(db, trip, "Bob", role=TripRole.VIEWER)
-        client.post(f"/trips/{trip}/expenses", json=cost(amount_cents=1000,
-                                                         participants=["u-test"]))
-        r = client.post(f"/trips/{trip}/members", json={"user_id": bob, "role": TripRole.EDITOR})
+    def test_a_cost_someone_has_paid_a_share_of_is_not_offered(self, client, trip, db):
+        bob = friend(db, trip, "Bob")
+        eid = client.post(f"/trips/{trip}/expenses", json=cost(
+            amount_cents=1000, participants=["u-test", bob])).json()["expense_id"]
+        pay(client, trip, bob, expense_id=eid)
+        cara = self.newcomer(client, db, trip, "Cara")
+        assert self.offered(client, trip, cara) == []
+        client.post(f"/trips/{trip}/expenses/include/{cara}", json={"expense_ids": [eid]})
+        assert cara not in self.shares(client, trip)
+
+    def test_someone_off_the_trip_is_offered_nothing(self, client, trip):
+        assert client.get(f"/trips/{trip}/expenses/include/u-nobody").status_code == 404
+
+
+class TestLeavingWithABalance:
+    def test_someone_who_owes_cannot_be_removed(self, client, trip, db):
+        bob = friend(db, trip, "Bob")
+        client.post(f"/trips/{trip}/expenses",
+                    json=cost(amount_cents=1000, participants=["u-test", bob]))
+        r = client.delete(f"/trips/{trip}/members/{bob}")
+        assert r.status_code == 409
+        assert "settle up" in r.text
+
+    def test_once_settled_they_can_be(self, client, trip, db):
+        bob = friend(db, trip, "Bob")
+        client.post(f"/trips/{trip}/expenses",
+                    json=cost(amount_cents=1000, participants=["u-test", bob]))
+        pay(client, trip, bob)
+        assert client.delete(f"/trips/{trip}/members/{bob}").status_code == 204
+
+    def test_a_cost_naming_a_former_member_can_still_be_edited(self, client, trip, db):
+        bob = friend(db, trip, "Bob")
+        eid = client.post(f"/trips/{trip}/expenses", json=cost(
+            amount_cents=1000, participants=["u-test", bob])).json()["expense_id"]
+        pay(client, trip, bob)
+        client.delete(f"/trips/{trip}/members/{bob}")
+        r = client.put(f"/trips/{trip}/expenses/{eid}", json=cost(
+            amount_cents=1000, participants=["u-test", bob], description="Supper"))
         assert r.status_code == 200, r.text
-        assert self.shares(client, trip) == {"u-test": 1000}
